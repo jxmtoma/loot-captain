@@ -38,6 +38,21 @@ const mixedStats = LC.diff.diffItems(
 assert.equal(mixedStats.comparable, true);
 assert.equal(mixedStats.score, -50);
 assert.equal(mixedStats.diffs.AC.delta, -10);
+const weaponRatioFormula = LC.diff.SCORE_FORMULAS.find((item) => item.key === 'weaponratio');
+for (const slot of ['Primary', 'Secondary', 'Range']) {
+  const weaponUpgrade = LC.diff.diffItems(
+    { slot, stats: { Damage: { num: 100 }, Delay: { num: 20 } } },
+    { slot, stats: { Damage: { num: 80 }, Delay: { num: 20 } } },
+    weaponRatioFormula,
+  );
+  assert.equal(weaponUpgrade.comparable, true);
+  assert.equal(weaponUpgrade.score, 1);
+}
+assert.equal(LC.diff.diffItems(
+  { slot: 'Head', stats: { Damage: { num: 100 }, Delay: { num: 20 } } },
+  { slot: 'Head', stats: { Damage: { num: 80 }, Delay: { num: 20 } } },
+  weaponRatioFormula,
+).comparable, false);
 assert.equal(LC.diff.bestComparisonTarget(
   { stats: { HP: { num: 100 } } },
   [{ stats: { HP: { num: 50 } } }, { stats: {} }],

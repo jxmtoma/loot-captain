@@ -16,6 +16,7 @@ const SCORE_FORMULAS = [
   { key: 'mana', label: 'Mana' },
   { key: 'end', label: 'Endurance' },
   { key: 'endregen', label: 'End Regen' },
+  { key: 'weaponratio', label: 'Weapon ratio (Damage/Delay)' },
   { key: 'netpos', label: 'Net positive' },
 ];
 

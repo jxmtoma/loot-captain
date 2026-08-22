@@ -31,6 +31,7 @@
     { key: 'mana', label: 'Mana', terms: { MANA: 1 } },
     { key: 'end', label: 'Endurance', terms: { END: 1 } },
     { key: 'endregen', label: 'End Regen', terms: { EndRegen: 1 } },
+    { key: 'weaponratio', label: 'Weapon ratio (Damage/Delay)', type: 'weaponratio' },
     { key: 'netpos', label: 'Net positive', terms: '__POSITIVE__' },
   ];
   const DEFAULT_FORMULA_KEY = 'ac10hp';
@@ -59,9 +60,25 @@
     return Object.values(item && item.stats || {}).some((value) => numericStat(value) != null);
   }
 
+  function weaponRatio(item) {
+    const normalized = item && (item.slotKey || LC.slots.canonicalSlot(item.slot));
+    if (!normalized || !['primary', 'secondary', 'range'].includes(normalized.key)) return null;
+    const damage = numericStat(item.stats && item.stats.Damage);
+    const delay = numericStat(item.stats && item.stats.Delay);
+    return damage != null && delay > 0 ? damage / delay : null;
+  }
+
   function diffItems(cand, worn, formula) {
+    const f = formula || SCORE_FORMULAS[0];
     const comparable = hasNumericStats(cand) && (worn == null || hasNumericStats(worn));
-    if (!comparable) return { diffs: {}, score: 0, worn, formula: formula || SCORE_FORMULAS[0], comparable: false };
+    if (!comparable) return { diffs: {}, score: 0, worn, formula: f, comparable: false };
+    if (f.type === 'weaponratio') {
+      const candRatio = weaponRatio(cand);
+      const wornRatio = worn && weaponRatio(worn);
+      if (candRatio == null || (worn && wornRatio == null)) {
+        return { diffs: {}, score: 0, worn, formula: f, comparable: false };
+      }
+    }
     const diffs = {};
     const allKeys = new Set([
       ...Object.keys(cand.stats || {}),
@@ -80,8 +97,9 @@
       };
     }
     let score = 0;
-    const f = formula || SCORE_FORMULAS[0];
-    if (f.terms === '__POSITIVE__') {
+    if (f.type === 'weaponratio') {
+      score = weaponRatio(cand) - (worn ? weaponRatio(worn) : 0);
+    } else if (f.terms === '__POSITIVE__') {
       for (const k of Object.keys(diffs)) if (diffs[k].positive) score += diffs[k].delta;
     } else {
       for (const k of Object.keys(f.terms)) {
