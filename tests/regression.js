@@ -8,7 +8,10 @@ const read = (file) => fs.readFileSync(file, 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
 assert.equal(manifest.permissions.includes('scripting'), false);
 assert.equal(manifest.content_scripts.some((script) => script.world === 'MAIN'), true);
-assert.match(read('content/opendkp-page.js'), /event\.isTrusted/);
+const bridgeSource = read('content/opendkp-page.js');
+assert.match(bridgeSource, /event\.isTrusted/);
+assert.match(bridgeSource, /getReader/);
+assert.match(bridgeSource, /content-length/);
 assert.match(read('content/opendkp-consent.js'), /consentVersion/);
 
 function loadCore(context) {
@@ -82,8 +85,15 @@ const bridgeContext = {
   location: { href: 'https://guild.opendkp.com/' },
   console,
 };
+class TestURL extends URL {
+  get origin() { return this.protocol === 'chrome-extension:' ? this.protocol + '//' + this.hostname : super.origin; }
+}
 const bridgeWindowListeners = {};
 const bridgeFrameWindow = { postMessage() {} };
+const bridgeFrame = {
+  contentWindow: bridgeFrameWindow,
+  src: 'https://attacker.test/content/opendkp-consent.html',
+};
 bridgeContext.addEventListener = (type, listener) => {
   (bridgeWindowListeners[type] || (bridgeWindowListeners[type] = [])).push(listener);
 };
@@ -93,10 +103,8 @@ bridgeContext.removeEventListener = (type, listener) => {
 bridgeContext.dispatchEvent = (event) => {
   for (const listener of bridgeWindowListeners[event.type] || []) listener(event);
 };
-bridgeDocument.getElementById = () => ({
-  contentWindow: bridgeFrameWindow,
-  src: 'https://extension.test/content/opendkp-consent.html',
-});
+bridgeDocument.getElementById = () => bridgeFrame;
+bridgeContext.URL = TestURL;
 bridgeContext.window = bridgeContext;
 bridgeDocument.addEventListener('loot-captain-opendkp-item-data', (event) => bridgeEvents.push(event));
 vm.runInNewContext(read('content/opendkp-page.js'), bridgeContext, { filename: 'content/opendkp-page.js' });
@@ -107,6 +115,20 @@ bridgeContext.dispatchEvent({
   origin: 'https://extension.test',
   data: { type: 'loot-captain-consent-accepted' },
 });
+const forgedXhr = new FakeXHR();
+forgedXhr.responseType = 'json';
+forgedXhr.response = { ItemID: 41 };
+forgedXhr.open('GET', 'https://guild.opendkp.com/api/items/41');
+forgedXhr.send();
+assert.equal(bridgeEvents.length, 0);
+bridgeFrame.src = 'chrome-extension://test/content/opendkp-consent.html';
+bridgeContext.dispatchEvent({
+  type: 'message',
+  isTrusted: true,
+  source: bridgeFrameWindow,
+  origin: 'chrome-extension://test',
+  data: { type: 'loot-captain-consent-accepted' },
+});
 const jsonXhr = new FakeXHR();
 jsonXhr.responseType = 'json';
 jsonXhr.response = { ItemID: 42, ItemName: 'JSON Casing Test' };
@@ -115,6 +137,17 @@ jsonXhr.open('GET', 'https://guild.opendkp.com/api/items/42');
 jsonXhr.send();
 assert.equal(bridgeEvents.length, 1);
 assert.equal(JSON.parse(bridgeEvents[0].detail).data.ItemID, 42);
+const oversizedTextXhr = new FakeXHR();
+oversizedTextXhr.responseText = 'x'.repeat(512 * 1024 + 1);
+oversizedTextXhr.open('GET', 'https://guild.opendkp.com/api/items/43');
+oversizedTextXhr.send();
+assert.equal(bridgeEvents.length, 1);
+const oversizedJsonXhr = new FakeXHR();
+oversizedJsonXhr.responseType = 'json';
+oversizedJsonXhr.response = { ItemID: 44, ItemName: 'x'.repeat(512 * 1024) };
+oversizedJsonXhr.open('GET', 'https://guild.opendkp.com/api/items/44');
+oversizedJsonXhr.send();
+assert.equal(bridgeEvents.length, 1);
 assert.match(read('options/options.html'), /id="consent-gate" class="consent-gate hidden"/);
 assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 

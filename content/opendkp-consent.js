@@ -3,7 +3,8 @@
 const KEY = 'consentVersion';
 const VERSION = 1;
 
-async function notifyIfConsented() {
+async function notifyIfConsented(event) {
+  if (event && (event.source !== parent || !event.data || event.data.type !== 'loot-captain-consent-probe')) return;
   const result = await chrome.storage.local.get(KEY);
   if (result[KEY] === VERSION) parent.postMessage({ type: 'loot-captain-consent-accepted' }, '*');
 }
