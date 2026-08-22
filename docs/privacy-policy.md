@@ -10,7 +10,7 @@ The extension stores the following in the browser's extension-local `chrome.stor
 
 - Character/profile names, class, level, equipment slots, item IDs, item names, and item stats entered or imported by the user.
 - The selected character and score formula.
-- Cached RaidLoot profile and item results used to avoid repeated requests.
+- Imported profile data and fetched public RaidLoot item stats used in comparisons.
 
 The extension does not transmit or collect email addresses, passwords, payment information, precise location, browsing history, analytics identifiers, or advertising identifiers. Character and item names entered by the user are retained locally as part of the profile and may be sent to RaidLoot only when needed for an item lookup.
 
@@ -18,7 +18,7 @@ When a comparison is displayed, the extension renders the relevant worn-item and
 
 ## Network use
 
-When the user imports a profile or enriches an item, the extension fetches public pages from `raidloot.com` to read profile and item information. An OpenDKP item name may be sent to RaidLoot for an exact-name lookup. Requests do not include authenticated browser credentials or cookies.
+When the user imports a profile or opens a profile/comparison that needs missing stats, the extension fetches public pages from `raidloot.com` to read profile and item information. An OpenDKP item name may be sent automatically to RaidLoot for an exact-name lookup. Requests do not include authenticated browser credentials or cookies.
 
 On OpenDKP pages, the extension reads the visible item UI and the page's item-data responses to add a local comparison badge. That data is not sent to an OpenDKP server by the extension.
 
@@ -28,11 +28,13 @@ Loot Captain does not sell, rent, or share user data with advertisers, data brok
 
 ## Limited Use
 
-Loot Captain uses profile, item, and page data only to provide its single purpose: local EverQuest gear comparison on the current page. It does not use the data for advertising, credit, insurance, lending, price discrimination, or unrelated personalization. It does not sell or transfer the data to third parties except for the user-requested public RaidLoot lookup described above.
+Loot Captain uses profile, item, and page data only to provide its single purpose: local EverQuest gear comparison on the current page. It does not use the data for advertising, credit, insurance, lending, price discrimination, or unrelated personalization. It does not sell or transfer the data to third parties except for the public RaidLoot lookup needed to provide the comparison described above.
+
+Loot Captain complies with the Chrome Web Store User Data Policy and its Limited Use requirements.
 
 ## Retention and deletion
 
-Local data remains in extension storage until the user deletes a profile, clears extension storage, or uninstalls the extension. Cached public item data may be refreshed or replaced automatically.
+Local data remains in extension storage until the user deletes a profile, clears extension storage, or uninstalls the extension. Fetched public item stats may be refreshed or replaced automatically.
 
 ## Security
 

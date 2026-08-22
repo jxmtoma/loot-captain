@@ -5,7 +5,7 @@
   'use strict';
 
   const EVENT = 'loot-captain-opendkp-item-data';
-  const CONSENT_EVENT = 'loot-captain-consent-accepted';
+  const CONSENT_FRAME_ID = 'loot-captain-opendkp-consent';
 
   function isItemRequest(url) {
     try {
@@ -60,8 +60,20 @@
     };
   }
 
-  document.addEventListener(CONSENT_EVENT, () => {
+  function activateFromConsent(event) {
+    const frame = document.getElementById(CONSENT_FRAME_ID);
+    if (!event.isTrusted || !frame || event.source !== frame.contentWindow) return;
+    let frameOrigin;
+    try { frameOrigin = new URL(frame.src).origin; } catch (e) { return; }
+    if (event.origin !== frameOrigin || !event.data || event.data.type !== 'loot-captain-consent-accepted') return;
     hookFetch();
     hookXhr();
-  }, { once: true });
+    window.removeEventListener('message', activateFromConsent);
+  }
+
+  window.addEventListener('message', activateFromConsent);
+  const frame = document.getElementById(CONSENT_FRAME_ID);
+  if (frame && frame.contentWindow) {
+    try { frame.contentWindow.postMessage({ type: 'loot-captain-consent-probe' }, new URL(frame.src).origin); } catch (e) {}
+  }
 })();

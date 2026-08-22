@@ -5,6 +5,11 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const read = (file) => fs.readFileSync(file, 'utf8');
+const manifest = JSON.parse(read('manifest.json'));
+assert.equal(manifest.permissions.includes('scripting'), false);
+assert.equal(manifest.content_scripts.some((script) => script.world === 'MAIN'), true);
+assert.match(read('content/opendkp-page.js'), /event\.isTrusted/);
+assert.match(read('content/opendkp-consent.js'), /consentVersion/);
 
 function loadCore(context) {
   for (const file of ['content/shared/slots.js', 'content/shared/parser.js', 'content/shared/diff.js']) {
@@ -30,6 +35,11 @@ const mixedStats = LC.diff.diffItems(
 assert.equal(mixedStats.comparable, true);
 assert.equal(mixedStats.score, -50);
 assert.equal(mixedStats.diffs.AC.delta, -10);
+assert.equal(LC.diff.bestComparisonTarget(
+  { stats: { HP: { num: 100 } } },
+  [{ stats: { HP: { num: 50 } } }, { stats: {} }],
+  LC.diff.SCORE_FORMULAS.find((item) => item.key === 'hp'),
+), null);
 assert.equal(LC.diff.findWornInSlot({ items: [
   { slot: 'Ear-1' }, { slot: 'Ear-2' }, { slot: 'Head' },
 ] }, LC.slots.canonicalSlot('Ear')).length, 2);
@@ -72,16 +82,31 @@ const bridgeContext = {
   location: { href: 'https://guild.opendkp.com/' },
   console,
 };
+const bridgeWindowListeners = {};
+const bridgeFrameWindow = { postMessage() {} };
+bridgeContext.addEventListener = (type, listener) => {
+  (bridgeWindowListeners[type] || (bridgeWindowListeners[type] = [])).push(listener);
+};
+bridgeContext.removeEventListener = (type, listener) => {
+  bridgeWindowListeners[type] = (bridgeWindowListeners[type] || []).filter((item) => item !== listener);
+};
+bridgeContext.dispatchEvent = (event) => {
+  for (const listener of bridgeWindowListeners[event.type] || []) listener(event);
+};
+bridgeDocument.getElementById = () => ({
+  contentWindow: bridgeFrameWindow,
+  src: 'https://extension.test/content/opendkp-consent.html',
+});
 bridgeContext.window = bridgeContext;
 bridgeDocument.addEventListener('loot-captain-opendkp-item-data', (event) => bridgeEvents.push(event));
 vm.runInNewContext(read('content/opendkp-page.js'), bridgeContext, { filename: 'content/opendkp-page.js' });
-const beforeConsent = new FakeXHR();
-beforeConsent.responseType = 'json';
-beforeConsent.response = { ItemID: 41 };
-beforeConsent.open('GET', 'https://guild.opendkp.com/api/items/41');
-beforeConsent.send();
-assert.equal(bridgeEvents.length, 0);
-bridgeDocument.dispatchEvent({ type: 'loot-captain-consent-accepted' });
+bridgeContext.dispatchEvent({
+  type: 'message',
+  isTrusted: true,
+  source: bridgeFrameWindow,
+  origin: 'https://extension.test',
+  data: { type: 'loot-captain-consent-accepted' },
+});
 const jsonXhr = new FakeXHR();
 jsonXhr.responseType = 'json';
 jsonXhr.response = { ItemID: 42, ItemName: 'JSON Casing Test' };
@@ -90,6 +115,8 @@ jsonXhr.open('GET', 'https://guild.opendkp.com/api/items/42');
 jsonXhr.send();
 assert.equal(bridgeEvents.length, 1);
 assert.equal(JSON.parse(bridgeEvents[0].detail).data.ItemID, 42);
+assert.match(read('options/options.html'), /id="consent-gate" class="consent-gate hidden"/);
+assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 
 const options = { document: { addEventListener() {} } };
 vm.runInNewContext(read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText;', options, { filename: 'options/options.js' });

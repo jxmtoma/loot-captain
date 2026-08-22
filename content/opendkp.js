@@ -8,22 +8,35 @@
 
   // ---------- State ----------
   const ITEM_EVENT = 'loot-captain-opendkp-item-data';
-  const CONSENT_EVENT = 'loot-captain-consent-accepted';
+  const CONSENT_FRAME_ID = 'loot-captain-opendkp-consent';
   const CONSENT_KEY = 'consentVersion';
   const CONSENT_VERSION = 1;
+  const MAX_ITEM_EVENT_LENGTH = 512 * 1024;
+  const MAX_CAPTURE_ITEMS = 64;
   let consented = false;
   let started = false;
   let itemCache = new Map(); // OpenDKP item id -> parsed item
   let lookupCache = new Map(); // OpenDKP item id/name -> Promise<parsed item>
   let lastAnnotate = 0;
 
+  const consentFrame = document.createElement('iframe');
+  consentFrame.id = CONSENT_FRAME_ID;
+  consentFrame.hidden = true;
+  consentFrame.setAttribute('aria-hidden', 'true');
+  consentFrame.src = chrome.runtime.getURL('content/opendkp-consent.html');
+  document.documentElement.appendChild(consentFrame);
+
   // ---------- Page-world bridge ----------
   function hookNetwork() {
     document.addEventListener(ITEM_EVENT, (event) => {
       if (!consented) return;
+      if (typeof event.detail !== 'string' || event.detail.length > MAX_ITEM_EVENT_LENGTH) return;
       try {
-        const payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail;
-        captureItemData(payload && payload.data ? payload.data : payload);
+        const payload = JSON.parse(event.detail);
+        if (!payload || typeof payload !== 'object') return;
+        const data = Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
+        if (!data || typeof data !== 'object') return;
+        captureItemData(data);
       } catch (e) {}
     });
   }
@@ -35,7 +48,6 @@
     const result = await chrome.storage.local.get(CONSENT_KEY);
     if (result[CONSENT_KEY] !== CONSENT_VERSION) return false;
     consented = true;
-    document.dispatchEvent(new CustomEvent(CONSENT_EVENT));
     return true;
   }
 
@@ -44,8 +56,10 @@
   // Capture item data from API responses (handles single item or list).
   function captureItemData(data) {
     if (!data) return;
-    const items = Array.isArray(data) ? data : (data.items || data.Items || data.results || data.Results ||
-      (data.item || data.Item ? [data.item || data.Item] : [data]));
+    const items = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items :
+      Array.isArray(data.Items) ? data.Items : Array.isArray(data.results) ? data.results :
+      Array.isArray(data.Results) ? data.Results : (data.item || data.Item ? [data.item || data.Item] : [data]));
+    if (items.length > MAX_CAPTURE_ITEMS) return;
     for (const it of items) {
       if (it && typeof it === 'object') {
         const parsed = LC.parser.parseOpenDkpJson(it);

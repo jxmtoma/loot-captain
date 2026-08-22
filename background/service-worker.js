@@ -1,7 +1,6 @@
 // Loot Captain - background service worker
 // Handles cross-origin fetches (raidloot profile scrape) and storage.
 
-const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24h
 const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
 const MAX_ID_LENGTH = 12;
@@ -10,41 +9,11 @@ const MAX_ITEM_COUNT = 32;
 
 importScripts('raidloot-parser.js');
 
-const EQUIPMENT_SLOTS = new Set([
-  'charm', 'ear', 'head', 'face', 'neck', 'shoulders', 'arms', 'back',
-  'wrist', 'range', 'hands', 'primary', 'finger', 'chest', 'legs', 'feet',
-  'waist', 'secondary', 'powersource',
-]);
-const PAIRED_SLOTS = new Set(['ear', 'wrist', 'finger']);
-
-function canonicalSlot(raw) {
-  if (!raw) return null;
-  let s = String(raw).trim().toLowerCase().replace(/[\s_]+/g, '-');
-  const aliases = {
-    shoulder: 'shoulders',
-    arm: 'arms',
-    hand: 'hands',
-    leg: 'legs',
-    foot: 'feet',
-    finger: 'finger',
-    fingers: 'finger',
-    'power-source': 'powersource',
-  };
-  s = aliases[s] || s;
-  const m = s.match(/^(ear|wrist|finger|fingers)(-[12])?$/);
-  if (m) return { key: m[1] === 'fingers' ? 'finger' : m[1], paired: true };
-  return EQUIPMENT_SLOTS.has(s) ? { key: s, paired: PAIRED_SLOTS.has(s) } : null;
-}
-
 // ---------- Storage helpers ----------
 async function storageGet(key, def) {
   const res = await chrome.storage.local.get(key);
   return res[key] === undefined ? def : res[key];
 }
-async function storageSet(key, val) {
-  await chrome.storage.local.set({ [key]: val });
-}
-
 // ---------- Cross-origin fetch ----------
 async function fetchText(url) {
   const resp = await fetch(url);
@@ -147,7 +116,7 @@ function isOpenDkpPage(sender) {
 
 function allowedSender(type, sender) {
   if (type === 'SCRAPE_PROFILE') return isExtensionPage(sender);
-  if (type === 'ENRICH_PROFILE_ITEMS') return isExtensionPage(sender) || isRaidLootPage(sender);
+  if (type === 'ENRICH_PROFILE_ITEMS') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'LOOKUP_ITEM_STATS') return isOpenDkpPage(sender);
   return false;
 }
@@ -195,17 +164,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       switch (msg.type) {
       case 'SCRAPE_PROFILE': {
         const profileId = numericId(msg.profileId, 'profile ID');
-        if (msg.force !== undefined && typeof msg.force !== 'boolean') throw new Error('Invalid force flag');
-        const force = msg.force === true;
-        const cacheKey = 'profile:' + profileId;
-        const cached = await storageGet(cacheKey, null);
-        if (!force && cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-          sendResponse({ ok: true, profile: cached });
-          break;
-        }
         const html = await fetchText('https://www.raidloot.com/profile/' + profileId);
         const profile = await parseHtmlInOffscreen({ type: 'PARSE_PROFILE', html, profileId });
-        await storageSet(cacheKey, profile);
         sendResponse({ ok: true, profile });
         break;
       }

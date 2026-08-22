@@ -463,7 +463,7 @@ function slotFromLocation(loc) {
   let s = String(loc).trim().toLowerCase().replace(/[\s_]+/g, '-');
   if (s === 'power-source') s = 'powersource';
   if (s === 'fingers') s = 'finger';
-  return EQUIPMENT_SLOTS.includes(s) ? s : s;
+  return s;
 }
 
 // Parse a [name]_[server]-Inventory.txt file. Returns worn items only.
@@ -557,7 +557,7 @@ async function importRaidlootProfile() {
   status.textContent = 'Loading RaidLoot profile…';
   status.className = 'import-status';
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'SCRAPE_PROFILE', profileId, force: true });
+    const response = await chrome.runtime.sendMessage({ type: 'SCRAPE_PROFILE', profileId });
     if (!response || !response.ok || !response.profile) throw new Error(response && response.error || 'No profile returned');
     const profile = response.profile;
     const items = (profile.items || []).map((item) => ({
@@ -624,8 +624,11 @@ async function handleInventoryFile(file) {
 // ---------- Init ----------
 async function requireConsent() {
   const result = await chrome.storage.local.get(CONSENT_KEY);
-  if (result[CONSENT_KEY] === CONSENT_VERSION) return;
   const gate = $('#consent-gate');
+  if (result[CONSENT_KEY] === CONSENT_VERSION) {
+    gate.classList.add('hidden');
+    return;
+  }
   gate.classList.remove('hidden');
   await new Promise((resolve) => {
     $('#btn-consent').addEventListener('click', async () => {

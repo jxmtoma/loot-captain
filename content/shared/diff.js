@@ -100,15 +100,10 @@
     let best = null, bestScore = -Infinity;
     for (const w of wornCandidates) {
       const d = diffItems(cand, w, formula);
-      if (!d.comparable) continue;
+      if (!d.comparable) return null;
       if (d.score > bestScore) { bestScore = d.score; best = w; }
     }
     return best;
-  }
-
-  function currentFormula(store) {
-    const key = store.get('scoreFormula', DEFAULT_FORMULA_KEY);
-    return SCORE_FORMULAS.find((f) => f.key === key) || SCORE_FORMULAS[0];
   }
 
   LC.diff = {
@@ -120,6 +115,5 @@
     hasNumericStats,
     diffItems,
     bestComparisonTarget,
-    currentFormula,
   };
 })();

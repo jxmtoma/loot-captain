@@ -18,11 +18,13 @@
       <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity=".48"/>
     </filter>
   </defs>
-  <rect x="4" y="4" width="120" height="120" rx="22" fill="url(#stone)" stroke="#8d794d" stroke-width="3"/>
-  <path d="M16 18h24M88 18h24M16 110h24M88 110h24" stroke="#d2b46c" stroke-width="2" opacity=".45"/>
-  <path d="M64 18 99 33v27c0 23-14 37-35 49C43 97 29 83 29 60V33z" fill="#132020" stroke="url(#gold)" stroke-width="5" filter="url(#shadow)"/>
-  <path d="M64 28 89 39v20c0 16-9 26-25 36-16-10-25-20-25-36V39z" fill="#315c59" stroke="#a98646" stroke-width="2"/>
-  <circle cx="64" cy="55" r="13" fill="url(#gem)" stroke="#f1d487" stroke-width="3"/>
-  <path d="M64 46v18M55 55h18" stroke="#e9dda9" stroke-width="3" stroke-linecap="round"/>
-  <path d="m64 75 6 11-6 5-6-5z" fill="#f1d487"/>
+  <g transform="translate(12.8 12.8) scale(.8)">
+    <rect x="4" y="4" width="120" height="120" rx="22" fill="url(#stone)" stroke="#8d794d" stroke-width="3"/>
+    <path d="M16 18h24M88 18h24M16 110h24M88 110h24" stroke="#d2b46c" stroke-width="2" opacity=".45"/>
+    <path d="M64 18 99 33v27c0 23-14 37-35 49C43 97 29 83 29 60V33z" fill="#132020" stroke="url(#gold)" stroke-width="5" filter="url(#shadow)"/>
+    <path d="M64 28 89 39v20c0 16-9 26-25 36-16-10-25-20-25-36V39z" fill="#315c59" stroke="#a98646" stroke-width="2"/>
+    <circle cx="64" cy="55" r="13" fill="url(#gem)" stroke="#f1d487" stroke-width="3"/>
+    <path d="M64 46v18M55 55h18" stroke="#e9dda9" stroke-width="3" stroke-linecap="round"/>
+    <path d="m64 75 6 11-6 5-6-5z" fill="#f1d487"/>
+  </g>
 </svg>

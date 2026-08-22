@@ -12,7 +12,7 @@ Loot Captain is a Manifest V3 Chrome/Edge extension for comparing EverQuest gear
 
 ## Data and privacy
 
-Profiles, settings, and item caches are stored in `chrome.storage.local`. The extension has no account, analytics, tracking, advertising, or remote code. It requests public RaidLoot pages only when importing profiles or looking up item stats; it does not send browser cookies or authenticated credentials. OpenDKP page data is used to annotate the current page, and an item name may be sent to RaidLoot for an exact-name lookup.
+Profiles, settings, and fetched public item stats are stored in `chrome.storage.local`. The extension has no account, analytics, tracking, advertising, or remote code. It requests public RaidLoot pages only when importing profiles or looking up item stats; it does not send browser cookies or authenticated credentials. OpenDKP page data is used to annotate the current page, and an item name may be sent to RaidLoot when missing stats are needed.
 
 See [the privacy policy](docs/privacy-policy.md).
 
@@ -20,7 +20,7 @@ See [the privacy policy](docs/privacy-policy.md).
 
 | Permission or match | Why it is needed |
 | --- | --- |
-| `storage` | Store local profiles, settings, and cached public item data. |
+| `storage` | Store local profiles, settings, and fetched public item stats. |
 | `offscreen` | Parse fetched RaidLoot HTML with `DOMParser` from the MV3 service worker. |
 | RaidLoot host permission | Fetch public RaidLoot profile and item pages for imports and stat enrichment. |
 | OpenDKP content-script matches | Read the current OpenDKP item UI/API responses and add comparison badges; no OpenDKP host permission is requested. |
