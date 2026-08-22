@@ -42,7 +42,7 @@ Use these values in the Developer Dashboard and keep them consistent with [the p
 - Website content: `Yes` — current-page item names and stats are read locally, and worn-item names, candidate-item names, badges, and stat differences are rendered into the visited-page DOM. Item names may be sent to RaidLoot for a missing-stat lookup; no page history is collected.
 - Limited Use: Loot Captain complies with the Chrome Web Store User Data Policy and uses data only to provide local EverQuest gear comparison on the current page. It is not sold, used for advertising, credit, insurance, lending, price discrimination, or unrelated personalization.
 - Certification: certify that the extension complies with the Chrome Web Store User Data Policy and Limited Use requirements.
-- Privacy policy URL: `https://jxmtoma.github.io/loot-captain/privacy-policy.html` (pending until GitHub Pages is enabled for the release repository).
+- Privacy policy URL: `https://jxmtoma.github.io/loot-captain/privacy-policy.html` (enable the repository's GitHub Pages workflow before submission).
 
 ## Graphic assets
 

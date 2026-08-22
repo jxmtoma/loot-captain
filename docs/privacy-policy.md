@@ -50,4 +50,4 @@ For privacy questions, use the support contact published with the Chrome Web Sto
 
 ## Public policy URL
 
-The intended stable HTTPS publication URL is `https://jxmtoma.github.io/loot-captain/privacy-policy.html`; it remains pending until GitHub Pages is enabled for the release repository.
+The stable HTTPS publication URL is `https://jxmtoma.github.io/loot-captain/privacy-policy.html`. The repository's GitHub Pages workflow publishes the `docs/` directory; enable GitHub Pages for GitHub Actions before Store submission.

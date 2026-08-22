@@ -16,6 +16,8 @@ Profiles, settings, and fetched public item stats are stored in `chrome.storage.
 
 See [the privacy policy](docs/privacy-policy.md).
 
+The GitHub Pages site is in `docs/`. Enable **Settings → Pages → GitHub Actions** in the repository to publish `privacy-policy.html` at `https://jxmtoma.github.io/loot-captain/privacy-policy.html`.
+
 ## Permissions
 
 | Permission or match | Why it is needed |
