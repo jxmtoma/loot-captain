@@ -492,6 +492,34 @@ function parseInventoryText(text) {
   return items;
 }
 
+// Read character metadata when the inventory export includes labeled fields.
+function parseInventoryMetadata(text) {
+  const metadata = { name: '', cls: '', level: '' };
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const field = line.match(/^\s*([^:\t=]+?)\s*(?::|=|\t)\s*(.*?)\s*$/);
+    const key = field && field[1].trim().toLowerCase().replace(/\s+/g, ' ');
+    const value = field && field[2].trim();
+    if (!value) {
+      const level = line.match(/^\s*(?:level|lvl)\s+(\d{1,3})\b/i);
+      if (!metadata.level && level) metadata.level = level[1];
+      continue;
+    }
+    if (!metadata.name && ['name', 'character', 'character name', 'player', 'player name'].includes(key)) {
+      metadata.name = value;
+    } else if (!metadata.cls && ['class', 'character class', 'player class'].includes(key)) {
+      metadata.cls = value;
+    } else if (!metadata.level && ['level', 'lvl', 'character level', 'player level'].includes(key)) {
+      const match = value.match(/\d{1,3}/);
+      if (match) metadata.level = match[0];
+    }
+    if (!metadata.level) {
+      const level = line.match(/^\s*(?:level|lvl)\s+(\d{1,3})\b/i);
+      if (level) metadata.level = level[1];
+    }
+  }
+  return metadata;
+}
+
 // Convert raidloot item stats ({raw,num}) to the options-page plain format.
 function statsToPlain(stats) {
   const out = {};
@@ -607,12 +635,22 @@ async function handleInventoryFile(file) {
       });
     }
     // Create profile from filename
-    const { name, server } = nameFromFilename(file.name);
-    const profileName = name || 'Imported Character';
-    addImportedProfile({ name: profileName, server, items, statsVersion: fetchStats ? PROFILE_STATS_VERSION : 0, importedFrom: file.name });
+    const filenameMetadata = nameFromFilename(file.name);
+    const inventoryMetadata = parseInventoryMetadata(text);
+    const profileName = inventoryMetadata.name || filenameMetadata.name || 'Imported Character';
+    addImportedProfile({
+      name: profileName,
+      cls: inventoryMetadata.cls,
+      level: inventoryMetadata.level,
+      server: filenameMetadata.server,
+      items,
+      statsVersion: fetchStats ? PROFILE_STATS_VERSION : 0,
+      importedFrom: file.name,
+    });
     await saveAll();
     const loadedCount = items.filter((item) => Object.keys(item.stats || {}).length).length;
-    status.textContent = 'Imported ' + items.length + ' items' + (fetchStats ? ' (' + loadedCount + ' with stats)' : ' (stats load when comparing)') + ' for ' + profileName + '.';
+    const profileMeta = [inventoryMetadata.cls, inventoryMetadata.level && 'level ' + inventoryMetadata.level].filter(Boolean).join(' · ');
+    status.textContent = 'Imported ' + items.length + ' items' + (fetchStats ? ' (' + loadedCount + ' with stats)' : ' (stats load when comparing)') + ' for ' + profileName + (profileMeta ? ' (' + profileMeta + ')' : '') + '.';
     status.className = 'import-status success';
     renderProfileList();
   } catch (e) {

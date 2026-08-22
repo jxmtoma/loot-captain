@@ -186,8 +186,11 @@ assert.match(read('options/options.html'), /id="consent-gate" class="consent-gat
 assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 
 const options = { document: { addEventListener() {} } };
-vm.runInNewContext(read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText;', options, { filename: 'options/options.js' });
+vm.runInNewContext(read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText; globalThis.parseInventoryMetadata = parseInventoryMetadata;', options, { filename: 'options/options.js' });
 const inventory = options.parseInventoryText([
+  'Character: Aurelia',
+  'Class: Warrior',
+  'Level: 125',
   'Location\tName\tID\tExtra',
   'Ear\tFirst Earring\t11\t',
   'Ear-Slot1\tAugment\t12\t',
@@ -200,6 +203,11 @@ assert.deepEqual(JSON.parse(JSON.stringify(inventory.map(({ name, id, slot }) =>
   { name: 'First Earring', id: '11', slot: 'ear' },
   { name: 'Crown', id: '13', slot: 'head' },
 ]);
+assert.deepEqual(JSON.parse(JSON.stringify(options.parseInventoryMetadata([
+  'Character: Aurelia',
+  'Class: Warrior',
+  'Level 125',
+].join('\n')))), { name: 'Aurelia', cls: 'Warrior', level: '125' });
 
 let profiles = { p: { id: 'p', name: 'Original', items: [{ id: '1', name: 'Sword', slot: 'Head', stats: {} }] } };
 let saves = 0;
