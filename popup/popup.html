@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Loot Captain</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <header>
+      <div class="brand">
+        <img class="brand-mark" src="../icons/icon48.png" alt="">
+        <div>
+          <h1>Loot Captain</h1>
+          <p>EverQuest gear ledger</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="setting-card">
+      <label for="profile-select"><span>Active Character</span><small>CHARACTER SELECT</small></label>
+      <select id="profile-select">
+        <option value="">- none -</option>
+      </select>
+    </section>
+
+    <section class="setting-card">
+      <label for="formula-select"><span>Score Formula</span><small>INVENTORY</small></label>
+      <select id="formula-select"></select>
+    </section>
+
+    <section class="actions">
+      <button id="btn-options" class="btn">Manage Characters</button>
+    </section>
+
+    <footer>
+      <span id="status"></span>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

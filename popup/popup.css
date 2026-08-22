@@ -1,0 +1,109 @@
+/* Loot Captain - popup styles */
+:root {
+  --bg: #0f1415;
+  --bg-card: #1b2324;
+  --bg-input: #101718;
+  --border: #4e4a3b;
+  --border-soft: #2c3736;
+  --text: #e9e1ca;
+  --text-dim: #9e967f;
+  --primary: #c6a45e;
+  --primary-hover: #dfbd73;
+  --teal: #76aaa2;
+  --radius: 5px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: radial-gradient(circle at 50% -20%, #293536 0, var(--bg) 62%);
+  color: var(--text);
+  width: 288px;
+}
+
+.popup { padding: 14px; }
+
+header { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 38px; height: 38px; border-radius: 9px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.brand h1 { margin: 0; color: var(--primary); font: 700 18px Georgia, 'Times New Roman', serif; letter-spacing: .2px; }
+.brand p { margin: 3px 0 0; color: var(--text-dim); font-size: 11px; }
+
+section { margin-bottom: 10px; }
+.setting-card { padding: 9px 10px 10px; border: 1px solid var(--border-soft); border-left: 2px solid var(--primary); border-radius: var(--radius); background: linear-gradient(135deg, rgba(39,52,51,.86), rgba(22,29,30,.92)); }
+
+label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+label small { color: var(--teal); font-size: 9px; letter-spacing: 1px; }
+
+select {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 13px;
+}
+select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(198,164,94,.15); }
+
+.actions { margin-top: 4px; }
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(#354241, #202a2a);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, transform .15s;
+}
+.btn:hover { border-color: var(--primary); color: #fff3cf; transform: translateY(-1px); }
+
+footer { border-top: 1px solid var(--border); padding-top: 9px; margin-top: 12px; }
+footer span { font-size: 11px; color: var(--text-dim); }
+
+/* EverQuest-inspired window skin */
+:root {
+  --bg: #080e18;
+  --bg-card: #162131;
+  --bg-input: #09121f;
+  --border: #806b3d;
+  --border-soft: #3a4a61;
+  --text: #e9edf2;
+  --text-dim: #aab3c1;
+  --primary: #d5ae55;
+  --teal: #8ac9b6;
+}
+body {
+  font-family: Tahoma, 'Segoe UI', sans-serif;
+  background-color: var(--bg);
+  background-image: radial-gradient(ellipse at 50% -20%, #3b4e63 0, transparent 48%), repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 4px);
+  border: 1px solid #77643e;
+}
+.popup { padding: 13px; }
+header { padding: 2px 2px 12px; border-bottom-color: #7e6a40; }
+.brand-mark { border: 1px solid #c9a75b; border-radius: 4px; box-shadow: 0 0 0 2px #111b29, 0 3px 9px rgba(0,0,0,.5); }
+.brand h1 { color: #e4bf69; text-shadow: 1px 1px #07101b; }
+.brand p { color: #b7c0ca; }
+.setting-card { border-color: #66583d; border-left: 3px solid #bd9647; border-radius: 2px; background: linear-gradient(145deg, #1b2c41, #0e1a2a); box-shadow: inset 0 1px rgba(255,255,255,.1), inset 0 0 0 1px rgba(0,0,0,.3), 0 3px 8px rgba(0,0,0,.25); }
+label { color: #d3d8de; }
+label small { color: #8bd0bd; }
+select { border-color: #4b5b70; border-radius: 2px; background: #09121f; color: #f0eee5; box-shadow: inset 0 2px 5px rgba(0,0,0,.35); }
+select:focus { border-color: #d3ae5a; }
+.btn { border-color: #7b6841; border-radius: 2px; background: linear-gradient(#3d5063, #172436 55%, #0c1523); box-shadow: inset 0 1px rgba(255,255,255,.16), inset 0 -1px rgba(0,0,0,.65), 0 2px 4px rgba(0,0,0,.28); text-shadow: 1px 1px #07101a; }
+.btn:hover { border-color: #e0bb62; color: #fff4cc; }
+footer { border-top-color: #59657a; }
+footer span { color: #aeb8c5; }

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loot Captain - Profiles</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div id="consent-gate" class="consent-gate" role="dialog" aria-modal="true" aria-labelledby="consent-title">
+    <div class="consent-card">
+      <img class="consent-mark" src="../icons/icon48.png" alt="">
+      <h2 id="consent-title">Before Loot Captain starts</h2>
+      <p>Loot Captain stores character names, profiles, item names, and stats in this browser. It reads item data from visited RaidLoot and OpenDKP pages to show local comparisons.</p>
+      <p>When you import or enrich gear, public item/profile data may be requested from RaidLoot. No login cookies, account data, analytics, or tracking are used.</p>
+      <button id="btn-consent" class="btn btn-primary">Allow and continue</button>
+    </div>
+  </div>
+  <header>
+    <div class="brand">
+      <img class="brand-mark" src="../icons/icon48.png" alt="">
+      <div>
+        <h1>Loot Captain</h1>
+        <p class="subtitle">Local character profiles for gear comparison</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Profile list -->
+    <section id="profile-list-section">
+      <div class="section-header">
+        <h2>Character Select</h2>
+        <div class="list-actions">
+          <button id="btn-new-profile" class="btn btn-primary">+ New Character</button>
+        </div>
+      </div>
+      <div id="profile-list" class="profile-list"></div>
+
+      <div class="card formula-card">
+        <div class="card-header">
+          <h3>Comparison Formula</h3>
+          <span class="recommended-label">USED ON RAIDLOOT &amp; OPENDKP</span>
+        </div>
+        <label for="score-formula">Score formula
+          <select id="score-formula"></select>
+        </label>
+        <p class="hint">Controls the upgrade score shown on item badges and comparison panels.</p>
+      </div>
+
+      <div class="card import-card raidloot-import-card">
+        <div class="card-header">
+          <h3>Import from RaidLoot</h3>
+          <span class="recommended-label">Recommended</span>
+        </div>
+        <p class="hint">Paste a RaidLoot profile URL or its numeric profile ID. This imports the worn items and their stats directly.</p>
+        <div class="import-controls">
+          <div class="raidloot-import-row">
+            <input type="text" id="raidloot-profile" placeholder="e.g. https://www.raidloot.com/profile/12345">
+            <button id="btn-import-raidloot" class="btn btn-primary">Import Profile</button>
+          </div>
+          <div id="raidloot-import-status" class="import-status"></div>
+        </div>
+      </div>
+
+      <div class="card import-card">
+        <h3>Import from EverQuest (fallback)</h3>
+        <p class="hint">
+          In-game, run <code>/output inventory</code>. This saves a file named
+          <code>[name]_[server]-Inventory.txt</code> to your EQ folder. Select it below
+          to create a character from your worn equipment.
+        </p>
+        <div class="import-controls">
+          <input type="file" id="inventory-file" accept=".txt,text/plain">
+          <label class="checkbox-label">
+            <input type="checkbox" id="fetch-stats" checked> Fetch item stats during EQ import (optional; missing stats load when comparing)
+          </label>
+          <div id="import-status" class="import-status"></div>
+        </div>
+      </div>
+
+      <details id="debug-details" class="debug-card" hidden>
+        <summary>Import diagnostics</summary>
+        <div class="debug-actions"><button id="btn-clear-debug" class="btn btn-small">Clear log</button></div>
+        <pre id="debug-log">No diagnostics yet.</pre>
+      </details>
+    </section>
+
+    <!-- Profile editor -->
+    <section id="profile-editor-section" class="hidden">
+      <div class="section-header">
+        <h2 id="editor-title">Edit Character</h2>
+        <div class="editor-profile-switcher">
+          <label for="editor-profile-select">Character</label>
+          <select id="editor-profile-select"></select>
+          <button id="btn-editor-new-profile" class="btn btn-small btn-primary">+ New</button>
+        </div>
+        <span id="editor-status" class="editor-status" aria-live="polite"></span>
+        <div class="editor-actions">
+          <button id="btn-back" class="btn">← Back</button>
+          <button id="btn-delete-profile" class="btn btn-danger">Delete</button>
+          <button id="btn-save-profile" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+
+      <div class="editor-grid">
+        <!-- Profile meta -->
+        <div class="card character-sheet-card">
+          <h3>Character Sheet</h3>
+          <label>Name
+            <input type="text" id="profile-name" placeholder="e.g. Toma">
+          </label>
+          <label>Class
+            <input type="text" id="profile-class" placeholder="e.g. Warrior">
+          </label>
+          <label>Level
+            <input type="number" id="profile-level" min="1" max="125" placeholder="e.g. 120">
+          </label>
+        </div>
+
+        <!-- Worn items -->
+        <div class="card inventory-card">
+          <div class="card-header">
+            <h3>Inventory</h3>
+            <button id="btn-add-item" class="btn btn-small btn-primary">+ Add Item</button>
+          </div>
+          <p class="hint">Items are compared by slot. Paired slots (ear, wrist, finger) can hold two items.</p>
+          <div class="inventory-editor-layout">
+          <div id="inventory-preview" class="inventory-preview">
+              <div class="inventory-tabs" aria-hidden="true">
+                <span class="active">Equipment</span>
+            </div>
+            <div class="inventory-body">
+              <div class="inventory-stage">
+                <div class="inventory-stage-title">WORN EQUIPMENT</div>
+                <div class="inventory-columns">
+                  <div id="inventory-left" class="gear-column"></div>
+                  <div class="inventory-character">
+                    <div class="character-silhouette" aria-hidden="true">⚔</div>
+                    <strong id="inventory-stage-name">Unnamed Character</strong>
+                    <span id="inventory-stage-meta">Local profile</span>
+                  </div>
+                  <div id="inventory-right" class="gear-column"></div>
+                </div>
+                <div class="inventory-bottom">
+                  <span>Auto-Inventory</span>
+                  <span id="inventory-slot-count">0 / 19 worn slots</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="item-details-panel">
+            <div class="item-details-label">ITEM DETAILS</div>
+            <div id="item-list" class="item-list"></div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Loot Captain",
+  "version": "0.1.0",
+  "description": "Compare EverQuest gear on RaidLoot and OpenDKP against local character profiles.",
+  "permissions": ["storage", "offscreen"],
+  "host_permissions": [
+    "https://www.raidloot.com/*",
+    "https://raidloot.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.raidloot.com/*", "https://raidloot.com/*"],
+      "js": ["content/shared/slots.js", "content/shared/parser.js", "content/shared/diff.js", "content/shared/ui.js", "content/shared/state.js", "content/raidloot.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.opendkp.com/*"],
+      "world": "MAIN",
+      "js": ["content/opendkp-page.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://*.opendkp.com/*"],
+      "js": ["content/shared/slots.js", "content/shared/parser.js", "content/shared/diff.js", "content/shared/ui.js", "content/shared/state.js", "content/opendkp.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Loot Captain"
+  },
+  "options_page": "options/options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
