@@ -72,7 +72,7 @@
         readLimitedText(response.clone()).then((text) => {
           if (text == null) return;
           try { publish(response.url, JSON.parse(text)); } catch (e) {}
-        });
+        }).catch(() => {});
       }).catch(() => {});
       return promise;
     };

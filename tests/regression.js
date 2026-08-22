@@ -81,10 +81,32 @@ const bridgeContext = {
   document: bridgeDocument,
   XMLHttpRequest: FakeXHR,
   CustomEvent: FakeCustomEvent,
+  TextDecoder,
   URL,
   location: { href: 'https://guild.opendkp.com/' },
   console,
 };
+bridgeContext.fetch = () => Promise.resolve({
+  url: 'https://guild.opendkp.com/api/items/45',
+  clone() {
+    return {
+      headers: { get() { return null; } },
+      body: {
+        getReader() {
+          let read = false;
+          return {
+            async read() {
+              if (read) return { done: true };
+              read = true;
+              return { done: false, value: new Uint8Array(512 * 1024 + 1) };
+            },
+            async cancel() {},
+          };
+        },
+      },
+    };
+  },
+});
 class TestURL extends URL {
   get origin() { return this.protocol === 'chrome-extension:' ? this.protocol + '//' + this.hostname : super.origin; }
 }
@@ -112,7 +134,7 @@ bridgeContext.dispatchEvent({
   type: 'message',
   isTrusted: true,
   source: bridgeFrameWindow,
-  origin: 'https://extension.test',
+  origin: 'https://attacker.test',
   data: { type: 'loot-captain-consent-accepted' },
 });
 const forgedXhr = new FakeXHR();
@@ -138,7 +160,7 @@ jsonXhr.send();
 assert.equal(bridgeEvents.length, 1);
 assert.equal(JSON.parse(bridgeEvents[0].detail).data.ItemID, 42);
 const oversizedTextXhr = new FakeXHR();
-oversizedTextXhr.responseText = 'x'.repeat(512 * 1024 + 1);
+oversizedTextXhr.responseText = JSON.stringify({ ItemID: 43, ItemName: 'x'.repeat(512 * 1024) });
 oversizedTextXhr.open('GET', 'https://guild.opendkp.com/api/items/43');
 oversizedTextXhr.send();
 assert.equal(bridgeEvents.length, 1);
@@ -148,6 +170,7 @@ oversizedJsonXhr.response = { ItemID: 44, ItemName: 'x'.repeat(512 * 1024) };
 oversizedJsonXhr.open('GET', 'https://guild.opendkp.com/api/items/44');
 oversizedJsonXhr.send();
 assert.equal(bridgeEvents.length, 1);
+const oversizedFetch = bridgeContext.fetch('https://guild.opendkp.com/api/items/45');
 assert.match(read('options/options.html'), /id="consent-gate" class="consent-gate hidden"/);
 assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 
@@ -207,6 +230,9 @@ vm.runInNewContext(read('content/shared/state.js'), stateContext, { filename: 'c
 const state = stateContext.LootCaptain.state;
 
 (async () => {
+  await oversizedFetch;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(bridgeEvents.length, 1);
   await state.getSelectedProfile();
   assert.equal(profiles.p.name, 'Edited');
   assert.equal(saves, 0);
