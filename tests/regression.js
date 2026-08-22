@@ -65,6 +65,7 @@ assert.equal(LC.diff.findWornInSlot({ items: [
 const openDkpItem = LC.parser.parseOpenDkpJson({
   ItemID: 42, ItemName: 'Casing Test', Slot: 'Head', HP: 100, Stats: { AC: 50 },
 });
+assert.equal(LC.parser.canonicalStat('DMG'), 'Damage');
 assert.deepEqual(
   { id: openDkpItem.id, name: openDkpItem.name, slot: openDkpItem.slot, hp: openDkpItem.stats.HP.num, ac: openDkpItem.stats.AC.num },
   { id: '42', name: 'Casing Test', slot: 'Head', hp: 100, ac: 50 },

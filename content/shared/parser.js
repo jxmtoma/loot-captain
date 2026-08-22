@@ -18,7 +18,7 @@
     corrupt: 'SV CORRUPT', corruption: 'SV CORRUPT',
     heroics: 'Heroics', 'heal amount': 'Heal Amount', healamt: 'Heal Amount',
     'spell dmg': 'Spell Dmg', 'spell damage': 'Spell Dmg', clairvoyance: 'Clairvoyance',
-    purity: 'Purity', luck: 'Luck', haste: 'Haste', damage: 'Damage', delay: 'Delay', range: 'Range',
+    purity: 'Purity', luck: 'Luck', haste: 'Haste', dmg: 'Damage', damage: 'Damage', delay: 'Delay', range: 'Range',
     regen: 'Regen', 'hp regen': 'Regen', manaregen: 'ManaRegen', 'mana regen': 'ManaRegen',
     endregen: 'EndRegen', 'end regen': 'EndRegen',
   };
@@ -111,7 +111,7 @@
       'sta', 'str', 'agi', 'dex', 'int', 'wis', 'cha',
       'svfire', 'svcold', 'svmagic', 'svpoison', 'svdisease', 'svcorrupt',
       'heroics', 'healamount', 'spelldmg', 'clairvoyance',
-      'purity', 'luck', 'haste', 'damage', 'delay', 'range',
+      'purity', 'luck', 'haste', 'dmg', 'damage', 'delay', 'range',
     ];
     const statLabels = {
       ac: 'AC', hp: 'HP', mana: 'MANA', end: 'END', atk: 'ATK',
@@ -120,7 +120,7 @@
       svfire: 'SV FIRE', svcold: 'SV COLD', svmagic: 'SV MAGIC', svpoison: 'SV POISON',
       svdisease: 'SV DISEASE', svcorrupt: 'SV CORRUPT',
       heroics: 'Heroics', healamount: 'Heal Amount', spelldmg: 'Spell Dmg', clairvoyance: 'Clairvoyance',
-      purity: 'Purity', luck: 'Luck', haste: 'Haste', damage: 'Damage', delay: 'Delay', range: 'Range',
+      purity: 'Purity', luck: 'Luck', haste: 'Haste', dmg: 'Damage', damage: 'Damage', delay: 'Delay', range: 'Range',
     };
     for (const f of statFields) {
       const v = getField(obj, f);
