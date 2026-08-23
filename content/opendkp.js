@@ -51,7 +51,8 @@
       consented = true;
       return true;
     } catch (e) {
-      return false;
+      if (String(e && e.message) === 'Extension context invalidated.') return false;
+      throw e;
     }
   }
 

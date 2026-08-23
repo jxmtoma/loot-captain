@@ -12,6 +12,7 @@ const bridgeSource = read('content/opendkp-page.js');
 assert.match(bridgeSource, /event\.isTrusted/);
 assert.match(bridgeSource, /getReader/);
 assert.match(bridgeSource, /content-length/);
+assert.match(read('content/opendkp.js'), /Extension context invalidated/);
 assert.match(read('content/opendkp-consent.js'), /consentVersion/);
 
 function loadCore(context) {
