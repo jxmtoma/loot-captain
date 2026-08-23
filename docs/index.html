@@ -49,6 +49,44 @@
       </div>
     </section>
 
+    <section class="section shell product-shot" aria-labelledby="product-shot-title">
+      <div class="product-shot-copy">
+        <p class="eyebrow">Character management</p>
+        <h2 id="product-shot-title">See every slot at a glance.</h2>
+        <p>Arrange EverQuest equipment around the character and inspect one selected item on the right without scrolling through the entire inventory.</p>
+      </div>
+      <div class="product-shot-carousel" data-slideshow role="region" aria-roledescription="carousel" aria-label="Loot Captain screenshots">
+        <div class="product-shot-track">
+          <figure class="product-shot-frame product-shot-slide">
+            <img src="./assets/screenshot-character-select-1280x800.png" alt="Loot Captain character selection page with local profiles and import options">
+            <figcaption>Create, select, and import local character profiles.</figcaption>
+          </figure>
+          <figure class="product-shot-frame product-shot-slide" hidden>
+            <img src="./assets/screenshot-options-1280x800.png" alt="Loot Captain character editor showing an EverQuest-style inventory layout and selected item details">
+            <figcaption>Character profiles, slot-aware inventory, and read-only item details.</figcaption>
+          </figure>
+          <figure class="product-shot-frame product-shot-slide" hidden>
+          <img src="./assets/screenshot-comparison-1280x800.png" alt="Loot Captain comparison shown beside an EverQuest item on RaidLoot">
+          <figcaption>See the upgrade score and stat differences on RaidLoot.</figcaption>
+          </figure>
+          <figure class="product-shot-frame product-shot-slide" hidden>
+          <img src="./assets/screenshot-opendkp-1280x800.png" alt="Loot Captain comparison shown beside a guild auction item on OpenDKP">
+          <figcaption>Review the same comparison flow on OpenDKP.</figcaption>
+          </figure>
+        </div>
+        <div class="slide-controls">
+          <button class="slide-button" type="button" data-slide-prev aria-label="Previous screenshot">←</button>
+          <div class="slide-dots" role="tablist" aria-label="Choose screenshot">
+            <button class="slide-dot" type="button" data-slide-dot="0" aria-label="Show character select screenshot" aria-current="true"></button>
+            <button class="slide-dot" type="button" data-slide-dot="1" aria-label="Show character editor screenshot"></button>
+            <button class="slide-dot" type="button" data-slide-dot="2" aria-label="Show RaidLoot screenshot"></button>
+            <button class="slide-dot" type="button" data-slide-dot="3" aria-label="Show OpenDKP screenshot"></button>
+          </div>
+          <button class="slide-button" type="button" data-slide-next aria-label="Next screenshot">→</button>
+        </div>
+      </div>
+    </section>
+
     <section class="section shell split" aria-labelledby="workflow-title">
       <div>
         <p class="eyebrow">How it works</p>
@@ -79,5 +117,20 @@
       <span><a href="./privacy-policy.html">Privacy</a> · <a href="./support.html">Support</a></span>
     </div>
   </footer>
+  <script>
+    document.querySelectorAll('[data-slideshow]').forEach((slideshow) => {
+      const slides = [...slideshow.querySelectorAll('.product-shot-slide')];
+      const dots = [...slideshow.querySelectorAll('[data-slide-dot]')];
+      let current = 0;
+      const show = (index) => {
+        current = (index + slides.length) % slides.length;
+        slides.forEach((slide, i) => { slide.hidden = i !== current; });
+        dots.forEach((dot, i) => { dot.setAttribute('aria-current', i === current ? 'true' : 'false'); });
+      };
+      slideshow.querySelector('[data-slide-prev]').addEventListener('click', () => show(current - 1));
+      slideshow.querySelector('[data-slide-next]').addEventListener('click', () => show(current + 1));
+      dots.forEach((dot, i) => dot.addEventListener('click', () => show(i)));
+    });
+  </script>
 </body>
 </html>

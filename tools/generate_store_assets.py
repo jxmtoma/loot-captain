@@ -1,7 +1,7 @@
-"""Generate promotional tiles.
+"""Legacy Pillow promo generator.
 
-The two Web Store screenshots in store-assets/ are captured from the current
-extension experience; this script intentionally does not regenerate them.
+Current screenshots and promo assets are rendered by
+tools/generate_store_visuals.swift.
 """
 
 from pathlib import Path

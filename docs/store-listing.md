@@ -53,7 +53,9 @@ The repository includes upload-ready PNGs in `store-assets/`:
 | File | Size | Dashboard use |
 | --- | ---: | --- |
 | `screenshot-options-1280x800.png` | 1280 × 800 | Character/profile management screenshot |
+| `screenshot-character-select-1280x800.png` | 1280 × 800 | Character selection and import screenshot |
 | `screenshot-comparison-1280x800.png` | 1280 × 800 | RaidLoot comparison screenshot |
+| `screenshot-opendkp-1280x800.png` | 1280 × 800 | OpenDKP comparison screenshot |
 | `promo-small-440x280.png` | 440 × 280 | Small promo tile |
 | `promo-marquee-1400x560.png` | 1400 × 560 | Marquee promo tile |
 
