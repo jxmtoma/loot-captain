@@ -18,6 +18,8 @@ Your profiles and settings stay in browser-local extension storage. Loot Captain
 
 - Category: `Productivity`
 - Language: `English`
+- Website: `https://jxmtoma.github.io/loot-captain/`
+- Support URL: `https://jxmtoma.github.io/loot-captain/support.html`
 
 ## Permission justifications
 

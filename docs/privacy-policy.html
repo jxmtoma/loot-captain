@@ -4,27 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Loot Captain privacy policy.">
-  <title>Loot Captain Privacy Policy</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { margin: 0; background: #101d2e; color: #dfe6ef; font: 16px/1.6 system-ui, sans-serif; }
-    main { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
-    h1, h2 { color: #f0d381; line-height: 1.2; }
-    h1 { margin-bottom: 8px; }
-    h2 { margin-top: 36px; font-size: 1.25rem; }
-    a { color: #9ed7cb; }
-    code { padding: 2px 5px; border-radius: 3px; background: #1d3047; }
-    .eyebrow { color: #9ed7cb; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-    .effective { color: #aebdca; }
-  </style>
+  <title>Privacy Policy — Loot Captain</title>
+  <link rel="stylesheet" href="./site.css">
 </head>
 <body>
-  <main>
-    <p class="eyebrow"><a href="./">Loot Captain</a></p>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="./">Loot Captain</a>
+      <nav aria-label="Primary navigation">
+        <a href="./">Details</a>
+        <a aria-current="page" href="./privacy-policy.html">Privacy</a>
+        <a href="./support.html">Support</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell prose">
+    <p class="eyebrow">Data use and retention</p>
     <h1>Privacy Policy</h1>
     <p class="effective">Effective date: August 22, 2026</p>
-
-    <p>Loot Captain is a local-first browser extension for comparing EverQuest gear. This policy explains what the extension stores and what network requests it makes.</p>
+    <p class="lede">Loot Captain is a local-first browser extension for comparing EverQuest gear. This policy explains what the extension stores and what network requests it makes.</p>
 
     <h2>Data handled</h2>
     <p>The extension stores the following in browser-local <code>chrome.storage.local</code>:</p>
@@ -41,7 +40,7 @@
     <p>On OpenDKP pages, the extension reads visible item UI and page item-data responses to add a local comparison badge. That data is not sent to an OpenDKP server by the extension.</p>
 
     <h2>Sharing and sale</h2>
-    <p>Loot Captain does not sell, rent, or share user data with advertisers, data brokers, or other third parties. It has no analytics or tracking service.</p>
+    <p>Loot Captain does not sell, rent, or share user data with advertisers, data brokers, or other third parties except for the public RaidLoot lookup needed to provide the comparison described above. It has no analytics or tracking service.</p>
 
     <h2>Limited Use</h2>
     <p>Loot Captain uses profile, item, and page data only to provide its single purpose: local EverQuest gear comparison on the current page. It complies with the <a href="https://developer.chrome.com/docs/webstore/program-policies/user-data-faq">Chrome Web Store User Data Policy</a> and its Limited Use requirements. It does not use data for advertising, credit, insurance, lending, price discrimination, or unrelated personalization.</p>
@@ -53,7 +52,14 @@
     <p>The extension uses minimum declared permissions for local storage, public RaidLoot fetching, and local HTML parsing. It does not execute remotely hosted code. Policy changes will be published with a new extension release and reflected in the effective date.</p>
 
     <h2>Contact</h2>
-    <p>For privacy questions, use the support contact published with the Chrome Web Store listing.</p>
+    <p>For privacy questions, visit <a href="./support.html">Loot Captain support</a>. Do not include personal or sensitive information in a public issue.</p>
   </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <span>Loot Captain</span>
+      <span><a href="./">Details</a> · <a href="./support.html">Support</a></span>
+    </div>
+  </footer>
 </body>
 </html>

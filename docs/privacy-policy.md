@@ -24,7 +24,7 @@ On OpenDKP pages, the extension reads the visible item UI and the page's item-da
 
 ## Sharing and sale
 
-Loot Captain does not sell, rent, or share user data with advertisers, data brokers, or other third parties. It has no analytics or tracking service.
+Loot Captain does not sell, rent, or share user data with advertisers, data brokers, or other third parties except for the public RaidLoot lookup needed to provide the comparison described above. It has no analytics or tracking service.
 
 ## Limited Use
 
@@ -46,7 +46,7 @@ Changes to this policy will be published with a new extension release and reflec
 
 ## Contact
 
-For privacy questions, use the support contact published with the Chrome Web Store listing.
+For privacy questions, visit [Loot Captain support](https://jxmtoma.github.io/loot-captain/support.html). Do not include personal or sensitive information in a public issue.
 
 ## Public policy URL
 

@@ -14,9 +14,9 @@ Loot Captain is a Manifest V3 Chrome/Edge extension for comparing EverQuest gear
 
 Profiles, settings, and fetched public item stats are stored in `chrome.storage.local`. The extension has no account, analytics, tracking, advertising, or remote code. It requests public RaidLoot pages only when importing profiles or looking up item stats; it does not send browser cookies or authenticated credentials. OpenDKP page data is used to annotate the current page, and an item name may be sent to RaidLoot when missing stats are needed.
 
-See [the privacy policy](docs/privacy-policy.md).
+See [the privacy policy](docs/privacy-policy.md) or visit the public [extension details](https://jxmtoma.github.io/loot-captain/), [privacy](https://jxmtoma.github.io/loot-captain/privacy-policy.html), and [support](https://jxmtoma.github.io/loot-captain/support.html) pages.
 
-The GitHub Pages site is in `docs/`. Enable **Settings → Pages → GitHub Actions** in the repository to publish `privacy-policy.html` at `https://jxmtoma.github.io/loot-captain/privacy-policy.html`.
+The GitHub Pages site is in `docs/`. Enable **Settings → Pages → GitHub Actions** in the repository to publish it.
 
 ## Permissions
 

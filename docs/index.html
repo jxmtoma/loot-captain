@@ -3,12 +3,81 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Loot Captain</title>
-  <style>body{max-width:680px;margin:64px auto;padding:0 24px;background:#101d2e;color:#dfe6ef;font:18px/1.6 system-ui,sans-serif}h1{color:#f0d381}a{color:#9ed7cb}</style>
+  <meta name="description" content="Loot Captain compares EverQuest gear on RaidLoot and OpenDKP against local character profiles.">
+  <title>Loot Captain — EverQuest gear comparison</title>
+  <link rel="stylesheet" href="./site.css">
 </head>
 <body>
-  <h1>Loot Captain</h1>
-  <p>Local EverQuest gear comparison for RaidLoot and OpenDKP.</p>
-  <p><a href="./privacy-policy.html">Privacy policy</a></p>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="./">Loot Captain</a>
+      <nav aria-label="Primary navigation">
+        <a aria-current="page" href="./">Details</a>
+        <a href="./privacy-policy.html">Privacy</a>
+        <a href="./support.html">Support</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero shell">
+      <p class="eyebrow">EverQuest gear comparison</p>
+      <h1>Know the upgrade before you spend the loot.</h1>
+      <p class="lede">Loot Captain compares items on RaidLoot and OpenDKP against character profiles stored locally in your browser.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/jxmtoma/loot-captain">View on GitHub</a>
+        <a class="button" href="./support.html">Get support</a>
+      </div>
+    </section>
+
+    <section class="section shell" aria-labelledby="features-title">
+      <p class="eyebrow">What it does</p>
+      <h2 id="features-title">Fast, slot-aware comparisons</h2>
+      <div class="card-grid">
+        <article class="card">
+          <h3>Local profiles</h3>
+          <p>Create multiple characters or import worn gear from RaidLoot and EverQuest <code>/output inventory</code> files.</p>
+        </article>
+        <article class="card">
+          <h3>Useful scoring</h3>
+          <p>Choose a formula and compare upgrades, downgrades, and individual stat changes—including paired ears, wrists, and fingers.</p>
+        </article>
+        <article class="card">
+          <h3>Two supported sites</h3>
+          <p>See compact badges and expandable stat differences on RaidLoot and OpenDKP item pages.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section shell split" aria-labelledby="workflow-title">
+      <div>
+        <p class="eyebrow">How it works</p>
+        <h2 id="workflow-title">Three steps, no account</h2>
+      </div>
+      <ol class="steps">
+        <li><span>1</span><div><strong>Add a character</strong><p>Create a profile or import existing equipment.</p></div></li>
+        <li><span>2</span><div><strong>Choose a formula</strong><p>Select how Loot Captain should value stats.</p></div></li>
+        <li><span>3</span><div><strong>Browse gear</strong><p>Open RaidLoot or OpenDKP and review the comparison badge.</p></div></li>
+      </ol>
+    </section>
+
+    <section class="section shell">
+      <div class="callout">
+        <div>
+          <p class="eyebrow">Local-first by design</p>
+          <h2>Your profiles stay in your browser.</h2>
+          <p>Loot Captain has no account, analytics, advertising, or tracking. Public RaidLoot pages are requested only when an import or missing-stat lookup needs them.</p>
+        </div>
+        <a class="button" href="./privacy-policy.html">Read the privacy policy</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <span>Loot Captain</span>
+      <span><a href="./privacy-policy.html">Privacy</a> · <a href="./support.html">Support</a></span>
+    </div>
+  </footer>
 </body>
 </html>
