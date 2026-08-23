@@ -142,7 +142,9 @@ function renderEditorProfileSelector() {
   placeholder.disabled = ids.length > 0;
   select.appendChild(placeholder);
   for (const id of ids) {
-    const option = el('option', '', profiles[id].name || 'Unnamed');
+    const profile = profiles[id];
+    const meta = [profile.cls, profile.level && 'Lv ' + profile.level].filter(Boolean).join(' · ');
+    const option = el('option', '', [profile.name || 'Unnamed', meta].filter(Boolean).join(' — '));
     option.value = id;
     select.appendChild(option);
   }
@@ -183,6 +185,7 @@ async function openEditor(id) {
       items: (p.items || []).map((it) => ({
         id: it.id || '',
         name: it.name || '',
+        icon: it.icon || '',
         slot: it.slot || '',
         stats: Object.assign({}, it.stats || {}),
       })),
@@ -216,7 +219,20 @@ function renderEditor() {
 }
 
 const INVENTORY_LEFT_SLOTS = ['head', 'face', 'shoulders', 'arms', 'back', 'range', 'hands', 'primary'];
-const INVENTORY_RIGHT_SLOTS = ['ear', 'neck', 'wrist', 'chest', 'finger', 'legs', 'feet', 'secondary'];
+const INVENTORY_RIGHT_SLOTS = ['ear-1', 'ear-2', 'neck', 'wrist-1', 'wrist-2', 'chest', 'finger-1', 'finger-2', 'legs', 'feet', 'secondary'];
+const SLOT_ICONS = {
+  charm: '✦', ear: '◖', head: '♜', face: '◉', neck: '⌁', shoulders: '◇', arms: '♢', back: '▣',
+  wrist: '◌', range: '➶', hands: '✋', primary: '⚔', finger: '○', chest: '▤', legs: '♜', feet: '⌁',
+  waist: '◍', secondary: '⚔', powersource: '✹',
+};
+
+function normalizeEditorSlot(slot) {
+  return String(slot || '').trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/^fingers(?=-|$)/, 'finger');
+}
+
+function slotRoot(slot) {
+  return normalizeEditorSlot(slot).replace(/-[12]$/, '');
+}
 
 function renderInventoryPreview() {
   const left = $('#inventory-left');
@@ -225,15 +241,31 @@ function renderInventoryPreview() {
   const grouped = {};
   editingProfile.items.forEach((item, index) => {
     if (!item.slot) return;
-    (grouped[item.slot] || (grouped[item.slot] = [])).push({ item, index });
+    const slot = normalizeEditorSlot(item.slot);
+    (grouped[slot] || (grouped[slot] = [])).push({ item, index });
   });
   const makeSlot = (slot) => {
-    const entries = grouped[slot] || [];
+    const root = slotRoot(slot);
+    const pairedIndex = /-[12]$/.test(slot) ? Number(slot.slice(-1)) - 1 : -1;
+    const entries = pairedIndex >= 0
+      ? grouped[slot]?.length ? [grouped[slot][0]] : (grouped[root]?.[pairedIndex] ? [grouped[root][pairedIndex]] : [])
+      : grouped[slot] || [];
     const box = el('div', 'gear-slot' + (entries.length ? ' filled' : ''));
-    box.title = entries.length ? entries.map((entry) => entry.item.name || 'Unnamed item').join(' / ') : 'Empty ' + slot + ' slot';
-    const glyph = el('span', 'gear-glyph', slot.slice(0, 2).toUpperCase());
-    const label = el('span', 'gear-slot-name', entries.length ? entries.map((entry) => entry.item.name || 'Unnamed').join(' / ') : slot);
-    box.appendChild(glyph);
+    box.title = entries.length ? entries.map((entry) => entry.item.name || 'Unnamed item').join(' / ') : 'Empty ' + root + ' slot';
+    const glyph = el('span', 'gear-glyph', SLOT_ICONS[root] || '✦');
+    glyph.setAttribute('aria-hidden', 'true');
+    const label = el('span', 'gear-slot-name', entries.length ? entries.map((entry) => entry.item.name || 'Unnamed').join(' / ') : root + (pairedIndex >= 0 ? ' ' + (pairedIndex + 1) : ''));
+    const iconUrl = entries[0] && /^https:\/\/cdn\.raidloot\.com\//i.test(entries[0].item.icon || '') && entries[0].item.icon;
+    if (iconUrl) {
+      const icon = document.createElement('img');
+      icon.className = 'gear-icon';
+      icon.src = iconUrl;
+      icon.alt = '';
+      icon.addEventListener('error', () => icon.replaceWith(glyph), { once: true });
+      box.appendChild(icon);
+    } else {
+      box.appendChild(glyph);
+    }
     box.appendChild(label);
     if (entries.length) {
       const focus = () => {
@@ -273,7 +305,7 @@ function normalizedName(name) {
 async function loadEditorStats(profile) {
   if (!profile || editingProfile !== profile) return;
   const refreshAll = profile.statsVersion !== PROFILE_STATS_VERSION;
-  const pending = profile.items.filter((item) => (item.id || item.name) && (refreshAll || !hasNumericStats(item)));
+  const pending = profile.items.filter((item) => (item.id || item.name) && (refreshAll || !hasNumericStats(item) || !item.icon));
   if (!pending.length) {
     $('#editor-status').textContent = '';
     return;
@@ -294,6 +326,7 @@ async function loadEditorStats(profile) {
       const loaded = (item.id && byId.get(String(item.id))) || byName.get(normalizedName(item.name));
       if (!loaded || !hasNumericStats(loaded)) continue;
       item.id = loaded.id || item.id || '';
+      item.icon = loaded.icon || item.icon || '';
       item.slot = item.slot || loaded.slot || '';
       item.stats = statsToPlain(loaded.stats);
       loadedCount++;
@@ -342,6 +375,7 @@ function renderItemList() {
       if (nameInput.value !== item.name) {
         item.name = nameInput.value;
         item.id = '';
+        item.icon = '';
         item.stats = {};
       }
       header.querySelector('.item-name').textContent = nameInput.value || ('Item ' + (idx + 1));
@@ -352,8 +386,9 @@ function renderItemList() {
 
     const slotLbl = el('label', '', 'Slot');
     const slotSel = el('select');
-    slotSel.innerHTML = '<option value="">- select -</option>' + EQUIPMENT_SLOTS.map((s) => '<option value="' + s + '">' + s + '</option>').join('');
-    slotSel.value = item.slot;
+    const slotOptions = [...EQUIPMENT_SLOTS, 'ear-1', 'ear-2', 'wrist-1', 'wrist-2', 'finger-1', 'finger-2'];
+    slotSel.innerHTML = '<option value="">- select -</option>' + slotOptions.map((s) => '<option value="' + s + '">' + s + '</option>').join('');
+    slotSel.value = normalizeEditorSlot(item.slot);
     slotSel.addEventListener('change', () => { item.slot = slotSel.value; renderInventoryPreview(); });
     slotLbl.appendChild(slotSel);
     fields.appendChild(slotLbl);
@@ -430,7 +465,7 @@ async function saveProfile() {
         const v = parseFloat(it.stats[k]);
         if (key && !isNaN(v)) stats[key] = v;
       }
-      return { id: it.id, name: it.name, slot: it.slot, stats };
+      return { id: it.id, name: it.name, icon: it.icon || '', slot: it.slot, stats };
     });
   if (editingId === 'new') {
     const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -496,7 +531,8 @@ function parseInventoryText(text) {
 function parseInventoryMetadata(text) {
   const metadata = { name: '', cls: '', level: '' };
   for (const line of String(text || '').split(/\r?\n/)) {
-    const field = line.match(/^\s*([^:\t=]+?)\s*(?::|=|\t)\s*(.*?)\s*$/);
+    const field = line.match(/^\s*([^:\t=]+?)\s*(?::|=|\t)\s*(.*?)\s*$/) ||
+      line.match(/^\s*(name|character|character name|player|player name|class|character class|player class|level|lvl|character level|player level)\s+(.+?)\s*$/i);
     const key = field && field[1].trim().toLowerCase().replace(/\s+/g, ' ');
     const value = field && field[2].trim();
     if (!value) {
@@ -591,6 +627,7 @@ async function importRaidlootProfile() {
     const items = (profile.items || []).map((item) => ({
       id: item.id || '',
       name: item.name || '',
+      icon: item.icon || '',
       slot: item.slot || '',
       stats: statsToPlain(item.stats),
     })).filter((item) => item.name && item.slot);

@@ -35,7 +35,8 @@ async function load() {
     const opt = document.createElement('option');
     opt.value = id;
     opt.textContent = p.name || 'Unnamed';
-    if (p.cls) opt.textContent += ' (' + p.cls + ')';
+    const meta = [p.cls, p.level && 'Lv ' + p.level].filter(Boolean).join(' · ');
+    if (meta) opt.textContent += ' (' + meta + ')';
     profileSel.appendChild(opt);
   }
   profileSel.value = selectedId;

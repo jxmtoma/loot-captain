@@ -20,6 +20,12 @@ function sameItemName(a, b) {
     String(b || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function raidlootIconUrl(value) {
+  const url = String(value || '').trim();
+  if (url.startsWith('//cdn.raidloot.com/')) return 'https:' + url;
+  return /^https:\/\/cdn\.raidloot\.com\//i.test(url) ? url : '';
+}
+
 function parserCanonicalSingleSlot(raw) {
   if (!raw) return null;
   let s = String(raw).trim().toLowerCase().replace(/[\s_]+/g, '-');
@@ -61,6 +67,32 @@ function parserParseClasses(value) {
   }))];
 }
 
+function parseProfileMetadata(title, heading, bodyText) {
+  const metadata = { name: String(title || '').trim(), level: '', cls: '' };
+  const candidates = [heading, title].map((value) => String(value || '').trim()).filter(Boolean);
+  for (const text of candidates) {
+    const grouped = text.match(/^(.+?)\s*\((\d{1,3})\s+([^()]+?)\)\s*(?:[-|].*)?$/);
+    const dashed = text.match(/^(.+?)\s*[-|]\s*(?:level\s*)?(\d{1,3})\s+([A-Za-z][A-Za-z ]*?)\s*(?:[-|].*)?$/i);
+    const match = grouped || dashed;
+    if (match) {
+      metadata.name = match[1].trim();
+      metadata.level = match[2];
+      metadata.cls = match[3].trim();
+      break;
+    }
+  }
+  const text = [heading, title, bodyText].filter(Boolean).join('\n');
+  if (!metadata.level) {
+    const level = text.match(/\b(?:level|lvl)\s*[:=]?\s*(\d{1,3})\b/i);
+    if (level) metadata.level = level[1];
+  }
+  if (!metadata.cls) {
+    const cls = text.match(/(?:^|\n)\s*class(?:es)?\s*:\s*([A-Za-z][A-Za-z ]*)/i);
+    if (cls) metadata.cls = cls[1].trim();
+  }
+  return metadata;
+}
+
 function parseProfileHtml(html, profileId) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const inv = doc.getElementById('inv') || doc;
@@ -69,8 +101,9 @@ function parseProfileHtml(html, profileId) {
     .filter((it) => it && !it.isAugment && !it.isWishlist && !it.isTotalsRow && it.slotKey);
   const titleEl = doc.querySelector('title');
   const title = titleEl ? titleEl.textContent.trim() : '';
-  const m = title.match(/^(.+?)\s*\((\d+)\s+(.+?)\)\s*$/);
-  return { id: profileId, name: m ? m[1] : title, level: m ? m[2] : '', cls: m ? m[3] : '', items, fetchedAt: Date.now() };
+  const headingEl = doc.querySelector('h1') || doc.querySelector('h2');
+  const metadata = parseProfileMetadata(title, headingEl && headingEl.textContent, doc.body && doc.body.textContent);
+  return { id: profileId, ...metadata, items, fetchedAt: Date.now() };
 }
 
 function parseItemPage(html, expectedId) {
@@ -102,6 +135,8 @@ function parseItemNode(node) {
   const id = node.dataset && node.dataset.id ? node.dataset.id : (node.id || '').replace(/^item/, '');
   const nameEl = node.querySelector('.itemname');
   const name = nameEl ? nameEl.textContent.trim() : '';
+  const iconEl = node.querySelector('img.itemicon');
+  const icon = iconEl ? raidlootIconUrl(iconEl.getAttribute('src')) : '';
   const stats = {};
   node.querySelectorAll('label').forEach((lbl) => {
     const key = lbl.textContent.replace(/:\s*$/, '').trim();
@@ -147,5 +182,5 @@ function parseItemNode(node) {
   const isAugment = (node.classList && node.classList.contains('augment')) || /^aug_/i.test((stats.Type && stats.Type.raw) || '');
   const isWishlist = !!node.querySelector('.wish-remove');
   const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-  return { id, name, slot, slotKey: parserCanonicalSlot(slot), classes, stats, isAugment, isWishlist, isTotalsRow };
+  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, isAugment, isWishlist, isTotalsRow };
 }

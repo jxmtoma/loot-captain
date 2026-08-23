@@ -115,6 +115,24 @@ assert.equal(LC.diff.findWornInSlot({ items: [
   { slot: 'Ear-1' }, { slot: 'Ear-2' }, { slot: 'Head' },
 ] }, LC.slots.canonicalSlot('Ear')).length, 2);
 
+const raidlootParser = {};
+vm.runInNewContext(read('background/raidloot-parser.js') + '\nglobalThis.parseProfileMetadataForTest = parseProfileMetadata; globalThis.parseItemNodeForTest = parseItemNode;', raidlootParser, { filename: 'background/raidloot-parser.js' });
+assert.deepEqual(JSON.parse(JSON.stringify(raidlootParser.parseProfileMetadataForTest('Freebus (120 Ranger) - RaidLoot', '', ''))), {
+  name: 'Freebus', level: '120', cls: 'Ranger',
+});
+const iconClasses = ['item', 'Head'];
+iconClasses.contains = (value) => iconClasses.includes(value);
+const parsedIconItem = raidlootParser.parseItemNodeForTest({
+  id: 'item1', dataset: { id: '1' }, textContent: '', classList: iconClasses,
+  querySelector(selector) {
+    if (selector === '.itemname') return { textContent: 'Icon Test' };
+    if (selector === 'img.itemicon') return { getAttribute: () => '//cdn.raidloot.com/123.png' };
+    return null;
+  },
+  querySelectorAll: () => [],
+});
+assert.equal(parsedIconItem.icon, 'https://cdn.raidloot.com/123.png');
+
 const openDkpItem = LC.parser.parseOpenDkpJson({
   ItemID: 42, ItemName: 'Casing Test', Slot: 'Head', HP: 100, Stats: { AC: 50 },
 });
@@ -275,6 +293,11 @@ assert.deepEqual(JSON.parse(JSON.stringify(inventory.map(({ name, id, slot }) =>
 assert.deepEqual(JSON.parse(JSON.stringify(options.parseInventoryMetadata([
   'Character: Aurelia',
   'Class: Warrior',
+  'Level 125',
+].join('\n')))), { name: 'Aurelia', cls: 'Warrior', level: '125' });
+assert.deepEqual(JSON.parse(JSON.stringify(options.parseInventoryMetadata([
+  'Character Aurelia',
+  'Class Warrior',
   'Level 125',
 ].join('\n')))), { name: 'Aurelia', cls: 'Warrior', level: '125' });
 

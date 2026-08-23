@@ -83,7 +83,7 @@
       const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
       if (num != null && !isNaN(num)) stats[key] = num;
     }
-    return { id: item.id || '', name: item.name || '', slot: item.slot || '', stats };
+    return { id: item.id || '', name: item.name || '', icon: item.icon || '', slot: item.slot || '', stats };
   }
 
   async function getSelectedProfile() {

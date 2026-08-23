@@ -218,6 +218,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               ...item,
               id: debug.source === 'name' ? loaded.id : (item.id || loaded.id),
               name: item.name || loaded.name,
+              icon: item.icon || loaded.icon || '',
               slot: item.slot || loaded.slot,
               stats: loaded.stats || item.stats,
             },

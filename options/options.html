@@ -68,12 +68,12 @@
         <p class="hint">
           In-game, run <code>/output inventory</code>. This saves a file named
           <code>[name]_[server]-Inventory.txt</code> to your EQ folder. Select it below
-          to create a character from your worn equipment. Character name, class, and level are filled when the export includes those fields.
+          to create a character from your worn equipment. The export contains item data and the character name comes from the filename; class and level must be entered manually or imported from a RaidLoot profile.
         </p>
         <div class="import-controls">
           <input type="file" id="inventory-file" accept=".txt,text/plain">
           <label class="checkbox-label">
-            <input type="checkbox" id="fetch-stats" checked> Fetch item stats during EQ import (optional; missing stats load when comparing)
+            <input type="checkbox" id="fetch-stats" checked> Fetch item stats and icons during EQ import (optional; missing stats load when comparing)
           </label>
           <div id="import-status" class="import-status"></div>
         </div>
