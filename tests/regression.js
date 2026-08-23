@@ -39,21 +39,22 @@ const mixedStats = LC.diff.diffItems(
 assert.equal(mixedStats.comparable, true);
 assert.equal(mixedStats.score, -50);
 assert.equal(mixedStats.diffs.AC.delta, -10);
-const weaponRatioFormula = LC.diff.SCORE_FORMULAS.find((item) => item.key === 'weaponratio');
+const weaponFormula = LC.diff.SCORE_FORMULAS.find((item) => item.key === 'ac10hp');
 for (const slot of ['Primary', 'Secondary', 'Range']) {
   const weaponUpgrade = LC.diff.diffItems(
-    { slot, stats: { Damage: { num: 100 }, Delay: { num: 20 } } },
-    { slot, stats: { Damage: { num: 80 }, Delay: { num: 20 } } },
-    weaponRatioFormula,
+    { slot, stats: { Damage: { num: 100 }, Delay: { num: 20 }, HP: { num: 200 } } },
+    { slot, stats: { Damage: { num: 80 }, Delay: { num: 20 }, HP: { num: 100 } } },
+    weaponFormula,
   );
   assert.equal(weaponUpgrade.comparable, true);
-  assert.equal(weaponUpgrade.score, 1);
+  assert.equal(weaponUpgrade.score, 100);
+  assert.equal(weaponUpgrade.weaponRatioDelta, 1);
 }
 assert.equal(LC.diff.diffItems(
   { slot: 'Head', stats: { Damage: { num: 100 }, Delay: { num: 20 } } },
   { slot: 'Head', stats: { Damage: { num: 80 }, Delay: { num: 20 } } },
-  weaponRatioFormula,
-).comparable, false);
+  weaponFormula,
+).weaponRatioDelta, null);
 const dualSlotKey = LC.slots.canonicalSlot('Primary, Secondary');
 assert.equal(dualSlotKey.key, 'primary');
 assert.equal(dualSlotKey.paired, false);
@@ -61,10 +62,50 @@ assert.equal(dualSlotKey.keys.join(','), 'primary,secondary');
 const dualSlotUpgrade = LC.diff.diffItems(
   { slot: 'Primary, Secondary', stats: { Damage: { num: 110 }, Delay: { num: 19 } } },
   { slot: 'Secondary', stats: { Damage: { num: 100 }, Delay: { num: 20 } } },
-  weaponRatioFormula,
+  weaponFormula,
 );
 assert.equal(dualSlotUpgrade.comparable, true);
-assert.equal(dualSlotUpgrade.score > 0, true);
+assert.equal(dualSlotUpgrade.weaponRatioDelta > 0, true);
+const dualWeapon = LC.parser.parseOpenDkpJson({
+  ItemID: 43, ItemName: 'Dual Weapon', Slot: 'Primary, Secondary', Class: 'BST', DMG: 110, Delay: 19, HP: 200,
+});
+const dualProfile = {
+  cls: 'Beastlord',
+  items: [
+    { slot: 'Primary', stats: { Damage: 100, Delay: 20, HP: 100 } },
+    { slot: 'Secondary', stats: { Damage: 90, Delay: 20, HP: 100 } },
+  ],
+};
+const dualComparison = LC.diff.compareCandidate(dualProfile, dualWeapon, weaponFormula);
+assert.equal(dualComparison.eligible, true);
+assert.equal(dualComparison.rows.length, 2);
+assert.equal(LC.diff.summarizeComparisons(dualComparison).comparable, true);
+const twoHand = LC.parser.parseOpenDkpJson({
+  ItemID: 44, ItemName: 'Two Handed Weapon', Slot: 'Primary', Class: 'ALL', DMG: 220, Delay: 40, HP: 300,
+});
+const twoHandProfile = { cls: 'Warrior', items: [{ slot: 'Primary', stats: { Damage: 200, Delay: 40, HP: 100 } }] };
+assert.equal(LC.diff.compareCandidate(twoHandProfile, dualWeapon, weaponFormula).eligible, false);
+assert.equal(LC.diff.compareCandidate(twoHandProfile, twoHand, weaponFormula).rows.length, 1);
+assert.equal(LC.parser.normalizeClass('Beastlord'), 'BST');
+assert.equal(LC.parser.classMatches('Warrior', ['BST']), false);
+assert.equal(LC.parser.classMatches('Warrior', ['ALL']), true);
+const raidClasses = ['item', 'Primary', 'Secondary'];
+raidClasses.contains = (value) => raidClasses.includes(value);
+const parsedRaidWeapon = LC.parser.parseRaidlootNode({
+  dataset: { id: '45' },
+  textContent: 'Class: BST',
+  classList: raidClasses,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+});
+assert.equal(parsedRaidWeapon.slotKey.keys.join(','), 'primary,secondary');
+assert.equal(parsedRaidWeapon.classes.join(','), 'BST');
+const parsedOpenDkpDom = LC.parser.parseOpenDkpDom({
+  textContent: 'Dual Weapon\nSlot: Primary, Secondary\nClass: Beastlord\nAC: 10',
+  querySelector: () => null,
+});
+assert.equal(parsedOpenDkpDom.slotKey.keys.join(','), 'primary,secondary');
+assert.equal(parsedOpenDkpDom.classes.join(','), 'BST');
 assert.equal(LC.diff.bestComparisonTarget(
   { stats: { HP: { num: 100 } } },
   [{ stats: { HP: { num: 50 } } }, { stats: {} }],

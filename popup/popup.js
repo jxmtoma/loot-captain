@@ -15,7 +15,6 @@ const SCORE_FORMULAS = [
   { key: 'mana', label: 'Mana' },
   { key: 'end', label: 'Endurance' },
   { key: 'endregen', label: 'End Regen' },
-  { key: 'weaponratio', label: 'Weapon ratio (Damage/Delay)' },
   { key: 'netpos', label: 'Net positive' },
 ];
 const DEFAULT_FORMULA_KEY = 'ac10hp';
@@ -26,7 +25,7 @@ async function load() {
   const res = await chrome.storage.local.get([PROFILES_KEY, SELECTED_KEY, SCORE_KEY]);
   const profiles = res[PROFILES_KEY] || {};
   const selectedId = res[SELECTED_KEY] || '';
-  const formulaKey = res[SCORE_KEY] || DEFAULT_FORMULA_KEY;
+  const formulaKey = SCORE_FORMULAS.some((formula) => formula.key === res[SCORE_KEY]) ? res[SCORE_KEY] : DEFAULT_FORMULA_KEY;
 
   // Profile select
   const profileSel = $('#profile-select');

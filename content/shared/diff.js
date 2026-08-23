@@ -31,7 +31,6 @@
     { key: 'mana', label: 'Mana', terms: { MANA: 1 } },
     { key: 'end', label: 'Endurance', terms: { END: 1 } },
     { key: 'endregen', label: 'End Regen', terms: { EndRegen: 1 } },
-    { key: 'weaponratio', label: 'Weapon ratio (Damage/Delay)', type: 'weaponratio' },
     { key: 'netpos', label: 'Net positive', terms: '__POSITIVE__' },
   ];
   const DEFAULT_FORMULA_KEY = 'ac10hp';
@@ -70,17 +69,20 @@
     return damage != null && delay > 0 ? damage / delay : null;
   }
 
+  function weaponType(item) {
+    const normalized = item && (item.slotKey || LC.slots.canonicalSlot(item.slot));
+    const keys = normalized && (normalized.keys || [normalized.key]);
+    if (!keys || weaponRatio(item) == null) return null;
+    if (keys.includes('range')) return 'range';
+    if (keys.includes('primary') && keys.includes('secondary')) return 'one-hand';
+    if (keys.length === 1 && keys[0] === 'primary') return 'two-hand';
+    return null;
+  }
+
   function diffItems(cand, worn, formula) {
     const f = formula || SCORE_FORMULAS[0];
     const comparable = hasNumericStats(cand) && (worn == null || hasNumericStats(worn));
     if (!comparable) return { diffs: {}, score: 0, worn, formula: f, comparable: false };
-    if (f.type === 'weaponratio') {
-      const candRatio = weaponRatio(cand);
-      const wornRatio = worn && weaponRatio(worn);
-      if (candRatio == null || (worn && wornRatio == null)) {
-        return { diffs: {}, score: 0, worn, formula: f, comparable: false };
-      }
-    }
     const diffs = {};
     const allKeys = new Set([
       ...Object.keys(cand.stats || {}),
@@ -99,9 +101,7 @@
       };
     }
     let score = 0;
-    if (f.type === 'weaponratio') {
-      score = weaponRatio(cand) - (worn ? weaponRatio(worn) : 0);
-    } else if (f.terms === '__POSITIVE__') {
+    if (f.terms === '__POSITIVE__') {
       for (const k of Object.keys(diffs)) if (diffs[k].positive) score += diffs[k].delta;
     } else {
       for (const k of Object.keys(f.terms)) {
@@ -109,7 +109,10 @@
         if (d) score += d.delta * f.terms[k];
       }
     }
-    return { diffs, score, worn, formula: f, comparable: true };
+    const candRatio = weaponRatio(cand);
+    const wornRatio = worn && weaponRatio(worn);
+    const weaponRatioDelta = candRatio != null && (!worn || wornRatio != null) ? candRatio - (wornRatio || 0) : null;
+    return { diffs, score, weaponRatioDelta, worn, formula: f, comparable: true };
   }
 
   function bestComparisonTarget(cand, wornCandidates, formula) {
@@ -126,6 +129,44 @@
     return best;
   }
 
+  function compareCandidate(profile, cand, formula) {
+    if (!profile || !cand || !cand.slotKey) return { eligible: false, rows: [] };
+    if (LC.parser && !LC.parser.classMatches(profile.cls, cand.classes)) return { eligible: false, rows: [] };
+    const type = weaponType(cand);
+    let slotKeys;
+    if (type === 'one-hand' || type === 'two-hand') {
+      const secondary = findWornInSlot(profile, LC.slots.canonicalSlot('secondary'));
+      const currentType = secondary.length ? 'one-hand' : 'two-hand';
+      if (type !== currentType) return { eligible: false, rows: [] };
+      slotKeys = type === 'one-hand' ? ['primary', 'secondary'] : ['primary'];
+    } else if (type === 'range') {
+      slotKeys = ['range'];
+    } else {
+      const keys = cand.slotKey.keys || [cand.slotKey.key];
+      slotKeys = cand.slotKey.paired ? [cand.slotKey.key] : keys;
+    }
+    const rows = slotKeys.map((key) => {
+      const slotKey = typeof key === 'string' ? LC.slots.canonicalSlot(key) : key;
+      const worn = findWornInSlot(profile, slotKey);
+      const target = bestComparisonTarget(cand, worn, formula);
+      return { slotKey, worn, target, diff: target ? diffItems(cand, target, formula) : null };
+    });
+    return { eligible: true, rows };
+  }
+
+  function summarizeComparisons(comparison) {
+    const rows = comparison.rows || [];
+    const comparable = comparison.eligible && rows.length > 0 && rows.every((row) => row.diff && row.diff.comparable);
+    const scores = comparable ? rows.map((row) => row.diff.score) : [];
+    return {
+      comparable,
+      hasWorn: rows.some((row) => row.worn && row.worn.length),
+      score: scores.reduce((sum, score) => sum + score, 0),
+      state: scores.length && scores.every((score) => score < 0) ? 'downgrade' : scores.some((score) => score > 0) ? 'upgrade' : 'sidegrade',
+      rows,
+    };
+  }
+
   LC.diff = {
     STAT_ORDER,
     POSITIVE_STATS,
@@ -135,5 +176,8 @@
     hasNumericStats,
     diffItems,
     bestComparisonTarget,
+    compareCandidate,
+    summarizeComparisons,
+    weaponType,
   };
 })();

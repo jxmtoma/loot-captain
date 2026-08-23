@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const LC = window.LootCaptain = window.LootCaptain || {};
-  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-compare-row, .lc-wish-meta, .lc-stat-indicator, .lc-stat-line, .lc-statified';
+  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-compare-panels, .lc-compare-row, .lc-wish-meta, .lc-stat-indicator, .lc-stat-line, .lc-statified';
   const CONSENT_KEY = 'consentVersion';
   const CONSENT_VERSION = 1;
   let started = false;
@@ -45,43 +45,34 @@
       host.prepend(badge);
       return;
     }
-    const worn = LC.diff.findWornInSlot(LC.currentProfile, cand.slotKey);
-    if (!worn.length) {
+    const f = LC.currentFormula;
+    const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
+    if (!comparison.eligible) return;
+    const summary = LC.diff.summarizeComparisons(comparison);
+    if (!summary.hasWorn) {
       badge.dataset.state = 'empty';
       badge.textContent = 'empty slot';
       badge.title = 'No worn item in slot ' + cand.slotKey.key;
       host.prepend(badge);
       return;
     }
-    const f = LC.currentFormula;
-    const target = LC.diff.bestComparisonTarget(cand, worn, f);
-    if (!target) {
+    if (!summary.comparable) {
       badge.textContent = '?';
       badge.title = 'Item stats are unresolved; no comparison is available';
       host.prepend(badge);
       return;
     }
-    const diff = LC.diff.diffItems(cand, target, f);
-    if (!diff.comparable) {
-      badge.textContent = '?';
-      badge.title = 'Item stats are unresolved; no comparison is available';
-      host.prepend(badge);
-      return;
-    }
-    let state;
-    if (diff.score > 0) state = 'upgrade';
-    else if (diff.score < 0) state = 'downgrade';
-    else state = 'sidegrade';
+    const state = summary.state;
     badge.dataset.state = state;
-    const arrow = state === 'upgrade' ? 'up' : state === 'downgrade' ? 'dn' : 'eq';
-    badge.textContent = arrow + ' ' + LC.ui.fmtDelta(diff.score) + ' ' + f.label;
-    badge.title = 'vs ' + target.name + '  (' + f.label + ' score)  -- click for full diff';
+    badge.textContent = LC.ui.comparisonBadgeText(summary, f);
+    badge.title = 'Compare against ' + comparison.rows.map((row) => row.target && row.target.name).filter(Boolean).join(' / ') +
+      ' (' + f.label + ' and weapon ratio where available) -- click for full diff';
     if (attachPanel) badge.addEventListener('click', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      const existing = host.querySelector(':scope > .lc-compare-panel');
+      const existing = host.querySelector(':scope > .lc-compare-panel, :scope > .lc-compare-panels');
       if (existing) { existing.remove(); return; }
-      host.appendChild(LC.ui.buildComparePanel(cand, target, diff));
+      host.appendChild(LC.ui.buildComparePanels(cand, comparison.rows));
     });
     host.prepend(badge);
   }
@@ -108,18 +99,15 @@
           next.remove(); return;
         }
         if (!LC.currentProfile) return;
-        const worn = LC.diff.findWornInSlot(LC.currentProfile, cand.slotKey);
-        if (!worn.length) return;
         const f = LC.currentFormula;
-        const target = LC.diff.bestComparisonTarget(cand, worn, f);
-        if (!target) return;
-        const diff = LC.diff.diffItems(cand, target, f);
-        if (!diff.comparable) return;
+        const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
+        const summary = LC.diff.summarizeComparisons(comparison);
+        if (!comparison.eligible || !summary.comparable) return;
         const newRow = document.createElement('tr');
         newRow.className = 'lc-compare-row';
         const td = document.createElement('td');
         td.colSpan = tr.cells.length;
-        td.appendChild(LC.ui.buildComparePanel(cand, target, diff));
+        td.appendChild(LC.ui.buildComparePanels(cand, comparison.rows));
         newRow.appendChild(td);
         tr.parentNode.insertBefore(newRow, tr.nextSibling);
       }, true);
@@ -201,8 +189,13 @@
         badge.textContent = '?';
         badge.title = 'Unknown slot for this item';
       } else {
-        const worn = LC.diff.findWornInSlot(LC.currentProfile, cand.slotKey);
-        if (!worn.length) {
+        const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
+        if (!comparison.eligible) {
+          rows.push({ icon, sortKey });
+          continue;
+        }
+        const summary = LC.diff.summarizeComparisons(comparison);
+        if (!summary.hasWorn) {
           const emptyDiff = LC.diff.diffItems(cand, null, f);
           if (!emptyDiff.comparable) {
             badge.dataset.state = 'nomatch';
@@ -214,11 +207,11 @@
           }
           sortKey = emptyDiff.score;
           badge.dataset.state = 'empty';
-          badge.textContent = 'empty ' + LC.ui.fmtDelta(emptyDiff.score) + ' ' + f.label;
+          const emptyState = emptyDiff.score > 0 ? 'upgrade' : emptyDiff.score < 0 ? 'downgrade' : 'sidegrade';
+          badge.textContent = 'empty ' + LC.ui.comparisonBadgeText({ state: emptyState, rows: [{ slotKey: cand.slotKey, diff: emptyDiff }] }, f);
           badge.title = 'No worn item in slot ' + cand.slotKey.key + '. Score is the raw item value.';
         } else {
-          const target = LC.diff.bestComparisonTarget(cand, worn, f);
-          if (!target) {
+          if (!summary.comparable) {
             badge.dataset.state = 'nomatch';
             badge.textContent = '?';
             badge.title = 'Item stats are unresolved; no comparison is available';
@@ -226,24 +219,12 @@
             rows.push({ icon, sortKey });
             continue;
           }
-          const diff = LC.diff.diffItems(cand, target, f);
-          if (!diff.comparable) {
-            badge.dataset.state = 'nomatch';
-            badge.textContent = '?';
-            badge.title = 'Item stats are unresolved; no comparison is available';
-            meta.appendChild(badge);
-            rows.push({ icon, sortKey });
-            continue;
-          }
-          sortKey = diff.score;
-          let state;
-          if (diff.score > 0) state = 'upgrade';
-          else if (diff.score < 0) state = 'downgrade';
-          else state = 'sidegrade';
+          sortKey = summary.score;
+          const state = summary.state;
           badge.dataset.state = state;
-          const arrow = state === 'upgrade' ? 'up' : state === 'downgrade' ? 'dn' : 'eq';
-          badge.textContent = arrow + ' ' + LC.ui.fmtDelta(diff.score) + ' ' + f.label;
-          badge.title = 'vs ' + target.name + ' (' + f.label + ' score) - click icon to expand details';
+          badge.textContent = LC.ui.comparisonBadgeText(summary, f);
+          badge.title = 'Compared with ' + comparison.rows.map((row) => row.target && row.target.name).filter(Boolean).join(' / ') +
+            ' (' + f.label + ' and weapon ratio where available)';
         }
       }
       meta.appendChild(badge);
@@ -255,7 +236,7 @@
 
   // ---------- Rerun ----------
   function rerunPageAnnotations(clearPanels) {
-    const selectors = ['.lc-badge', '.lc-compare-row', '.lc-wish-meta', '.lc-stat-indicator'];
+    const selectors = ['.lc-badge', '.lc-compare-row', '.lc-compare-panels', '.lc-wish-meta', '.lc-stat-indicator'];
     if (clearPanels) selectors.push('.lc-compare-panel');
     document.querySelectorAll(selectors.join(', '))
       .forEach((el) => el.remove());

@@ -22,6 +22,14 @@
     regen: 'Regen', 'hp regen': 'Regen', manaregen: 'ManaRegen', 'mana regen': 'ManaRegen',
     endregen: 'EndRegen', 'end regen': 'EndRegen',
   };
+  const CLASS_ALIASES = {
+    all: 'ALL', warrior: 'WAR', war: 'WAR', cleric: 'CLR', clr: 'CLR',
+    paladin: 'PAL', pal: 'PAL', ranger: 'RNG', rng: 'RNG', shadowknight: 'SHD', shd: 'SHD',
+    druid: 'DRU', dru: 'DRU', monk: 'MNK', mnk: 'MNK', bard: 'BRD', brd: 'BRD',
+    rogue: 'ROG', rog: 'ROG', shaman: 'SHM', shm: 'SHM', necromancer: 'NEC', nec: 'NEC',
+    wizard: 'WIZ', wiz: 'WIZ', magician: 'MAG', mag: 'MAG', enchanter: 'ENC', enc: 'ENC',
+    beastlord: 'BST', bst: 'BST', berserker: 'BER', ber: 'BER',
+  };
 
   const HEROIC_STATS = { STR: 'HStr', STA: 'HSta', AGI: 'HAgi', DEX: 'HDex', INT: 'HInt', WIS: 'HWis', CHA: 'HCha' };
 
@@ -34,6 +42,34 @@
     const out = {};
     for (const key of Object.keys(stats || {})) out[canonicalStat(key)] = stats[key];
     return out;
+  }
+
+  function normalizeClass(value) {
+    const key = String(value || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+    return CLASS_ALIASES[key] || '';
+  }
+
+  function parseClasses(value) {
+    if (Array.isArray(value)) return [...new Set(value.flatMap(parseClasses))];
+    const text = String(value || '').trim();
+    if (!text) return [];
+    const direct = normalizeClass(text);
+    if (direct) return [direct];
+    return [...new Set(text.split(/[,;|/]+/).flatMap((part) => {
+      const normalized = normalizeClass(part);
+      return normalized ? [normalized] : part.split(/\s+/).map(normalizeClass).filter(Boolean);
+    }))];
+  }
+
+  function classesFromText(text) {
+    const line = String(text || '').split(/\r?\n/).find((value) => /^\s*class(?:es)?\s*:/i.test(value));
+    return parseClasses(line && line.replace(/^\s*class(?:es)?\s*:\s*/i, ''));
+  }
+
+  function classMatches(characterClass, allowedClasses) {
+    if (!Array.isArray(allowedClasses) || !allowedClasses.length || allowedClasses.includes('ALL')) return true;
+    const normalized = normalizeClass(characterClass);
+    return !normalized || allowedClasses.includes(normalized);
   }
 
   function getField(obj, name) {
@@ -82,20 +118,22 @@
     }
     let slot = null;
     if (node.classList) {
+      const slotClasses = [];
       for (const c of node.classList) {
         if (c === 'item' || c === 'augment' || /^augment\d+$/.test(c)) continue;
         if (c === 'None') continue;
         if (c.indexOf('rlc-') === 0 || c.indexOf('lc-') === 0) continue;
-        slot = c;
-        break;
+        if (LC.slots.canonicalSlot(c)) slotClasses.push(c);
       }
+      if (slotClasses.length) slot = slotClasses.join(', ');
     }
     if (!slot && stats.Slot) slot = stats.Slot.raw;
+    const classes = parseClasses((stats.Class && stats.Class.raw) || classesFromText(node.textContent));
     const isAugment = (node.classList && node.classList.contains('augment')) ||
       /^aug_/i.test((stats.Type && stats.Type.raw) || '');
     const isWishlist = !!node.querySelector('.wish-remove');
     const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), stats, isAugment, isWishlist, isTotalsRow };
+    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), classes, stats, isAugment, isWishlist, isTotalsRow };
   }
 
   // ---------- openDKP JSON parsing ----------
@@ -104,6 +142,13 @@
   function parseOpenDkpJson(obj) {
     if (!obj) return null;
     const stats = {};
+    const nestedStats = getField(obj, 'stats');
+    let classValue = getField(obj, 'classes');
+    if (classValue == null) classValue = getField(obj, 'class');
+    if (classValue == null && nestedStats && typeof nestedStats === 'object') {
+      classValue = getField(nestedStats, 'classes');
+      if (classValue == null) classValue = getField(nestedStats, 'class');
+    }
     // Common stat field patterns in openDKP item JSON.
     const statFields = [
       'ac', 'hp', 'mana', 'end', 'atk',
@@ -129,7 +174,6 @@
       stats[label] = { raw: String(v), num: parseFloat(v) };
     }
     // openDKP may nest stats under an object.
-    const nestedStats = getField(obj, 'stats');
     if (nestedStats && typeof nestedStats === 'object') {
       for (const k of Object.keys(nestedStats)) {
         const v = nestedStats[k];
@@ -142,11 +186,13 @@
     const slot = getField(obj, 'slot') || getField(obj, 'slotName') || getField(obj, 'slot_name') || getField(obj, 'equipSlot') || '';
     const rawId = getField(obj, 'id') != null ? getField(obj, 'id') : getField(obj, 'itemId');
     const id = rawId != null ? String(rawId) : '';
+    const classes = parseClasses(classValue);
     return {
       id,
       name,
       slot,
       slotKey: LC.slots.canonicalSlot(slot),
+      classes,
       stats,
       isAugment: false,
       isWishlist: false,
@@ -174,6 +220,7 @@
       if (marker > 0) name = name.slice(0, marker).trim();
     }
     const stats = {};
+    const classes = classesFromText(text);
     // Look for "Label: value [+heroic]" patterns from the EQ-style hover card.
     const labelRe = /([A-Za-z][A-Za-z ]{1,30}?):\s*(-?\d+(?:\.\d+)?)(?:\s+([+-]\d+(?:\.\d+)?))?/g;
     let m;
@@ -187,9 +234,10 @@
     }
     // Slot detection from common patterns and the plain slot line in hover cards.
     let slot = '';
-    const slotRe = /(Slot|Equip Slot|EquipSlot)\s*:?\s*([A-Za-z -]+)/i;
-    const sm = text.match(slotRe);
-    if (sm) slot = sm[2].trim();
+    const slotLine = lines.find((line) => /^\s*(?:Slot|Equip Slot|EquipSlot)\s*:/i.test(line));
+    const sm = (slotLine && slotLine.match(/^(?:Slot|Equip Slot|EquipSlot)\s*:\s*([A-Za-z ,/]+)$/i)) ||
+      text.match(/(?:Slot|Equip Slot|EquipSlot)\s*:\s*([A-Za-z ,/]+?)(?=\s+(?:Class|Race|Size|AC|HP|MANA|END|DMG|Damage|Delay|Ratio|Required)\s*:|$)/i);
+    if (sm) slot = sm[1].trim();
     if (!slot) {
       const slotNames = ['Charm', 'Ear', 'Head', 'Face', 'Neck', 'Shoulders', 'Shoulder', 'Arms', 'Arm', 'Back', 'Wrist', 'Range', 'Hands', 'Hand', 'Primary', 'Secondary', 'Finger', 'Fingers', 'Chest', 'Legs', 'Leg', 'Feet', 'Foot', 'Waist', 'Power Source'];
       slot = lines.find((line) => slotNames.some((candidate) => line.toLowerCase() === candidate.toLowerCase())) || '';
@@ -203,6 +251,7 @@
       name,
       slot,
       slotKey: LC.slots.canonicalSlot(slot),
+      classes,
       stats,
       isAugment: false,
       isWishlist: false,
@@ -225,5 +274,8 @@
     parseOpenDkpTooltip,
     canonicalStat,
     normalizeStats,
+    normalizeClass,
+    parseClasses,
+    classMatches,
   };
 })();

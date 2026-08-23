@@ -16,7 +16,6 @@ const SCORE_FORMULAS = [
   { key: 'mana', label: 'Mana' },
   { key: 'end', label: 'Endurance' },
   { key: 'endregen', label: 'End Regen' },
-  { key: 'weaponratio', label: 'Weapon ratio (Damage/Delay)' },
   { key: 'netpos', label: 'Net positive' },
 ];
 
@@ -39,7 +38,7 @@ async function loadAll() {
   const res = await chrome.storage.local.get([PROFILES_KEY, SELECTED_KEY, SCORE_KEY]);
   profiles = res[PROFILES_KEY] || {};
   selectedId = res[SELECTED_KEY] || '';
-  scoreFormula = res[SCORE_KEY] || DEFAULT_FORMULA_KEY;
+  scoreFormula = SCORE_FORMULAS.some((formula) => formula.key === res[SCORE_KEY]) ? res[SCORE_KEY] : DEFAULT_FORMULA_KEY;
 }
 async function saveAll() {
   await chrome.storage.local.set({ [PROFILES_KEY]: profiles, [SELECTED_KEY]: selectedId, [SCORE_KEY]: scoreFormula });

@@ -91,13 +91,13 @@
   }
 
   // ---------- Compare panel ----------
-  function buildComparePanel(cand, worn, diff) {
+  function buildComparePanel(cand, worn, diff, slotLabel) {
     const div = document.createElement('div');
     div.className = 'lc-compare-panel';
     const head = document.createElement('div');
     head.className = 'lc-head';
     if (!worn) {
-      head.textContent = 'No worn item in slot ' + ((cand.slotKey && cand.slotKey.key) || '?') + '.';
+      head.textContent = 'No worn item in ' + (slotLabel || ((cand.slotKey && cand.slotKey.key) || '?')) + '.';
       div.appendChild(head);
       return div;
     }
@@ -136,16 +136,41 @@
     table.appendChild(tbody);
     const scoreCls = diff.score > 0 ? 'lc-pos' : (diff.score < 0 ? 'lc-neg' : 'lc-zero');
     const fLabel = (diff.formula && diff.formula.label) || 'score';
+    const ratio = diff.weaponRatioDelta == null ? '' : '; Weapon ratio delta: ' + fmtDelta(diff.weaponRatioDelta);
     head.appendChild(document.createTextNode(
-      (worn.name || ('#' + worn.id)) + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
+      (slotLabel ? slotLabel + ': ' : '') + (worn.name || ('#' + worn.id)) + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
     ));
     const score = document.createElement('span');
     score.className = scoreCls;
-    score.textContent = '(' + fLabel + ' delta: ' + fmtDelta(diff.score) + ')';
+    score.textContent = '(' + fLabel + ' delta: ' + fmtDelta(diff.score) + ratio + ')';
     head.appendChild(score);
     div.appendChild(head);
     div.appendChild(table);
     return div;
+  }
+
+  function buildComparePanels(cand, rows) {
+    const wrap = document.createElement('div');
+    wrap.className = 'lc-compare-panels';
+    for (const row of rows) {
+      const label = row.slotKey && row.slotKey.key;
+      if (row.diff && row.diff.comparable) wrap.appendChild(buildComparePanel(cand, row.target, row.diff, label));
+    }
+    return wrap;
+  }
+
+  function comparisonBadgeText(summary, formula) {
+    const scoreText = summary.rows
+      .filter((row) => row.diff && row.diff.comparable)
+      .map((row) => (summary.rows.length > 1 && row.slotKey && row.slotKey.key ? row.slotKey.key + ' ' : '') + fmtDelta(row.diff.score))
+      .join(' / ');
+    const ratioText = summary.rows
+      .filter((row) => row.diff && row.diff.weaponRatioDelta != null)
+      .map((row) => (row.slotKey && row.slotKey.key ? row.slotKey.key + ' ' : '') + fmtDelta(row.diff.weaponRatioDelta))
+      .join(' / ');
+    const arrow = summary.state === 'upgrade' ? 'up' : summary.state === 'downgrade' ? 'dn' : 'eq';
+    return arrow + ' ' + scoreText + ' ' + formula.label +
+      (ratioText ? ' · ratio ' + ratioText : '');
   }
 
   // ---------- Stat indicators ----------
@@ -154,12 +179,11 @@
   function addStatIndicators(container, cand, profile, formula) {
     container.querySelectorAll('.lc-stat-indicator').forEach((el) => el.remove());
     if (!profile || !cand || !cand.slotKey) return;
-    const wornList = LC.diff.findWornInSlot(profile, cand.slotKey);
-    if (!wornList.length) return;
-    const worn = LC.diff.bestComparisonTarget(cand, wornList, formula);
-    if (!worn) return;
-    const diff = LC.diff.diffItems(cand, worn, formula);
-    if (!diff.comparable) return;
+    const comparison = LC.diff.compareCandidate(profile, cand, formula);
+    const row = comparison.rows.find((item) => item.diff && item.diff.comparable);
+    if (!comparison.eligible || !row) return;
+    const worn = row.target;
+    const diff = row.diff;
     const lines = container.querySelectorAll('.lc-stat-line');
     for (const line of lines) {
       const lbl = line.querySelector(':scope > label');
@@ -232,6 +256,8 @@
     fmtDelta,
     buildBadge,
     buildComparePanel,
+    buildComparePanels,
+    comparisonBadgeText,
     addStatIndicators,
     statifyItemDetail,
   };
