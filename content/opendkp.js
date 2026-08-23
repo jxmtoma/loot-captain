@@ -127,19 +127,23 @@
       if (prepend) host.prepend(badge); else host.appendChild(badge);
       return;
     }
-    const state = summary.state;
-    badge.dataset.state = state;
-    badge.textContent = LC.ui.comparisonBadgeText(summary, f);
-    badge.title = 'Compared with ' + comparison.rows.map((row) => row.target && row.target.name).filter(Boolean).join(' / ') +
-      ' (' + f.label + ' and weapon ratio where available) -- click for full diff';
-    badge.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const existing = host.querySelector(':scope > .lc-compare-panel, :scope > .lc-compare-panels');
-      if (existing) { existing.remove(); return; }
-      host.appendChild(LC.ui.buildComparePanels(cand, comparison.rows));
-    });
-    if (prepend) host.prepend(badge); else host.appendChild(badge);
+    const compact = comparison.rows.length > 1 || LC.diff.weaponType(cand) != null;
+    const badges = [];
+    for (const row of comparison.rows) {
+      if (!row.diff || !row.diff.comparable) continue;
+      const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
+        LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
+      rowBadge.dataset.lcSlot = row.slotKey && row.slotKey.key || '';
+      rowBadge.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const existing = host.querySelector(':scope > .lc-compare-panel');
+        if (existing) existing.remove();
+        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key));
+      });
+      badges.push(rowBadge);
+    }
+    if (prepend) host.prepend(...badges); else host.append(...badges);
   }
 
   // ---------- Annotation ----------
@@ -261,7 +265,7 @@
       if (event.target.closest && event.target.closest('a[href*="/items/"]')) scheduleAnnotate(true);
     }, true);
     window.addEventListener('hashchange', () => {
-      document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-compare-panels').forEach((el) => el.remove());
+      document.querySelectorAll('.lc-badge, .lc-compare-panel').forEach((el) => el.remove());
       scheduleAnnotate();
     });
   }
@@ -278,7 +282,7 @@
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     // Clear badges and re-annotate
-    document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-compare-panels').forEach((el) => el.remove());
+    document.querySelectorAll('.lc-badge, .lc-compare-panel').forEach((el) => el.remove());
     annotatePage();
   });
 

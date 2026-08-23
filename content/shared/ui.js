@@ -149,28 +149,27 @@
     return div;
   }
 
-  function buildComparePanels(cand, rows) {
-    const wrap = document.createElement('div');
-    wrap.className = 'lc-compare-panels';
-    for (const row of rows) {
-      const label = row.slotKey && row.slotKey.key;
-      if (row.diff && row.diff.comparable) wrap.appendChild(buildComparePanel(cand, row.target, row.diff, label));
-    }
-    return wrap;
+  function slotShort(slotKey) {
+    return { primary: 'P', secondary: 'S', range: 'R' }[slotKey && slotKey.key] || '';
   }
 
-  function comparisonBadgeText(summary, formula) {
-    const scoreText = summary.rows
-      .filter((row) => row.diff && row.diff.comparable)
-      .map((row) => (summary.rows.length > 1 && row.slotKey && row.slotKey.key ? row.slotKey.key + ' ' : '') + fmtDelta(row.diff.score))
-      .join(' / ');
-    const ratioText = summary.rows
-      .filter((row) => row.diff && row.diff.weaponRatioDelta != null)
-      .map((row) => (row.slotKey && row.slotKey.key ? row.slotKey.key + ' ' : '') + fmtDelta(row.diff.weaponRatioDelta))
-      .join(' / ');
-    const arrow = summary.state === 'upgrade' ? 'up' : summary.state === 'downgrade' ? 'dn' : 'eq';
-    return arrow + ' ' + scoreText + ' ' + formula.label +
-      (ratioText ? ' · ratio ' + ratioText : '');
+  function comparisonBadgeText(row, formula, compact) {
+    const diff = row.diff;
+    const arrow = diff.score > 0 ? 'up' : diff.score < 0 ? 'dn' : 'eq';
+    const slot = slotShort(row.slotKey);
+    if (compact) {
+      return [slot, arrow, fmtDelta(diff.score), diff.weaponRatioDelta == null ? formula.label : 'r ' + fmtDelta(diff.weaponRatioDelta)]
+        .filter(Boolean).join(' ');
+    }
+    return arrow + ' ' + fmtDelta(diff.score) + ' ' + formula.label +
+      (diff.weaponRatioDelta == null ? '' : ' · ratio ' + fmtDelta(diff.weaponRatioDelta));
+  }
+
+  function comparisonBadgeTitle(row, formula) {
+    const slot = row.slotKey && row.slotKey.key;
+    const ratio = row.diff.weaponRatioDelta == null ? '' : '; weapon ratio delta ' + fmtDelta(row.diff.weaponRatioDelta);
+    return (slot ? slot + ': ' : '') + 'vs ' + (row.target && (row.target.name || ('#' + row.target.id)) || 'worn item') +
+      ' (' + formula.label + ' delta ' + fmtDelta(row.diff.score) + ratio + ') -- click for full diff';
   }
 
   // ---------- Stat indicators ----------
@@ -256,8 +255,8 @@
     fmtDelta,
     buildBadge,
     buildComparePanel,
-    buildComparePanels,
     comparisonBadgeText,
+    comparisonBadgeTitle,
     addStatIndicators,
     statifyItemDetail,
   };

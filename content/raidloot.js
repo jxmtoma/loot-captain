@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const LC = window.LootCaptain = window.LootCaptain || {};
-  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-compare-panels, .lc-compare-row, .lc-wish-meta, .lc-stat-indicator, .lc-stat-line, .lc-statified';
+  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-compare-row, .lc-wish-meta, .lc-stat-indicator, .lc-stat-line, .lc-statified';
   const CONSENT_KEY = 'consentVersion';
   const CONSENT_VERSION = 1;
   let started = false;
@@ -62,19 +62,23 @@
       host.prepend(badge);
       return;
     }
-    const state = summary.state;
-    badge.dataset.state = state;
-    badge.textContent = LC.ui.comparisonBadgeText(summary, f);
-    badge.title = 'Compare against ' + comparison.rows.map((row) => row.target && row.target.name).filter(Boolean).join(' / ') +
-      ' (' + f.label + ' and weapon ratio where available) -- click for full diff';
-    if (attachPanel) badge.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const existing = host.querySelector(':scope > .lc-compare-panel, :scope > .lc-compare-panels');
-      if (existing) { existing.remove(); return; }
-      host.appendChild(LC.ui.buildComparePanels(cand, comparison.rows));
-    });
-    host.prepend(badge);
+    const compact = comparison.rows.length > 1 || LC.diff.weaponType(cand) != null;
+    const badges = [];
+    for (const row of comparison.rows) {
+      if (!row.diff || !row.diff.comparable) continue;
+      const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
+        LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
+      rowBadge.dataset.lcSlot = row.slotKey && row.slotKey.key || '';
+      if (attachPanel) rowBadge.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const existing = host.querySelector(':scope > .lc-compare-panel');
+        if (existing) existing.remove();
+        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key));
+      });
+      badges.push(rowBadge);
+    }
+    host.prepend(...badges);
   }
 
   function annotateSearchRow(tr) {
@@ -88,8 +92,9 @@
     const nameCell = nameAnchor ? nameAnchor.closest('td') : null;
     if (!nameCell) return;
     annotateItemElement(nameCell, cand, false);
-    const badge = nameCell.querySelector(':scope > .lc-badge');
-    if (badge && !badge.dataset.rewired) {
+    const badges = nameCell.querySelectorAll(':scope > .lc-badge');
+    badges.forEach((badge) => {
+      if (badge.dataset.rewired) return;
       badge.dataset.rewired = '1';
       badge.addEventListener('click', (ev) => {
         ev.preventDefault();
@@ -102,16 +107,17 @@
         const f = LC.currentFormula;
         const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
         const summary = LC.diff.summarizeComparisons(comparison);
-        if (!comparison.eligible || !summary.comparable) return;
+        const row = comparison.rows.find((item) => item.slotKey && item.slotKey.key === badge.dataset.lcSlot);
+        if (!comparison.eligible || !summary.comparable || !row) return;
         const newRow = document.createElement('tr');
         newRow.className = 'lc-compare-row';
         const td = document.createElement('td');
         td.colSpan = tr.cells.length;
-        td.appendChild(LC.ui.buildComparePanels(cand, comparison.rows));
+        td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key));
         newRow.appendChild(td);
         tr.parentNode.insertBefore(newRow, tr.nextSibling);
       }, true);
-    }
+    });
   }
 
   function annotateLinkedItemRows() {
@@ -207,8 +213,8 @@
           }
           sortKey = emptyDiff.score;
           badge.dataset.state = 'empty';
-          const emptyState = emptyDiff.score > 0 ? 'upgrade' : emptyDiff.score < 0 ? 'downgrade' : 'sidegrade';
-          badge.textContent = 'empty ' + LC.ui.comparisonBadgeText({ state: emptyState, rows: [{ slotKey: cand.slotKey, diff: emptyDiff }] }, f);
+          const emptyRow = { slotKey: cand.slotKey, diff: emptyDiff };
+          badge.textContent = 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null);
           badge.title = 'No worn item in slot ' + cand.slotKey.key + '. Score is the raw item value.';
         } else {
           if (!summary.comparable) {
@@ -220,11 +226,14 @@
             continue;
           }
           sortKey = summary.score;
-          const state = summary.state;
-          badge.dataset.state = state;
-          badge.textContent = LC.ui.comparisonBadgeText(summary, f);
-          badge.title = 'Compared with ' + comparison.rows.map((row) => row.target && row.target.name).filter(Boolean).join(' / ') +
-            ' (' + f.label + ' and weapon ratio where available)';
+          const compact = comparison.rows.length > 1 || LC.diff.weaponType(cand) != null;
+          for (const row of comparison.rows) {
+            const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
+              LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
+            meta.appendChild(rowBadge);
+          }
+          rows.push({ icon, sortKey });
+          continue;
         }
       }
       meta.appendChild(badge);
@@ -236,7 +245,7 @@
 
   // ---------- Rerun ----------
   function rerunPageAnnotations(clearPanels) {
-    const selectors = ['.lc-badge', '.lc-compare-row', '.lc-compare-panels', '.lc-wish-meta', '.lc-stat-indicator'];
+    const selectors = ['.lc-badge', '.lc-compare-row', '.lc-wish-meta', '.lc-stat-indicator'];
     if (clearPanels) selectors.push('.lc-compare-panel');
     document.querySelectorAll(selectors.join(', '))
       .forEach((el) => el.remove());

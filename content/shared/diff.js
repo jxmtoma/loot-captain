@@ -157,12 +157,10 @@
   function summarizeComparisons(comparison) {
     const rows = comparison.rows || [];
     const comparable = comparison.eligible && rows.length > 0 && rows.every((row) => row.diff && row.diff.comparable);
-    const scores = comparable ? rows.map((row) => row.diff.score) : [];
     return {
       comparable,
       hasWorn: rows.some((row) => row.worn && row.worn.length),
-      score: scores.reduce((sum, score) => sum + score, 0),
-      state: scores.length && scores.every((score) => score < 0) ? 'downgrade' : scores.some((score) => score > 0) ? 'upgrade' : 'sidegrade',
+      score: comparable ? rows.reduce((sum, row) => sum + row.diff.score, 0) : 0,
       rows,
     };
   }
