@@ -6,6 +6,30 @@ const vm = require('node:vm');
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
+const optionsHtml = read('options/options.html');
+const optionsSource = read('options/options.js');
+assert.match(optionsHtml, /<select id="profile-class"><\/select>/);
+assert.match(optionsHtml, /id="btn-edit-items"/);
+assert.doesNotMatch(optionsHtml, /id="profile-class"[^>]*type="text"/);
+for (const className of ['Bard', 'Beastlord', 'Berserker', 'Cleric', 'Druid', 'Enchanter', 'Magician', 'Monk', 'Necromancer', 'Paladin', 'Ranger', 'Rogue', 'Shadowknight', 'Shaman', 'Warrior', 'Wizard']) {
+  assert.match(optionsSource, new RegExp("'" + className + "'"));
+}
+assert.match(optionsSource, /INVENTORY_SLOT_LAYOUT/);
+assert.match(optionsSource, /let itemsEditable = false/);
+assert.match(optionsSource, /let selectedItemIndex = 0/);
+assert.match(optionsSource, /if \(idx !== selectedItemIndex\) return/);
+assert.match(optionsSource, /disabled = !itemsEditable/);
+assert.match(optionsSource, /if \(itemsEditable\) statRow\.appendChild\(rmBtn\)/);
+assert.match(optionsSource, /item-detail-icon/);
+assert.match(optionsSource, /\{ slot: 'neck', label: 'Neck', column: 6, row: 2 \}/);
+assert.match(optionsSource, /\{ slot: 'back', label: 'Back', column: 6, row: 3 \}/);
+assert.match(optionsSource, /\{ slot: 'shoulders', label: 'Shoulder', column: 6, row: 4 \}/);
+assert.match(optionsSource, /\{ slot: 'chest', label: 'Chest', column: 1, row: 2 \}/);
+assert.match(optionsSource, /\{ slot: 'arms', label: 'Arm', column: 1, row: 3 \}/);
+assert.match(optionsSource, /\{ slot: 'waist', label: 'Waist', column: 1, row: 4 \}/);
+assert.match(optionsSource, /\{ slot: 'feet', label: 'Feet', column: 5, row: 6 \}/);
+assert.match(optionsSource, /\{ slot: 'wrist-1', label: 'Left Wrist', column: 1, row: 5 \}/);
+assert.doesNotMatch(optionsSource, /ammo/i);
 assert.equal(manifest.permissions.includes('scripting'), false);
 assert.equal(manifest.content_scripts.some((script) => script.world === 'MAIN'), true);
 const bridgeSource = read('content/opendkp-page.js');

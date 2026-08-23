@@ -18,6 +18,12 @@ const SCORE_FORMULAS = [
   { key: 'endregen', label: 'End Regen' },
   { key: 'netpos', label: 'Net positive' },
 ];
+const EVERQUEST_CLASSES = [
+  ['Bard', 'BRD'], ['Beastlord', 'BST'], ['Berserker', 'BER'], ['Cleric', 'CLR'],
+  ['Druid', 'DRU'], ['Enchanter', 'ENC'], ['Magician', 'MAG'], ['Monk', 'MNK'],
+  ['Necromancer', 'NEC'], ['Paladin', 'PAL'], ['Ranger', 'RNG'], ['Rogue', 'ROG'],
+  ['Shadowknight', 'SHD'], ['Shaman', 'SHM'], ['Warrior', 'WAR'], ['Wizard', 'WIZ'],
+];
 
 // ---------- Slot canonicalization (mirrors content/shared/slots.js) ----------
 const EQUIPMENT_SLOTS = [
@@ -32,6 +38,8 @@ let selectedId = '';
 let scoreFormula = DEFAULT_FORMULA_KEY;
 let editingId = null; // null = list view, 'new' = creating, else editing that id
 let editingProfile = null; // working copy while editing
+let itemsEditable = false;
+let selectedItemIndex = 0;
 
 // ---------- Storage ----------
 async function loadAll() {
@@ -81,6 +89,20 @@ function renderFormulaSelect() {
     scoreFormula = select.value;
     await saveAll();
   });
+}
+
+function normalizeClassName(value) {
+  const key = String(value || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+  const match = EVERQUEST_CLASSES.find(([name, abbreviation]) =>
+    [name, abbreviation].some((candidate) => candidate.toLowerCase() === key));
+  return match ? match[0] : '';
+}
+
+function renderClassSelect() {
+  const select = $('#profile-class');
+  if (!select) return;
+  select.replaceChildren(el('option', '', '- select class -'), ...EVERQUEST_CLASSES.map(([name]) => el('option', '', name)));
+  select.options[0].value = '';
 }
 
 // ---------- View: profile list ----------
@@ -170,6 +192,8 @@ async function deleteProfileById(id) {
 // ---------- View: editor ----------
 async function openEditor(id) {
   editingId = id;
+  itemsEditable = false;
+  selectedItemIndex = 0;
   if (id === 'new') {
     editingProfile = { id: '', name: '', cls: '', level: '', items: [] };
     $('#editor-title').textContent = 'New Character';
@@ -179,7 +203,7 @@ async function openEditor(id) {
     editingProfile = {
       id: p.id,
       name: p.name || '',
-      cls: p.cls || '',
+      cls: normalizeClassName(p.cls),
       level: p.level || '',
       statsVersion: p.statsVersion || 0,
       items: (p.items || []).map((it) => ({
@@ -203,6 +227,8 @@ async function openEditor(id) {
 function closeEditor() {
   editingId = null;
   editingProfile = null;
+  itemsEditable = false;
+  selectedItemIndex = 0;
   $('#profile-editor-section').classList.add('hidden');
   $('#profile-list-section').classList.remove('hidden');
   renderProfileList();
@@ -213,13 +239,35 @@ function renderEditor() {
   $('#profile-class').value = editingProfile.cls;
   $('#profile-level').value = editingProfile.level;
   $('#profile-name').oninput = renderInventoryPreview;
-  $('#profile-class').oninput = renderInventoryPreview;
+  $('#profile-class').onchange = renderInventoryPreview;
   $('#profile-level').oninput = renderInventoryPreview;
   renderItemList();
 }
 
-const INVENTORY_LEFT_SLOTS = ['head', 'face', 'shoulders', 'arms', 'back', 'range', 'hands', 'primary'];
-const INVENTORY_RIGHT_SLOTS = ['ear-1', 'ear-2', 'neck', 'wrist-1', 'wrist-2', 'chest', 'finger-1', 'finger-2', 'legs', 'feet', 'secondary'];
+const INVENTORY_SLOT_LAYOUT = [
+  { slot: 'ear-1', label: 'Left Ear', column: 2, row: 1 },
+  { slot: 'head', label: 'Head', column: 3, row: 1 },
+  { slot: 'face', label: 'Face', column: 4, row: 1 },
+  { slot: 'ear-2', label: 'Right Ear', column: 5, row: 1 },
+  { slot: 'neck', label: 'Neck', column: 6, row: 2 },
+  { slot: 'back', label: 'Back', column: 6, row: 3 },
+  { slot: 'shoulders', label: 'Shoulder', column: 6, row: 4 },
+  { slot: 'wrist-2', label: 'Right Wrist', column: 6, row: 5 },
+  { slot: 'feet', label: 'Feet', column: 5, row: 6 },
+  { slot: 'charm', label: 'Charm', column: 4, row: 6 },
+  { slot: 'hands', label: 'Hand', column: 3, row: 6 },
+  { slot: 'legs', label: 'Leg', column: 2, row: 6 },
+  { slot: 'wrist-1', label: 'Left Wrist', column: 1, row: 5 },
+  { slot: 'waist', label: 'Waist', column: 1, row: 4 },
+  { slot: 'arms', label: 'Arm', column: 1, row: 3 },
+  { slot: 'chest', label: 'Chest', column: 1, row: 2 },
+  { slot: 'finger-1', label: 'Finger 1', column: 2, row: 7 },
+  { slot: 'finger-2', label: 'Finger 2', column: 3, row: 7 },
+  { slot: 'powersource', label: 'Power Source', column: 4, row: 7 },
+  { slot: 'primary', label: 'Primary', column: 2, row: 8 },
+  { slot: 'secondary', label: 'Secondary', column: 3, row: 8 },
+  { slot: 'range', label: 'Range', column: 4, row: 8 },
+];
 const SLOT_ICONS = {
   charm: '✦', ear: '◖', head: '♜', face: '◉', neck: '⌁', shoulders: '◇', arms: '♢', back: '▣',
   wrist: '◌', range: '➶', hands: '✋', primary: '⚔', finger: '○', chest: '▤', legs: '♜', feet: '⌁',
@@ -235,26 +283,27 @@ function slotRoot(slot) {
 }
 
 function renderInventoryPreview() {
-  const left = $('#inventory-left');
-  const right = $('#inventory-right');
-  if (!left || !right || !editingProfile) return;
+  const slots = $('#inventory-slots');
+  if (!slots || !editingProfile) return;
   const grouped = {};
   editingProfile.items.forEach((item, index) => {
     if (!item.slot) return;
     const slot = normalizeEditorSlot(item.slot);
     (grouped[slot] || (grouped[slot] = [])).push({ item, index });
   });
-  const makeSlot = (slot) => {
+  const makeSlot = ({ slot, label, column, row }) => {
     const root = slotRoot(slot);
     const pairedIndex = /-[12]$/.test(slot) ? Number(slot.slice(-1)) - 1 : -1;
     const entries = pairedIndex >= 0
       ? grouped[slot]?.length ? [grouped[slot][0]] : (grouped[root]?.[pairedIndex] ? [grouped[root][pairedIndex]] : [])
       : grouped[slot] || [];
     const box = el('div', 'gear-slot' + (entries.length ? ' filled' : ''));
-    box.title = entries.length ? entries.map((entry) => entry.item.name || 'Unnamed item').join(' / ') : 'Empty ' + root + ' slot';
+    box.style.gridColumn = column;
+    box.style.gridRow = row;
+    box.title = entries.length ? entries.map((entry) => entry.item.name || 'Unnamed item').join(' / ') : 'Empty ' + label + ' slot';
     const glyph = el('span', 'gear-glyph', SLOT_ICONS[root] || '✦');
     glyph.setAttribute('aria-hidden', 'true');
-    const label = el('span', 'gear-slot-name', entries.length ? entries.map((entry) => entry.item.name || 'Unnamed').join(' / ') : root + (pairedIndex >= 0 ? ' ' + (pairedIndex + 1) : ''));
+    const name = el('span', 'gear-slot-name', entries.length ? entries.map((entry) => entry.item.name || 'Unnamed').join(' / ') : label);
     const iconUrl = entries[0] && /^https:\/\/cdn\.raidloot\.com\//i.test(entries[0].item.icon || '') && entries[0].item.icon;
     if (iconUrl) {
       const icon = document.createElement('img');
@@ -266,25 +315,20 @@ function renderInventoryPreview() {
     } else {
       box.appendChild(glyph);
     }
-    box.appendChild(label);
+    box.appendChild(name);
     if (entries.length) {
-      const focus = () => {
-        document.querySelectorAll('.item-row.selected').forEach((row) => row.classList.remove('selected'));
-        const row = document.querySelector('.item-row[data-item-index="' + entries[0].index + '"]');
-        if (!row) return;
-        row.classList.add('selected');
-        const panel = document.querySelector('.item-details-panel');
-        if (panel) panel.scrollTo({ top: Math.max(0, row.offsetTop - panel.clientHeight / 3), behavior: 'smooth' });
+      const selectItem = () => {
+        selectedItemIndex = entries[0].index;
+        renderItemList();
       };
       box.tabIndex = 0;
       box.setAttribute('role', 'button');
-      box.addEventListener('click', focus);
-      box.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); focus(); } });
+      box.addEventListener('click', selectItem);
+      box.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectItem(); } });
     }
     return box;
   };
-  left.replaceChildren(...INVENTORY_LEFT_SLOTS.map(makeSlot));
-  right.replaceChildren(...INVENTORY_RIGHT_SLOTS.map(makeSlot));
+  slots.replaceChildren(...INVENTORY_SLOT_LAYOUT.map(makeSlot));
   const meta = [editingProfile.cls, editingProfile.level ? 'Level ' + editingProfile.level : '', editingProfile.items.length + ' items'].filter(Boolean).join(' · ') || 'Local profile';
   $('#inventory-stage-name').textContent = editingProfile.name || 'Unnamed Character';
   $('#inventory-stage-meta').textContent = meta;
@@ -345,18 +389,39 @@ async function loadEditorStats(profile) {
 function renderItemList() {
   const list = $('#item-list');
   list.innerHTML = '';
+  const editButton = $('#btn-edit-items');
+  if (editButton) {
+    editButton.textContent = itemsEditable ? 'Done' : 'Edit';
+    editButton.setAttribute('aria-pressed', String(itemsEditable));
+  }
+  const addItemButton = $('#btn-add-item');
+  if (addItemButton) addItemButton.disabled = !itemsEditable;
   renderInventoryPreview();
   if (!editingProfile.items.length) {
     list.appendChild(el('div', 'empty-state', 'No worn items. Add one to start comparing.'));
     return;
   }
+  selectedItemIndex = Math.min(selectedItemIndex, editingProfile.items.length - 1);
   editingProfile.items.forEach((item, idx) => {
+    if (idx !== selectedItemIndex) return;
     const row = el('div', 'item-row');
     row.dataset.itemIndex = idx;
     const header = el('div', 'item-row-header');
-    header.appendChild(el('span', 'item-name', item.name || ('Item ' + (idx + 1))));
+    const heading = el('div', 'item-heading');
+    const iconUrl = /^https:\/\/cdn\.raidloot\.com\//i.test(item.icon || '') && item.icon;
+    if (iconUrl) {
+      const icon = document.createElement('img');
+      icon.className = 'item-detail-icon';
+      icon.src = iconUrl;
+      icon.alt = '';
+      icon.addEventListener('error', () => icon.remove(), { once: true });
+      heading.appendChild(icon);
+    }
+    heading.appendChild(el('span', 'item-name', item.name || ('Item ' + (idx + 1))));
+    header.appendChild(heading);
     const actions = el('div', 'item-actions');
     const removeBtn = el('button', 'btn-remove', 'Remove');
+    removeBtn.disabled = !itemsEditable;
     removeBtn.addEventListener('click', () => {
       editingProfile.items.splice(idx, 1);
       renderItemList();
@@ -371,6 +436,7 @@ function renderItemList() {
     nameInput.type = 'text';
     nameInput.value = item.name;
     nameInput.placeholder = 'e.g. Cloak of Flames';
+    nameInput.disabled = !itemsEditable;
     nameInput.addEventListener('input', () => {
       if (nameInput.value !== item.name) {
         item.name = nameInput.value;
@@ -389,6 +455,7 @@ function renderItemList() {
     const slotOptions = [...EQUIPMENT_SLOTS, 'ear-1', 'ear-2', 'wrist-1', 'wrist-2', 'finger-1', 'finger-2'];
     slotSel.innerHTML = '<option value="">- select -</option>' + slotOptions.map((s) => '<option value="' + s + '">' + s + '</option>').join('');
     slotSel.value = normalizeEditorSlot(item.slot);
+    slotSel.disabled = !itemsEditable;
     slotSel.addEventListener('change', () => { item.slot = slotSel.value; renderInventoryPreview(); });
     slotLbl.appendChild(slotSel);
     fields.appendChild(slotLbl);
@@ -399,6 +466,7 @@ function renderItemList() {
     const statsHeader = el('div', 'item-stats-header');
     statsHeader.appendChild(el('span', '', 'Stats'));
     const addStatBtn = el('button', 'btn-remove', '+ Stat');
+    addStatBtn.disabled = !itemsEditable;
     addStatBtn.addEventListener('click', () => {
       item.stats[''] = '';
       renderItemList();
@@ -417,6 +485,7 @@ function renderItemList() {
         nameInput.type = 'text';
         nameInput.value = key;
         nameInput.placeholder = 'e.g. HP';
+        nameInput.disabled = !itemsEditable;
         nameInput.addEventListener('input', () => {
           const newKey = nameInput.value.trim();
           if (newKey && newKey !== key) {
@@ -431,15 +500,17 @@ function renderItemList() {
         valInput.type = 'number';
         valInput.value = item.stats[key];
         valInput.placeholder = '0';
+        valInput.disabled = !itemsEditable;
         valInput.addEventListener('input', () => { item.stats[key] = valInput.value; });
         const rmBtn = el('button', 'btn-remove btn-remove-stat', '×');
+        rmBtn.disabled = !itemsEditable;
         rmBtn.addEventListener('click', () => {
           delete item.stats[key];
           renderItemList();
         });
         statRow.appendChild(nameInput);
         statRow.appendChild(valInput);
-        statRow.appendChild(rmBtn);
+        if (itemsEditable) statRow.appendChild(rmBtn);
         statsBlock.appendChild(statRow);
       }
     }
@@ -453,7 +524,7 @@ async function saveProfile() {
   const name = $('#profile-name').value.trim();
   if (!name) { alert('Please enter a character name.'); return; }
   editingProfile.name = name;
-  editingProfile.cls = $('#profile-class').value.trim();
+  editingProfile.cls = $('#profile-class').value;
   editingProfile.level = $('#profile-level').value.trim();
   // Clean up items: remove empty ones, normalize stats
   editingProfile.items = editingProfile.items
@@ -599,7 +670,7 @@ function addImportedProfile({ name, cls, level, server, items, statsVersion, imp
   profiles[id] = {
     id,
     name: name || 'Imported Character',
-    cls: cls || '',
+    cls: normalizeClassName(cls),
     level: level || '',
     server: server || '',
     statsVersion: statsVersion || 0,
@@ -718,15 +789,22 @@ async function init() {
   await requireConsent();
   await loadAll();
   if (new URLSearchParams(location.search).has('debug')) $('#debug-details').hidden = false;
+  renderClassSelect();
   renderFormulaSelect();
   $('#btn-new-profile').addEventListener('click', () => openEditor('new'));
   $('#btn-back').addEventListener('click', closeEditor);
   $('#btn-save-profile').addEventListener('click', saveProfile);
   $('#btn-delete-profile').addEventListener('click', deleteProfile);
   $('#btn-import-raidloot').addEventListener('click', importRaidlootProfile);
+  $('#btn-edit-items').addEventListener('click', () => {
+    itemsEditable = !itemsEditable;
+    renderItemList();
+  });
   $('#btn-clear-debug').addEventListener('click', () => { $('#debug-log').textContent = 'No diagnostics yet.'; });
   $('#btn-add-item').addEventListener('click', () => {
+    if (!itemsEditable) return;
     editingProfile.items.push({ id: '', name: '', slot: '', stats: {} });
+    selectedItemIndex = editingProfile.items.length - 1;
     renderItemList();
   });
   $('#inventory-file').addEventListener('change', (e) => {

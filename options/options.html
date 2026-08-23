@@ -111,7 +111,7 @@
             <input type="text" id="profile-name" placeholder="e.g. Toma">
           </label>
           <label>Class
-            <input type="text" id="profile-class" placeholder="e.g. Warrior">
+            <select id="profile-class"></select>
           </label>
           <label>Level
             <input type="number" id="profile-level" min="1" max="125" placeholder="e.g. 120">
@@ -133,14 +133,13 @@
             <div class="inventory-body">
               <div class="inventory-stage">
                 <div class="inventory-stage-title">WORN EQUIPMENT</div>
-                <div class="inventory-columns">
-                  <div id="inventory-left" class="gear-column"></div>
+                <div class="inventory-grid">
+                  <div id="inventory-slots" class="inventory-slots"></div>
                   <div class="inventory-character">
                     <div class="character-silhouette" aria-hidden="true">⚔</div>
                     <strong id="inventory-stage-name">Unnamed Character</strong>
                     <span id="inventory-stage-meta">Local profile</span>
                   </div>
-                  <div id="inventory-right" class="gear-column"></div>
                 </div>
                 <div class="inventory-bottom">
                   <span>Auto-Inventory</span>
@@ -150,7 +149,10 @@
             </div>
           </div>
           <div class="item-details-panel">
-            <div class="item-details-label">ITEM DETAILS</div>
+            <div class="item-details-header">
+              <div class="item-details-label">ITEM DETAILS</div>
+              <button id="btn-edit-items" class="btn btn-small" type="button" aria-pressed="false">Edit</button>
+            </div>
             <div id="item-list" class="item-list"></div>
           </div>
           </div>
