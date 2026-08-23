@@ -53,6 +53,17 @@ assert.equal(LC.diff.diffItems(
   { slot: 'Head', stats: { Damage: { num: 80 }, Delay: { num: 20 } } },
   weaponRatioFormula,
 ).comparable, false);
+const dualSlotKey = LC.slots.canonicalSlot('Primary, Secondary');
+assert.equal(dualSlotKey.key, 'primary');
+assert.equal(dualSlotKey.paired, false);
+assert.equal(dualSlotKey.keys.join(','), 'primary,secondary');
+const dualSlotUpgrade = LC.diff.diffItems(
+  { slot: 'Primary, Secondary', stats: { Damage: { num: 110 }, Delay: { num: 19 } } },
+  { slot: 'Secondary', stats: { Damage: { num: 100 }, Delay: { num: 20 } } },
+  weaponRatioFormula,
+);
+assert.equal(dualSlotUpgrade.comparable, true);
+assert.equal(dualSlotUpgrade.score > 0, true);
 assert.equal(LC.diff.bestComparisonTarget(
   { stats: { HP: { num: 100 } } },
   [{ stats: { HP: { num: 50 } } }, { stats: {} }],

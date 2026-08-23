@@ -38,16 +38,17 @@
 
   function findWornInSlot(profile, slotKey) {
     if (!profile || !slotKey) return [];
+    const keys = slotKey.keys || [slotKey.key];
     if (slotKey.paired) {
       return profile.items.filter((it) => {
         const normalized = it.slotKey || LC.slots.canonicalSlot(it.slot);
         const k = (normalized && normalized.key) || '';
-        return k === slotKey.key || k.indexOf(slotKey.key + '-') === 0;
+        return keys.some((key) => k === key || k.indexOf(key + '-') === 0);
       });
     }
     return profile.items.filter((it) => {
       const normalized = it.slotKey || LC.slots.canonicalSlot(it.slot);
-      return normalized && normalized.key === slotKey.key;
+      return normalized && keys.includes(normalized.key);
     });
   }
 
@@ -62,7 +63,8 @@
 
   function weaponRatio(item) {
     const normalized = item && (item.slotKey || LC.slots.canonicalSlot(item.slot));
-    if (!normalized || !['primary', 'secondary', 'range'].includes(normalized.key)) return null;
+    const keys = normalized && (normalized.keys || [normalized.key]);
+    if (!keys || !keys.some((key) => ['primary', 'secondary', 'range'].includes(key))) return null;
     const damage = numericStat(item.stats && item.stats.Damage);
     const delay = numericStat(item.stats && item.stats.Delay);
     return damage != null && delay > 0 ? damage / delay : null;

@@ -45,10 +45,14 @@
 
   async function enableAfterConsent() {
     if (consented) return true;
-    const result = await chrome.storage.local.get(CONSENT_KEY);
-    if (result[CONSENT_KEY] !== CONSENT_VERSION) return false;
-    consented = true;
-    return true;
+    try {
+      const result = await chrome.storage.local.get(CONSENT_KEY);
+      if (result[CONSENT_KEY] !== CONSENT_VERSION) return false;
+      consented = true;
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   const initialConsent = enableAfterConsent();
