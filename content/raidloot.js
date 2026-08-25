@@ -62,19 +62,21 @@
       host.prepend(badge);
       return;
     }
-    const compact = comparison.rows.length > 1 || LC.diff.weaponType(cand) != null;
+    const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
     const badges = [];
-    for (const row of comparison.rows) {
+    for (const [index, row] of comparison.rows.entries()) {
+      if (cand.isAugment && index) break;
       if (!row.diff || !row.diff.comparable) continue;
       const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
         LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
-      rowBadge.dataset.lcSlot = row.slotKey && row.slotKey.key || '';
+      rowBadge.dataset.lcRow = index;
       if (attachPanel) rowBadge.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         const existing = host.querySelector(':scope > .lc-compare-panel');
-        if (existing) existing.remove();
-        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key));
+        if (existing) { existing.remove(); return; }
+        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+          row.isAugment ? comparison.rows : null, index));
       });
       badges.push(rowBadge);
     }
@@ -101,19 +103,23 @@
         ev.stopPropagation();
         const next = tr.nextSibling;
         if (next && next.classList && next.classList.contains('lc-compare-row')) {
-          next.remove(); return;
+          const same = next.dataset.lcRow === badge.dataset.lcRow;
+          next.remove();
+          if (same) return;
         }
         if (!LC.currentProfile) return;
         const f = LC.currentFormula;
         const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
         const summary = LC.diff.summarizeComparisons(comparison);
-        const row = comparison.rows.find((item) => item.slotKey && item.slotKey.key === badge.dataset.lcSlot);
+        const row = comparison.rows[Number(badge.dataset.lcRow)];
         if (!comparison.eligible || !summary.comparable || !row) return;
         const newRow = document.createElement('tr');
         newRow.className = 'lc-compare-row';
+        newRow.dataset.lcRow = badge.dataset.lcRow;
         const td = document.createElement('td');
         td.colSpan = tr.cells.length;
-        td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key));
+        td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+          row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow)));
         newRow.appendChild(td);
         tr.parentNode.insertBefore(newRow, tr.nextSibling);
       }, true);
@@ -226,8 +232,9 @@
             continue;
           }
           sortKey = summary.score;
-          const compact = comparison.rows.length > 1 || LC.diff.weaponType(cand) != null;
-          for (const row of comparison.rows) {
+          const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
+          for (const [index, row] of comparison.rows.entries()) {
+            if (cand.isAugment && index) break;
             const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
               LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
             meta.appendChild(rowBadge);
@@ -252,7 +259,6 @@
     document.querySelectorAll('tr[id^="row-item"]').forEach(annotateSearchRow);
     annotateLinkedItemRows();
     document.querySelectorAll('div.item[id^="item"][data-id]').forEach((div) => {
-      if (div.classList.contains('augment')) return;
       if (div.classList.contains('Total') || div.id === 'item0') return;
       if (document.getElementById('row-item' + div.dataset.id)) return;
       if (div.closest('#inv') && !div.querySelector('.wish-remove')) return;

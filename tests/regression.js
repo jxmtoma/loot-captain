@@ -8,8 +8,11 @@ const read = (file) => fs.readFileSync(file, 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
 const optionsHtml = read('options/options.html');
 const optionsSource = read('options/options.js');
+const popupSource = read('popup/popup.js');
+const raidlootSource = read('content/raidloot.js');
 assert.match(optionsHtml, /<select id="profile-class"><\/select>/);
 assert.match(optionsHtml, /id="btn-edit-items"/);
+assert.match(optionsHtml, /data-inventory-tab="augments"/);
 assert.doesNotMatch(optionsHtml, /id="profile-class"[^>]*type="text"/);
 for (const className of ['Bard', 'Beastlord', 'Berserker', 'Cleric', 'Druid', 'Enchanter', 'Magician', 'Monk', 'Necromancer', 'Paladin', 'Ranger', 'Rogue', 'Shadowknight', 'Shaman', 'Warrior', 'Wizard']) {
   assert.match(optionsSource, new RegExp("'" + className + "'"));
@@ -21,6 +24,8 @@ assert.match(optionsSource, /if \(idx !== selectedItemIndex\) return/);
 assert.match(optionsSource, /disabled = !itemsEditable/);
 assert.match(optionsSource, /if \(itemsEditable\) statRow\.appendChild\(rmBtn\)/);
 assert.match(optionsSource, /item-detail-icon/);
+assert.match(popupSource, /key: 'regen'/);
+assert.match(popupSource, /key: 'manaregen'/);
 assert.match(optionsSource, /\{ slot: 'neck', label: 'Neck', column: 6, row: 2 \}/);
 assert.match(optionsSource, /\{ slot: 'back', label: 'Back', column: 6, row: 3 \}/);
 assert.match(optionsSource, /\{ slot: 'shoulders', label: 'Shoulder', column: 6, row: 4 \}/);
@@ -31,6 +36,14 @@ assert.match(optionsSource, /\{ slot: 'feet', label: 'Feet', column: 5, row: 6 \
 assert.match(optionsSource, /\{ slot: 'wrist-1', label: 'Left Wrist', column: 1, row: 5 \}/);
 assert.doesNotMatch(optionsSource, /ammo/i);
 assert.equal(manifest.permissions.includes('scripting'), false);
+assert.equal(manifest.host_permissions.includes('https://dlil5rqe0ybd2.cloudfront.net/*'), true);
+assert.doesNotMatch(read('background/service-worker.js'), /inlineRaidlootIcon/);
+assert.match(read('options/options.js'), /data:image/);
+assert.match(read('content/shared/ui.js'), /padding:2px 8px 2px 0 !important/);
+assert.match(read('content/shared/ui.js'), /text-align:right !important/);
+assert.match(read('content/shared/ui.js'), /table-layout:fixed !important/);
+assert.match(read('content/shared/ui.js'), /\.lc-compare-panel \.lc-head\{display:flex/);
+assert.match(raidlootSource, /if \(existing\) \{ existing\.remove\(\); return; \}/);
 assert.equal(manifest.content_scripts.some((script) => script.world === 'MAIN'), true);
 const bridgeSource = read('content/opendkp-page.js');
 assert.match(bridgeSource, /event\.isTrusted/);
@@ -109,10 +122,24 @@ const twoHand = LC.parser.parseOpenDkpJson({
 });
 const twoHandProfile = { cls: 'Warrior', items: [{ slot: 'Primary', stats: { Damage: 200, Delay: 40, HP: 100 } }] };
 assert.equal(LC.diff.compareCandidate(twoHandProfile, dualWeapon, weaponFormula).eligible, false);
-assert.equal(LC.diff.compareCandidate(twoHandProfile, twoHand, weaponFormula).rows.length, 1);
+const allClassComparison = LC.diff.compareCandidate(twoHandProfile, twoHand, weaponFormula);
+assert.equal(allClassComparison.rows.length, 1);
+assert.equal(LC.diff.summarizeComparisons(allClassComparison).comparable, true);
 assert.equal(LC.parser.normalizeClass('Beastlord'), 'BST');
 assert.equal(LC.parser.classMatches('Warrior', ['BST']), false);
 assert.equal(LC.parser.classMatches('Warrior', ['ALL']), true);
+const wornRange = { slot: 'Range', stats: { HP: 100 } };
+const rangeProfile = {
+  cls: 'Warrior',
+  items: [wornRange, { slot: 'Range', isAugment: true, stats: { Damage: 10 } }],
+};
+const allClassRange = LC.parser.parseOpenDkpJson({
+  ItemID: 87132, ItemName: 'Burning Brand of War', Slot: 'Range', Class: 'ALL', AC: 165, HP: 3560,
+});
+const rangeComparison = LC.diff.compareCandidate(rangeProfile, allClassRange, weaponFormula);
+assert.equal(LC.diff.findWornInSlot(rangeProfile, allClassRange.slotKey).length, 1);
+assert.equal(rangeComparison.rows[0].target, wornRange);
+assert.equal(LC.diff.summarizeComparisons(rangeComparison).comparable, true);
 const raidClasses = ['item', 'Primary', 'Secondary'];
 raidClasses.contains = (value) => raidClasses.includes(value);
 const parsedRaidWeapon = LC.parser.parseRaidlootNode({
@@ -130,6 +157,12 @@ const parsedOpenDkpDom = LC.parser.parseOpenDkpDom({
 });
 assert.equal(parsedOpenDkpDom.slotKey.keys.join(','), 'primary,secondary');
 assert.equal(parsedOpenDkpDom.classes.join(','), 'BST');
+const parsedOpenDkpAugDom = LC.parser.parseOpenDkpDom({
+  textContent: 'Bloodied Stone of Might Aug: 7 8 P\nSlot: All except Charm, Secondary, Ammo\nHP: 250',
+  querySelector: () => null,
+});
+assert.equal(parsedOpenDkpAugDom.isAugment, true);
+assert.equal(parsedOpenDkpAugDom.augmentTypes.join(','), '7,8');
 assert.equal(LC.diff.bestComparisonTarget(
   { stats: { HP: { num: 100 } } },
   [{ stats: { HP: { num: 50 } } }, { stats: {} }],
@@ -150,12 +183,12 @@ const parsedIconItem = raidlootParser.parseItemNodeForTest({
   id: 'item1', dataset: { id: '1' }, textContent: '', classList: iconClasses,
   querySelector(selector) {
     if (selector === '.itemname') return { textContent: 'Icon Test' };
-    if (selector === 'img.itemicon') return { getAttribute: () => '//cdn.raidloot.com/123.png' };
+    if (selector === 'img.itemicon') return { getAttribute: () => '//dlil5rqe0ybd2.cloudfront.net/123.png' };
     return null;
   },
   querySelectorAll: () => [],
 });
-assert.equal(parsedIconItem.icon, 'https://cdn.raidloot.com/123.png');
+assert.equal(parsedIconItem.icon, 'https://dlil5rqe0ybd2.cloudfront.net/123.png');
 
 const openDkpItem = LC.parser.parseOpenDkpJson({
   ItemID: 42, ItemName: 'Casing Test', Slot: 'Head', HP: 100, Stats: { AC: 50 },
@@ -165,6 +198,68 @@ assert.deepEqual(
   { id: openDkpItem.id, name: openDkpItem.name, slot: openDkpItem.slot, hp: openDkpItem.stats.HP.num, ac: openDkpItem.stats.AC.num },
   { id: '42', name: 'Casing Test', slot: 'Head', hp: 100, ac: 50 },
 );
+assert.equal(LC.diff.SCORE_FORMULAS.some((formula) => formula.key === 'regen'), true);
+assert.equal(LC.diff.SCORE_FORMULAS.some((formula) => formula.key === 'manaregen'), true);
+const augCandidate = LC.parser.parseOpenDkpJson({
+  ItemID: 50, ItemName: 'Flexible Augment', Slot: 'Ear, Wrist, Finger', Type: 'Augment',
+  AugTypes: [7, 8], HP: 60, HPRegen: 2, ManaRegen: 3,
+});
+assert.equal(augCandidate.augmentTypes.join(','), '7,8');
+const augProfile = {
+  cls: 'Warrior',
+  items: [
+    { slot: 'Ear', isAugment: false, stats: { HP: 100 } },
+    { name: 'Ear Aug 1', slot: 'Ear', isAugment: true, augmentTypes: [7, 8], augSlot: 1, stats: { HP: 40, Regen: 1 } },
+    { name: 'Ear Aug 2', slot: 'Ear', isAugment: true, augmentTypes: [7, 8], augSlot: 2, stats: { HP: 30 } },
+    { name: 'Wrist Aug', slot: 'Wrist', isAugment: true, augmentTypes: [7, 8], stats: { HP: 20, Regen: 0 } },
+  ],
+};
+const augComparison = LC.diff.compareCandidate(augProfile, augCandidate, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp'));
+assert.equal(augComparison.eligible, true);
+assert.equal(augComparison.rows.length, 3);
+assert.equal(augComparison.rows[0].isAugment, true);
+assert.equal(augComparison.rows[0].target.name, 'Wrist Aug');
+assert.equal(augComparison.rows[1].target.name, 'Ear Aug 2');
+assert.equal(augComparison.rows[2].target.name, 'Ear Aug 1');
+assert.equal(LC.diff.summarizeComparisons(augComparison).score, 40);
+assert.match(read('content/shared/ui.js'), /Previous worn augment/);
+assert.match(read('content/shared/ui.js'), /Next worn augment/);
+assert.equal(LC.diff.compareCandidate({ cls: 'Warrior', items: [augProfile.items[0]] }, augCandidate, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp')).eligible, false);
+const typeMismatchProfile = {
+  cls: 'Warrior',
+  items: [{ slot: 'Ear', isAugment: true, augmentTypes: [3], stats: { HP: 40 } }],
+};
+assert.equal(LC.diff.compareCandidate(typeMismatchProfile, augCandidate, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp')).eligible, false);
+const excludedSecondary = LC.parser.parseOpenDkpJson({
+  ItemID: 51, ItemName: 'No Secondary Augment', Slot: 'All except Charm, Secondary, Ammo', Type: 'Augment', HP: 60,
+});
+assert.equal(excludedSecondary.slotKey.keys.includes('head'), true);
+assert.equal(excludedSecondary.slotKey.keys.includes('secondary'), false);
+assert.equal(LC.diff.compareCandidate({
+  cls: 'Warrior', items: [{ slot: 'Secondary', isAugment: true, stats: { HP: 20 } }],
+}, excludedSecondary, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp')).eligible, false);
+assert.equal(LC.diff.compareCandidate({
+  cls: 'Warrior', items: [{ slot: 'Ear', isAugment: true, stats: { 'Focus Effect': 1 } }],
+}, excludedSecondary, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp')).eligible, false);
+assert.equal(LC.diff.diffItems(
+  { stats: { HP: { num: 250 }, 'Focus Effect': { num: null } } },
+  { stats: { 'Focus Effect': { num: 3 } } },
+  LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp'),
+).comparable, false);
+const damageAugment = LC.parser.parseOpenDkpJson({
+  ItemID: 52, ItemName: 'Damage Augment', Slot: 'Primary, Secondary', Type: 'Augment', AugTypes: [4, 7, 8], HP: 60, DMG: 20,
+});
+const damageProfile = {
+  cls: 'Warrior',
+  items: [
+    { slot: 'Primary', isAugment: true, augmentTypes: [4, 7, 8], stats: { HP: 40, Damage: 10 } },
+    { slot: 'Secondary', isAugment: true, stats: { HP: 40 } },
+  ],
+};
+const damageComparison = LC.diff.compareCandidate(damageProfile, damageAugment, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp'));
+assert.equal(damageComparison.eligible, true);
+assert.equal(damageComparison.rows[0].target.slot, 'Primary');
+assert.equal(LC.diff.compareCandidate({ cls: 'Warrior', items: [damageProfile.items[1]] }, damageAugment, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp')).eligible, false);
 
 const bridgeEvents = [];
 const bridgeDocument = {
@@ -312,8 +407,12 @@ const inventory = options.parseInventoryText([
 ].join('\n'));
 assert.deepEqual(JSON.parse(JSON.stringify(inventory.map(({ name, id, slot }) => ({ name, id, slot })))), [
   { name: 'First Earring', id: '11', slot: 'ear' },
+  { name: 'Augment', id: '12', slot: 'ear' },
   { name: 'Crown', id: '13', slot: 'head' },
 ]);
+assert.equal(inventory[1].isAugment, true);
+assert.equal(inventory[1].augSlot, 1);
+assert.equal(inventory[1].parentId, '11');
 assert.deepEqual(JSON.parse(JSON.stringify(options.parseInventoryMetadata([
   'Character: Aurelia',
   'Class: Warrior',
@@ -331,14 +430,17 @@ let mode = 'edit';
 let firstResolve;
 let secondResolve;
 let requests = 0;
+let unexpectedCalls = 0;
 const stateContext = {
   window: {},
   console,
   chrome: { runtime: { sendMessage: () => {
     if (mode === 'edit') {
       profiles.p.name = 'Edited';
-      return Promise.resolve({ ok: true, items: [{ id: '1', name: 'Sword', slot: 'Head', stats: { HP: 100 } }] });
+      return Promise.resolve({ ok: true, items: [{ id: '1', name: 'Sword', slot: 'Head', stats: { HP: 100 }, icon: 'data:image/png;base64,AA==' }] });
     }
+    if (mode === 'cache') return Promise.resolve({ ok: true, items: [{ id: '1', name: 'Focus Aug', slot: 'Head', isAugment: true, augmentTypes: [3], stats: { 'Focus Effect': 3 }, icon: 'data:image/png;base64,AA==' }] });
+    if (mode === 'no-call') { unexpectedCalls++; return Promise.resolve({ ok: false }); }
     requests++;
     return new Promise((resolve) => {
       if (requests === 1) firstResolve = resolve;
@@ -374,6 +476,23 @@ const state = stateContext.LootCaptain.state;
   await state.getSelectedProfile();
   assert.equal(profiles.p.name, 'Edited');
   assert.equal(saves, 0);
+
+  mode = 'cache';
+  profiles = { p: { id: 'p', name: 'Cached', items: [{ id: '1', name: 'Focus Aug', slot: 'Head', isAugment: true, stats: {} }] } };
+  const cachedProfile = await state.getSelectedProfile();
+  assert.equal(cachedProfile.items[0].icon, 'data:image/png;base64,AA==');
+  assert.equal(cachedProfile.items[0].augmentTypes.join(','), '3');
+  assert.equal(cachedProfile.items[0].enriched, true);
+  mode = 'no-call';
+  await state.getSelectedProfile();
+  assert.equal(unexpectedCalls, 0);
+
+  profiles = { p: { id: 'p', name: 'Fast', statsVersion: 2, items: [{
+    id: '1', name: 'Sword', slot: 'Head', icon: 'https://cdn.raidloot.com/1.png', stats: { HP: 100 },
+  }] } };
+  const fastProfile = await state.getSelectedProfile();
+  assert.equal(unexpectedCalls, 0);
+  assert.equal(fastProfile.items[0].stats.HP.num, 100);
 
   mode = 'race';
   profiles = { p: { id: 'p', name: 'Race', items: [{ id: '1', name: 'Sword', slot: 'Head', stats: {} }] } };

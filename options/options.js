@@ -5,8 +5,9 @@ const SELECTED_KEY = 'selectedProfileId';
 const SCORE_KEY = 'scoreFormula';
 const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
-const PROFILE_STATS_VERSION = 2;
+const PROFILE_STATS_VERSION = 3;
 const DEFAULT_FORMULA_KEY = 'ac10hp';
+const ICON_URL_PATTERN = /^(?:data:image\/|https:\/\/(?:cdn\.raidloot\.com|dlil5rqe0ybd2\.cloudfront\.net)\/)/i;
 const SCORE_FORMULAS = [
   { key: 'ac10hp', label: '1AC = 10HP' },
   { key: 'ac15hp', label: '1AC = 15HP' },
@@ -15,6 +16,8 @@ const SCORE_FORMULAS = [
   { key: 'hp', label: 'HP' },
   { key: 'mana', label: 'Mana' },
   { key: 'end', label: 'Endurance' },
+  { key: 'regen', label: 'HP Regen' },
+  { key: 'manaregen', label: 'Mana Regen' },
   { key: 'endregen', label: 'End Regen' },
   { key: 'netpos', label: 'Net positive' },
 ];
@@ -40,6 +43,7 @@ let editingId = null; // null = list view, 'new' = creating, else editing that i
 let editingProfile = null; // working copy while editing
 let itemsEditable = false;
 let selectedItemIndex = 0;
+let activeInventoryTab = 'equipment';
 
 // ---------- Storage ----------
 async function loadAll() {
@@ -194,6 +198,7 @@ async function openEditor(id) {
   editingId = id;
   itemsEditable = false;
   selectedItemIndex = 0;
+  activeInventoryTab = 'equipment';
   if (id === 'new') {
     editingProfile = { id: '', name: '', cls: '', level: '', items: [] };
     $('#editor-title').textContent = 'New Character';
@@ -211,6 +216,11 @@ async function openEditor(id) {
         name: it.name || '',
         icon: it.icon || '',
         slot: it.slot || '',
+        isAugment: !!it.isAugment,
+        augmentTypes: Array.isArray(it.augmentTypes) ? [...it.augmentTypes] : [],
+        augSlot: it.augSlot || '',
+        parentId: it.parentId || '',
+        enriched: !!it.enriched,
         stats: Object.assign({}, it.stats || {}),
       })),
     };
@@ -285,18 +295,32 @@ function slotRoot(slot) {
 function renderInventoryPreview() {
   const slots = $('#inventory-slots');
   if (!slots || !editingProfile) return;
-  const grouped = {};
+  const showAugments = activeInventoryTab === 'augments';
+  const equipmentGrouped = {};
+  const augmentGrouped = {};
   editingProfile.items.forEach((item, index) => {
     if (!item.slot) return;
     const slot = normalizeEditorSlot(item.slot);
+    const grouped = item.isAugment ? augmentGrouped : equipmentGrouped;
     (grouped[slot] || (grouped[slot] = [])).push({ item, index });
   });
   const makeSlot = ({ slot, label, column, row }) => {
     const root = slotRoot(slot);
     const pairedIndex = /-[12]$/.test(slot) ? Number(slot.slice(-1)) - 1 : -1;
-    const entries = pairedIndex >= 0
-      ? grouped[slot]?.length ? [grouped[slot][0]] : (grouped[root]?.[pairedIndex] ? [grouped[root][pairedIndex]] : [])
-      : grouped[slot] || [];
+    const equipmentEntries = equipmentGrouped[root] || [];
+    let entries;
+    if (showAugments) {
+      const parent = pairedIndex >= 0 ? equipmentEntries[pairedIndex] : equipmentEntries[0];
+      const augments = augmentGrouped[root] || [];
+      entries = parent
+        ? augments.filter((entry) => entry.item.parentId && entry.item.parentId === (parent.item.id || parent.item.name))
+        : [];
+      if (!entries.length && (pairedIndex < 0 || pairedIndex === 0)) entries = augments.filter((entry) => !entry.item.parentId);
+    } else {
+      entries = pairedIndex >= 0
+        ? equipmentGrouped[slot]?.length ? [equipmentGrouped[slot][0]] : (equipmentGrouped[root]?.[pairedIndex] ? [equipmentGrouped[root][pairedIndex]] : [])
+        : equipmentGrouped[slot] || [];
+    }
     const box = el('div', 'gear-slot' + (entries.length ? ' filled' : ''));
     box.style.gridColumn = column;
     box.style.gridRow = row;
@@ -304,7 +328,7 @@ function renderInventoryPreview() {
     const glyph = el('span', 'gear-glyph', SLOT_ICONS[root] || '✦');
     glyph.setAttribute('aria-hidden', 'true');
     const name = el('span', 'gear-slot-name', entries.length ? entries.map((entry) => entry.item.name || 'Unnamed').join(' / ') : label);
-    const iconUrl = entries[0] && /^https:\/\/cdn\.raidloot\.com\//i.test(entries[0].item.icon || '') && entries[0].item.icon;
+    const iconUrl = entries[0] && ICON_URL_PATTERN.test(entries[0].item.icon || '') && entries[0].item.icon;
     if (iconUrl) {
       const icon = document.createElement('img');
       icon.className = 'gear-icon';
@@ -318,7 +342,8 @@ function renderInventoryPreview() {
     box.appendChild(name);
     if (entries.length) {
       const selectItem = () => {
-        selectedItemIndex = entries[0].index;
+        const current = entries.findIndex((entry) => entry.index === selectedItemIndex);
+        selectedItemIndex = entries[(current + 1) % entries.length].index;
         renderItemList();
       };
       box.tabIndex = 0;
@@ -329,10 +354,17 @@ function renderInventoryPreview() {
     return box;
   };
   slots.replaceChildren(...INVENTORY_SLOT_LAYOUT.map(makeSlot));
-  const meta = [editingProfile.cls, editingProfile.level ? 'Level ' + editingProfile.level : '', editingProfile.items.length + ' items'].filter(Boolean).join(' · ') || 'Local profile';
+  const visibleCount = editingProfile.items.filter((item) => !!item.isAugment === showAugments).length;
+  const meta = [editingProfile.cls, editingProfile.level ? 'Level ' + editingProfile.level : '', visibleCount + (showAugments ? ' augments' : ' items')].filter(Boolean).join(' · ') || 'Local profile';
   $('#inventory-stage-name').textContent = editingProfile.name || 'Unnamed Character';
   $('#inventory-stage-meta').textContent = meta;
-  $('#inventory-slot-count').textContent = editingProfile.items.length + ' / 19 worn slots';
+  $('.inventory-stage-title').textContent = showAugments ? 'WORN AUGMENTS' : 'WORN EQUIPMENT';
+  $('#inventory-slot-count').textContent = showAugments ? visibleCount + ' augments' : visibleCount + ' / 19 worn slots';
+  document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
+    const active = tab.dataset.inventoryTab === activeInventoryTab;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
 }
 
 function hasNumericStats(item) {
@@ -342,6 +374,10 @@ function hasNumericStats(item) {
   });
 }
 
+function hasAugmentTypes(item) {
+  return !item.isAugment || (Array.isArray(item.augmentTypes) && item.augmentTypes.length > 0);
+}
+
 function normalizedName(name) {
   return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -349,8 +385,13 @@ function normalizedName(name) {
 async function loadEditorStats(profile) {
   if (!profile || editingProfile !== profile) return;
   const refreshAll = profile.statsVersion !== PROFILE_STATS_VERSION;
-  const pending = profile.items.filter((item) => (item.id || item.name) && (refreshAll || !hasNumericStats(item) || !item.icon));
+  const pending = profile.items.filter((item) => (item.id || item.name) &&
+    (!hasNumericStats(item) || !item.icon || !hasAugmentTypes(item)) && (refreshAll || !item.enriched));
   if (!pending.length) {
+    if (editingId !== 'new' && refreshAll) {
+      profiles[editingId] = { ...profiles[editingId], statsVersion: PROFILE_STATS_VERSION };
+      await saveAll();
+    }
     $('#editor-status').textContent = '';
     return;
   }
@@ -366,17 +407,23 @@ async function loadEditorStats(profile) {
     const byId = new Map((response.items || []).filter((item) => item && item.id).map((item) => [String(item.id), item]));
     const byName = new Map((response.items || []).filter((item) => item && item.name).map((item) => [normalizedName(item.name), item]));
     let loadedCount = 0;
+    let enrichedCount = 0;
     for (const item of profile.items) {
       const loaded = (item.id && byId.get(String(item.id))) || byName.get(normalizedName(item.name));
-      if (!loaded || !hasNumericStats(loaded)) continue;
+      if (!loaded) continue;
+      item.enriched = true;
+      enrichedCount++;
+      if (!hasNumericStats(loaded) && !loaded.icon) continue;
       item.id = loaded.id || item.id || '';
       item.icon = loaded.icon || item.icon || '';
       item.slot = item.slot || loaded.slot || '';
+      item.augmentTypes = (Array.isArray(loaded.augmentTypes) && loaded.augmentTypes.length)
+        ? [...loaded.augmentTypes] : (item.augmentTypes || []);
       item.stats = statsToPlain(loaded.stats);
       loadedCount++;
     }
     renderItemList();
-    if (editingId !== 'new' && loadedCount) {
+    if (editingId !== 'new' && enrichedCount) {
       profiles[editingId] = { ...profiles[editingId], statsVersion: PROFILE_STATS_VERSION, items: profile.items };
       await saveAll();
     }
@@ -397,18 +444,21 @@ function renderItemList() {
   const addItemButton = $('#btn-add-item');
   if (addItemButton) addItemButton.disabled = !itemsEditable;
   renderInventoryPreview();
-  if (!editingProfile.items.length) {
-    list.appendChild(el('div', 'empty-state', 'No worn items. Add one to start comparing.'));
+  const visibleIndices = editingProfile.items
+    .map((item, index) => (!!item.isAugment === (activeInventoryTab === 'augments') ? index : -1))
+    .filter((index) => index >= 0);
+  if (!visibleIndices.length) {
+    list.appendChild(el('div', 'empty-state', activeInventoryTab === 'augments' ? 'No augments. Import an inventory file or add one.' : 'No worn items. Add one to start comparing.'));
     return;
   }
-  selectedItemIndex = Math.min(selectedItemIndex, editingProfile.items.length - 1);
+  if (!visibleIndices.includes(selectedItemIndex)) selectedItemIndex = visibleIndices[0];
   editingProfile.items.forEach((item, idx) => {
     if (idx !== selectedItemIndex) return;
     const row = el('div', 'item-row');
     row.dataset.itemIndex = idx;
     const header = el('div', 'item-row-header');
     const heading = el('div', 'item-heading');
-    const iconUrl = /^https:\/\/cdn\.raidloot\.com\//i.test(item.icon || '') && item.icon;
+    const iconUrl = ICON_URL_PATTERN.test(item.icon || '') && item.icon;
     if (iconUrl) {
       const icon = document.createElement('img');
       icon.className = 'item-detail-icon';
@@ -442,6 +492,8 @@ function renderItemList() {
         item.name = nameInput.value;
         item.id = '';
         item.icon = '';
+        item.augmentTypes = [];
+        item.enriched = false;
         item.stats = {};
       }
       header.querySelector('.item-name').textContent = nameInput.value || ('Item ' + (idx + 1));
@@ -459,6 +511,26 @@ function renderItemList() {
     slotSel.addEventListener('change', () => { item.slot = slotSel.value; renderInventoryPreview(); });
     slotLbl.appendChild(slotSel);
     fields.appendChild(slotLbl);
+
+    const typeLbl = el('label', '', 'Type');
+    const typeSel = el('select');
+    const equipmentOption = el('option', '', 'Equipment');
+    equipmentOption.value = 'equipment';
+    const augmentOption = el('option', '', 'Augment');
+    augmentOption.value = 'augment';
+    typeSel.appendChild(equipmentOption);
+    typeSel.appendChild(augmentOption);
+    typeSel.value = item.isAugment ? 'augment' : 'equipment';
+    typeSel.disabled = !itemsEditable;
+    typeSel.addEventListener('change', () => {
+      item.isAugment = typeSel.value === 'augment';
+      item.augmentTypes = [];
+      item.enriched = false;
+      activeInventoryTab = item.isAugment ? 'augments' : 'equipment';
+      renderItemList();
+    });
+    typeLbl.appendChild(typeSel);
+    fields.appendChild(typeLbl);
     row.appendChild(fields);
 
     // Stats
@@ -536,7 +608,11 @@ async function saveProfile() {
         const v = parseFloat(it.stats[k]);
         if (key && !isNaN(v)) stats[key] = v;
       }
-      return { id: it.id, name: it.name, icon: it.icon || '', slot: it.slot, stats };
+      return {
+        id: it.id, name: it.name, icon: it.icon || '', slot: it.slot,
+        isAugment: !!it.isAugment, augmentTypes: Array.isArray(it.augmentTypes) ? [...it.augmentTypes] : [],
+        augSlot: it.augSlot || '', parentId: it.parentId || '', enriched: !!it.enriched, stats,
+      };
     });
   if (editingId === 'new') {
     const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -556,8 +632,7 @@ async function deleteProfile() {
 }
 
 // ---------- EQ inventory file import ----------
-// Worn equipment locations from the /output inventory file. Sub-slots
-// (e.g. "Ear-Slot1") are augments, not worn items, and are skipped.
+// Worn equipment locations from the /output inventory file.
 const EQUIPMENT_LOCATIONS = new Set([
   'Charm', 'Ear', 'Head', 'Face', 'Neck', 'Shoulders', 'Arms', 'Back',
   'Wrist', 'Range', 'Hands', 'Primary', 'Secondary', 'Fingers', 'Chest',
@@ -577,6 +652,7 @@ function parseInventoryText(text) {
   const items = [];
   const lines = text.split(/\r?\n/);
   let inKeyRing = false;
+  const lastEquipmentBySlot = {};
   for (const line of lines) {
     if (!line.trim()) continue;
     if (line.indexOf('KeyRing') === 0) { inKeyRing = true; continue; }
@@ -585,15 +661,33 @@ function parseInventoryText(text) {
     if (cols.length < 4) continue;
     const [location, name, idStr] = cols;
     if (location === 'Location') continue; // header row
-    if (/-Slot\d+$/.test(location)) continue; // augments/ornaments, not worn
-    if (!EQUIPMENT_LOCATIONS.has(location)) continue; // bags/bank/etc.
+    const augMatch = String(location).match(/^(.+)-Slot(\d+)$/i);
+    const baseLocation = augMatch ? augMatch[1] : location;
+    const equipmentLocation = [...EQUIPMENT_LOCATIONS].find((value) => value.toLowerCase() === String(baseLocation).toLowerCase());
+    if (!equipmentLocation) continue; // bags/bank/etc.
     if (!name || name === 'Empty') continue;
-    items.push({
+    const slot = slotFromLocation(equipmentLocation);
+    if (augMatch) {
+      const parent = lastEquipmentBySlot[slot];
+      items.push({
+        name,
+        id: idStr,
+        slot,
+        isAugment: true,
+        augSlot: Number(augMatch[2]),
+        parentId: parent ? (parent.id || parent.name) : '',
+        stats: {},
+      });
+      continue;
+    }
+    const item = {
       name,
       id: idStr,
-      slot: slotFromLocation(location),
+      slot,
       stats: {},
-    });
+    };
+    lastEquipmentBySlot[slot] = item;
+    items.push(item);
   }
   return items;
 }
@@ -659,7 +753,16 @@ async function fetchStatsForItems(items, onProgress) {
     const response = await chrome.runtime.sendMessage({ type: 'ENRICH_PROFILE_ITEMS', items });
     if (!response || !response.ok) return items;
     appendDebugLog(response.debug);
-    return (response.items || items).map((item) => ({ ...item, stats: statsToPlain(item.stats) }));
+    return (response.items || items).map((item, index) => ({
+      ...(items[index] || {}), ...item,
+      isAugment: !!(items[index] && items[index].isAugment),
+      augmentTypes: (Array.isArray(item.augmentTypes) && item.augmentTypes.length)
+        ? [...item.augmentTypes] : ((items[index] && items[index].augmentTypes) || []),
+      augSlot: (items[index] && items[index].augSlot) || '',
+      parentId: (items[index] && items[index].parentId) || '',
+      enriched: true,
+      stats: statsToPlain(item.stats),
+    }));
   } catch (e) {
     return items;
   }
@@ -700,6 +803,8 @@ async function importRaidlootProfile() {
       name: item.name || '',
       icon: item.icon || '',
       slot: item.slot || '',
+      augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
+      enriched: true,
       stats: statsToPlain(item.stats),
     })).filter((item) => item.name && item.slot);
     if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
@@ -796,6 +901,12 @@ async function init() {
   $('#btn-save-profile').addEventListener('click', saveProfile);
   $('#btn-delete-profile').addEventListener('click', deleteProfile);
   $('#btn-import-raidloot').addEventListener('click', importRaidlootProfile);
+  document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      activeInventoryTab = tab.dataset.inventoryTab;
+      renderItemList();
+    });
+  });
   $('#btn-edit-items').addEventListener('click', () => {
     itemsEditable = !itemsEditable;
     renderItemList();

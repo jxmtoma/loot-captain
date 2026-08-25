@@ -7,7 +7,8 @@
   const PROFILES_KEY = 'profiles';
   const SELECTED_KEY = 'selectedProfileId';
   const SCORE_KEY = 'scoreFormula';
-  const PROFILE_STATS_VERSION = 2;
+  const PROFILE_STATS_VERSION = 3;
+  const NON_NUMERIC_STAT = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
   let profileLoadGeneration = 0;
 
   // profiles: { id: { id, name, cls, level, items: [...] } }
@@ -30,6 +31,7 @@
     const stats = {};
     const sourceStats = LC.parser.normalizeStats(item.stats || {});
     for (const k of Object.keys(sourceStats)) {
+      if (NON_NUMERIC_STAT.test(k)) continue;
       const v = sourceStats[k];
       if (v && typeof v === 'object' && 'num' in v) {
         stats[k] = v;
@@ -52,8 +54,13 @@
     });
   }
 
+  function hasAugmentTypes(item) {
+    return !item.isAugment || (Array.isArray(item.augmentTypes) && item.augmentTypes.length > 0);
+  }
+
   async function loadMissingStats(items, refreshAll) {
-    const missing = items.filter((item) => (item.id || item.name) && (refreshAll || !hasNumericStats(item)));
+    const missing = items.filter((item) => (item.id || item.name) &&
+      (!hasNumericStats(item) || !hasAugmentTypes(item)) && (refreshAll || !item.enriched));
     if (!missing.length) return { items, fetched: false };
     try {
       const response = await chrome.runtime.sendMessage({
@@ -70,7 +77,17 @@
       return { items: items.map((item) => {
         const nameKey = String(item.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const loaded = (item.id && byId.get(String(item.id))) || byName.get(nameKey);
-        return loaded && hasNumericStats(loaded) ? normalizeItemStats({ ...item, ...loaded }) : item;
+        if (!loaded) return item;
+        const enriched = (hasNumericStats(loaded) || loaded.icon) ? normalizeItemStats({
+          ...item,
+          ...loaded,
+          isAugment: !!item.isAugment || !!loaded.isAugment,
+          augmentTypes: (Array.isArray(loaded.augmentTypes) && loaded.augmentTypes.length)
+            ? [...loaded.augmentTypes] : (item.augmentTypes || []),
+          augSlot: item.augSlot || loaded.augSlot || '',
+          parentId: item.parentId || loaded.parentId || '',
+        }) : item;
+        return { ...enriched, enriched: true };
       }), fetched: true };
     } catch (e) {
       return { items, fetched: false };
@@ -83,7 +100,11 @@
       const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
       if (num != null && !isNaN(num)) stats[key] = num;
     }
-    return { id: item.id || '', name: item.name || '', icon: item.icon || '', slot: item.slot || '', stats };
+    return {
+      id: item.id || '', name: item.name || '', icon: item.icon || '', slot: item.slot || '',
+      isAugment: !!item.isAugment, augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
+      augSlot: item.augSlot || '', parentId: item.parentId || '', enriched: !!item.enriched, stats,
+    };
   }
 
   async function getSelectedProfile() {
@@ -93,9 +114,10 @@
     const p = profiles[id];
     if (!p) return null;
     const originalItems = (p.items || []).map(normalizeItemStats);
-    const loaded = await loadMissingStats(originalItems, p.statsVersion !== PROFILE_STATS_VERSION);
+    const refreshAll = p.statsVersion !== PROFILE_STATS_VERSION;
+    const loaded = await loadMissingStats(originalItems, refreshAll);
     const items = loaded.items;
-    if (loaded.fetched || items.some((item, index) => hasNumericStats(item) && !hasNumericStats(originalItems[index]))) {
+    if (refreshAll || loaded.fetched || items.some((item, index) => hasNumericStats(item) && !hasNumericStats(originalItems[index]))) {
       const latestProfiles = await getProfiles();
       if (latestProfiles[id] && JSON.stringify(latestProfiles[id]) === JSON.stringify(p)) {
         latestProfiles[id] = { ...latestProfiles[id], statsVersion: PROFILE_STATS_VERSION, items: items.map(storageItem) };

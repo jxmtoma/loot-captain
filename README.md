@@ -25,6 +25,7 @@ The GitHub Pages site is in `docs/`. Enable **Settings → Pages → GitHub Acti
 | `storage` | Store local profiles, settings, and fetched public item stats. |
 | `offscreen` | Parse fetched RaidLoot HTML with `DOMParser` from the MV3 service worker. |
 | RaidLoot host permission | Fetch public RaidLoot profile and item pages for imports and stat enrichment. |
+| RaidLoot image CDN host permission | Load public item icons in the profile editor. |
 | OpenDKP content-script matches | Read the current OpenDKP item UI/API responses and add comparison badges; no OpenDKP host permission is requested. |
 
 ## Development

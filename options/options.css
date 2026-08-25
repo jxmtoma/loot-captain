@@ -334,7 +334,8 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
   background: linear-gradient(#1b2b3d, #0e1827);
   border-bottom: 1px solid #8e713d;
 }
-.inventory-tabs span {
+.inventory-tabs button {
+  cursor: pointer;
   padding: 8px 14px 7px;
   color: #a7b2c0;
   font: 700 11px Tahoma, sans-serif;
@@ -342,8 +343,13 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
   letter-spacing: .06em;
   border: 1px solid transparent;
   border-bottom: 0;
+  background: transparent;
 }
-.inventory-tabs .active { color: #f3d277; background: #111c2b; border-color: #8e713d; }
+.inventory-tabs button.active {
+  color: #f3d277;
+  background: #111c2b;
+  border-color: #8e713d;
+}
 .inventory-body { display: block; min-height: 390px; }
 .inventory-stage { padding: 11px 12px 12px; background: radial-gradient(ellipse at 50% 43%, #273b53 0, #17263a 42%, #0b1523 80%); }
 .inventory-stage-title { padding-bottom: 7px; color: #9faec1; font: 10px Tahoma, sans-serif; letter-spacing: .16em; text-align: center; }
@@ -369,7 +375,7 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
 
 @media (max-width: 560px) {
   .inventory-editor-layout { grid-template-columns: 1fr; }
-  .inventory-tabs span { padding-left: 7px; padding-right: 7px; font-size: 9px; }
+  .inventory-tabs button { padding-left: 7px; padding-right: 7px; font-size: 9px; }
   .inventory-grid { gap: 4px; }
   .gear-slot-name { font-size: 8px; }
 }

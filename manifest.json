@@ -8,7 +8,8 @@
   "host_permissions": [
     "https://www.raidloot.com/*",
     "https://raidloot.com/*",
-    "https://cdn.raidloot.com/*"
+    "https://cdn.raidloot.com/*",
+    "https://dlil5rqe0ybd2.cloudfront.net/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js"

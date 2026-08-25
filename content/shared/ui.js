@@ -24,16 +24,19 @@
     '.lc-badge[data-state="empty"]{background:#315369;color:#e0f2f0;}',
     '.lc-badge[data-state="nomatch"]{background:#30393a;color:#d4cfbb;}',
     '.lc-compare-panel{background:#151d1e;color:#e9e1ca;border:1px solid #8b7547;border-radius:4px;padding:8px 10px;margin:6px 0;font:11px/1.35 monospace;max-width:720px;box-shadow:0 3px 12px rgba(0,0,0,.25);}',
-    '.lc-compare-panel table{border-collapse:collapse;width:100%;background:#202a2b !important;color:#dbe3dc !important;}',
+    '.lc-compare-panel table{border-collapse:collapse;table-layout:fixed !important;width:100%;background:#202a2b !important;color:#dbe3dc !important;}',
     '.lc-compare-panel tr{background:#202a2b !important;}',
-    '.lc-compare-panel th,.lc-compare-panel td{padding:2px 8px 2px 0;text-align:right;background:#202a2b !important;color:#dbe3dc !important;border-bottom:1px solid #46524f !important;}',
-    '.lc-compare-panel th:first-child,.lc-compare-panel td:first-child{text-align:left;}',
+    '.lc-compare-panel th,.lc-compare-panel td{padding:2px 8px 2px 0 !important;text-align:right !important;background:#202a2b !important;color:#dbe3dc !important;border-bottom:1px solid #46524f !important;}',
+    '.lc-compare-panel th:first-child,.lc-compare-panel td:first-child{text-align:left !important;}',
     '.lc-compare-panel th{color:#c6a45e !important;font-weight:bold;}',
     '.lc-compare-panel td:first-child{color:#b9c4bc !important;}',
     '.lc-compare-panel .lc-pos{color:#84d7a2 !important;}',
     '.lc-compare-panel .lc-neg{color:#f28b79 !important;}',
     '.lc-compare-panel .lc-zero{color:#aaaeb0 !important;}',
-    '.lc-compare-panel .lc-head{color:#e0b96b !important;font-weight:bold;}',
+    '.lc-compare-panel .lc-head{display:flex;align-items:flex-start;gap:8px;color:#e0b96b !important;font-weight:bold;}',
+    '.lc-compare-title{min-width:0;flex:1 1 auto;}',
+    '.lc-compare-nav{display:inline-flex;flex:0 0 auto;align-items:center;gap:4px;color:#c3ceda;}',
+    '.lc-compare-nav button{padding:0 6px;border:1px solid #8b7547;background:#101d2e;color:#f0d18a;cursor:pointer;font:inherit;}',
     '.lc-stat-indicator{display:inline-block;font:11px/1.2 sans-serif;margin-left:8px;padding:0 6px;border-radius:3px;}',
     '.lc-stat-indicator[data-dir="up"]{color:#6cdc6c;background:rgba(108,220,108,.12);}',
     '.lc-stat-indicator[data-dir="down"]{color:#ff7676;background:rgba(255,118,118,.12);}',
@@ -91,7 +94,7 @@
   }
 
   // ---------- Compare panel ----------
-  function buildComparePanel(cand, worn, diff, slotLabel) {
+  function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0) {
     const div = document.createElement('div');
     div.className = 'lc-compare-panel';
     const head = document.createElement('div');
@@ -137,13 +140,41 @@
     const scoreCls = diff.score > 0 ? 'lc-pos' : (diff.score < 0 ? 'lc-neg' : 'lc-zero');
     const fLabel = (diff.formula && diff.formula.label) || 'score';
     const ratio = diff.weaponRatioDelta == null ? '' : '; Weapon ratio delta: ' + fmtDelta(diff.weaponRatioDelta);
-    head.appendChild(document.createTextNode(
+    const title = document.createElement('span');
+    title.className = 'lc-compare-title';
+    title.appendChild(document.createTextNode(
       (slotLabel ? slotLabel + ': ' : '') + (worn.name || ('#' + worn.id)) + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
     ));
     const score = document.createElement('span');
     score.className = scoreCls;
     score.textContent = '(' + fLabel + ' delta: ' + fmtDelta(diff.score) + ratio + ')';
-    head.appendChild(score);
+    title.appendChild(score);
+    head.appendChild(title);
+    if (alternatives && alternatives.length > 1) {
+      const nav = document.createElement('span');
+      nav.className = 'lc-compare-nav';
+      const move = (offset) => {
+        const index = (selectedIndex + offset + alternatives.length) % alternatives.length;
+        const row = alternatives[index];
+        div.replaceWith(buildComparePanel(cand, row.target, row.diff,
+          row.slotKey && row.slotKey.key, alternatives, index));
+      };
+      for (const [label, title, offset] of [['‹', 'Previous worn augment', -1], ['›', 'Next worn augment', 1]]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.title = title;
+        button.setAttribute('aria-label', title);
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          move(offset);
+        });
+        nav.appendChild(button);
+        if (offset < 0) nav.appendChild(document.createTextNode((selectedIndex + 1) + ' / ' + alternatives.length));
+      }
+      head.appendChild(nav);
+    }
     div.appendChild(head);
     div.appendChild(table);
     return div;
@@ -157,6 +188,7 @@
     const diff = row.diff;
     const arrow = diff.score > 0 ? 'up' : diff.score < 0 ? 'dn' : 'eq';
     const slot = slotShort(row.slotKey);
+    if (row.isAugment) return 'aug ' + arrow + ' ' + fmtDelta(diff.score) + ' ' + formula.label;
     if (compact) {
       return [slot, arrow, fmtDelta(diff.score), diff.weaponRatioDelta == null ? formula.label : 'r ' + fmtDelta(diff.weaponRatioDelta)]
         .filter(Boolean).join(' ');
@@ -168,6 +200,12 @@
   function comparisonBadgeTitle(row, formula) {
     const slot = row.slotKey && row.slotKey.key;
     const ratio = row.diff.weaponRatioDelta == null ? '' : '; weapon ratio delta ' + fmtDelta(row.diff.weaponRatioDelta);
+    if (row.isAugment) {
+      const compatible = (row.compatibleSlots || []).join(', ');
+      return 'Augment; fits ' + compatible + '; ' + (slot || '?') + ': vs ' +
+        (row.target && (row.target.name || ('#' + row.target.id)) || 'worn augment') +
+        ' (' + formula.label + ' delta ' + fmtDelta(row.diff.score) + ') -- click for full diff';
+    }
     return (slot ? slot + ': ' : '') + 'vs ' + (row.target && (row.target.name || ('#' + row.target.id)) || 'worn item') +
       ' (' + formula.label + ' delta ' + fmtDelta(row.diff.score) + ratio + ') -- click for full diff';
   }

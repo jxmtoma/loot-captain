@@ -5,7 +5,7 @@
   const LC = window.LootCaptain = window.LootCaptain || {};
 
   const STAT_ORDER = [
-    'AC', 'HP', 'MANA', 'END', 'ATK',
+    'AC', 'HP', 'Regen', 'MANA', 'ManaRegen', 'END', 'EndRegen', 'ATK',
     'HSta', 'HStr', 'HAgi', 'HDex', 'HInt', 'HWis', 'HCha',
     'STA', 'STR', 'AGI', 'DEX', 'INT', 'WIS', 'CHA',
     'SV FIRE', 'SV COLD', 'SV MAGIC', 'SV POISON', 'SV DISEASE', 'SV CORRUPT',
@@ -30,6 +30,8 @@
     { key: 'hp', label: 'HP', terms: { HP: 1 } },
     { key: 'mana', label: 'Mana', terms: { MANA: 1 } },
     { key: 'end', label: 'Endurance', terms: { END: 1 } },
+    { key: 'regen', label: 'HP Regen', terms: { Regen: 1 } },
+    { key: 'manaregen', label: 'Mana Regen', terms: { ManaRegen: 1 } },
     { key: 'endregen', label: 'End Regen', terms: { EndRegen: 1 } },
     { key: 'netpos', label: 'Net positive', terms: '__POSITIVE__' },
   ];
@@ -38,16 +40,31 @@
   function findWornInSlot(profile, slotKey) {
     if (!profile || !slotKey) return [];
     const keys = slotKey.keys || [slotKey.key];
-    if (slotKey.paired) {
-      return profile.items.filter((it) => {
-        const normalized = it.slotKey || LC.slots.canonicalSlot(it.slot);
-        const k = (normalized && normalized.key) || '';
-        return keys.some((key) => k === key || k.indexOf(key + '-') === 0);
-      });
-    }
     return profile.items.filter((it) => {
+      if (it.isAugment) return false;
       const normalized = it.slotKey || LC.slots.canonicalSlot(it.slot);
+      if (slotKey.paired) {
+        const key = (normalized && normalized.key) || '';
+        return keys.some((candidate) => key === candidate || key.indexOf(candidate + '-') === 0);
+      }
       return normalized && keys.includes(normalized.key);
+    });
+  }
+
+  function augmentTypesMatch(candidateTypes, wornTypes) {
+    if (!candidateTypes.length) return true;
+    return wornTypes.length > 0 && candidateTypes.some((type) => wornTypes.includes(type));
+  }
+
+  function findWornAugments(profile, slotKey, damageAugment, candidateTypes) {
+    if (!profile || !slotKey) return [];
+    const allowedKeys = slotKey.keys || [slotKey.key];
+    return profile.items.filter((item) => {
+      if (!item.isAugment || hasDamageModifier(item) !== damageAugment) return false;
+      if (!augmentTypesMatch(candidateTypes, item.augmentTypes || [])) return false;
+      const normalized = item.slotKey || LC.slots.canonicalSlot(item.slot);
+      const wornKeys = normalized && (normalized.keys || [normalized.key]);
+      return wornKeys && allowedKeys.some((key) => wornKeys.includes(key));
     });
   }
 
@@ -56,8 +73,19 @@
     return num != null && !isNaN(num) ? num : null;
   }
 
+  function isDiffStatKey(key) {
+    return !/^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i.test(String(key || '').trim());
+  }
+
+  function hasDamageModifier(item) {
+    return Object.entries(item && item.stats || {}).some(([key, value]) => {
+      const canonical = LC.parser && LC.parser.canonicalStat ? LC.parser.canonicalStat(key) : key;
+      return canonical === 'Damage' && numericStat(value) != null;
+    });
+  }
+
   function hasNumericStats(item) {
-    return Object.values(item && item.stats || {}).some((value) => numericStat(value) != null);
+    return Object.entries(item && item.stats || {}).some(([key, value]) => isDiffStatKey(key) && numericStat(value) != null);
   }
 
   function weaponRatio(item) {
@@ -81,13 +109,15 @@
 
   function diffItems(cand, worn, formula) {
     const f = formula || SCORE_FORMULAS[0];
-    const comparable = hasNumericStats(cand) && (worn == null || hasNumericStats(worn));
+    const sharedNumericStat = worn && Object.keys(cand.stats || {}).some((key) =>
+      isDiffStatKey(key) && numericStat(cand.stats[key]) != null && numericStat(worn.stats && worn.stats[key]) != null);
+    const comparable = hasNumericStats(cand) && (worn == null || (hasNumericStats(worn) && sharedNumericStat));
     if (!comparable) return { diffs: {}, score: 0, worn, formula: f, comparable: false };
     const diffs = {};
     const allKeys = new Set([
       ...Object.keys(cand.stats || {}),
       ...Object.keys((worn && worn.stats) || {}),
-    ]);
+    ].filter(isDiffStatKey));
     for (const k of allKeys) {
       const c = numericStat(cand.stats && cand.stats[k]);
       const w = numericStat(worn && worn.stats && worn.stats[k]);
@@ -132,6 +162,25 @@
   function compareCandidate(profile, cand, formula) {
     if (!profile || !cand || !cand.slotKey) return { eligible: false, rows: [] };
     if (LC.parser && !LC.parser.classMatches(profile.cls, cand.classes)) return { eligible: false, rows: [] };
+    if (cand.isAugment) {
+      const damageAugment = hasDamageModifier(cand);
+      const matches = findWornAugments(profile, cand.slotKey, damageAugment, cand.augmentTypes || [])
+        .map((worn) => ({ worn, diff: diffItems(cand, worn, formula) }))
+        .filter((match) => match.diff.comparable)
+        .sort((a, b) => b.diff.score - a.diff.score);
+      if (!matches.length) return { eligible: false, rows: [] };
+      return {
+        eligible: true,
+        rows: matches.map((match) => ({
+          slotKey: match.worn.slotKey || LC.slots.canonicalSlot(match.worn.slot),
+          worn: [match.worn],
+          target: match.worn,
+          diff: match.diff,
+          isAugment: true,
+          compatibleSlots: cand.slotKey.keys || [cand.slotKey.key],
+        })),
+      };
+    }
     const type = weaponType(cand);
     let slotKeys;
     if (type === 'one-hand' || type === 'two-hand') {
@@ -160,7 +209,7 @@
     return {
       comparable,
       hasWorn: rows.some((row) => row.worn && row.worn.length),
-      score: comparable ? rows.reduce((sum, row) => sum + row.diff.score, 0) : 0,
+      score: comparable ? (rows[0].isAugment ? rows[0].diff.score : rows.reduce((sum, row) => sum + row.diff.score, 0)) : 0,
       rows,
     };
   }
@@ -171,6 +220,7 @@
     SCORE_FORMULAS,
     DEFAULT_FORMULA_KEY,
     findWornInSlot,
+    findWornAugments,
     hasNumericStats,
     diffItems,
     bestComparisonTarget,

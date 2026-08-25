@@ -32,6 +32,7 @@
   };
 
   const HEROIC_STATS = { STR: 'HStr', STA: 'HSta', AGI: 'HAgi', DEX: 'HDex', INT: 'HInt', WIS: 'HWis', CHA: 'HCha' };
+  const NON_NUMERIC_LABEL = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
 
   function canonicalStat(raw) {
     const key = String(raw || '').replace(/:\s*$/, '').trim().replace(/\s+/g, ' ');
@@ -42,6 +43,13 @@
     const out = {};
     for (const key of Object.keys(stats || {})) out[canonicalStat(key)] = stats[key];
     return out;
+  }
+
+  function parseAugmentTypes(value) {
+    const text = Array.isArray(value) ? value.join(' ') : String(value || '');
+    const match = text.match(/\bAug:\s*([\d,\s]+)/i);
+    const bareTypes = /^\s*\d+(?:\s*[, ]\s*\d+)*\s*$/.test(text) ? text : '';
+    return [...new Set((match ? match[1] : bareTypes).match(/\d+/g) || [])].map(Number);
   }
 
   function normalizeClass(value) {
@@ -104,7 +112,7 @@
       }
       valTxt = valTxt.replace(/\s+/g, ' ').trim();
       const num = valTxt.match(/-?\d+(\.\d+)?/);
-      stats[key] = { raw: valTxt, num: num ? parseFloat(num[0]) : null };
+      stats[key] = { raw: valTxt, num: NON_NUMERIC_LABEL.test(key) ? null : (num ? parseFloat(num[0]) : null) };
       const heroic = valTxt.match(/\+\s*(-?\d+(?:\.\d+)?)/);
       if (heroic && HEROIC_STATS[key]) stats[HEROIC_STATS[key]] = { raw: heroic[0], num: parseFloat(heroic[1]) };
     });
@@ -131,9 +139,10 @@
     const classes = parseClasses((stats.Class && stats.Class.raw) || classesFromText(node.textContent));
     const isAugment = (node.classList && node.classList.contains('augment')) ||
       /^aug_/i.test((stats.Type && stats.Type.raw) || '');
+    const augmentTypes = parseAugmentTypes(node.textContent);
     const isWishlist = !!node.querySelector('.wish-remove');
     const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), classes, stats, isAugment, isWishlist, isTotalsRow };
+    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), classes, stats, isAugment, augmentTypes, isWishlist, isTotalsRow };
   }
 
   // ---------- openDKP JSON parsing ----------
@@ -157,6 +166,7 @@
       'svfire', 'svcold', 'svmagic', 'svpoison', 'svdisease', 'svcorrupt',
       'heroics', 'healamount', 'spelldmg', 'clairvoyance',
       'purity', 'luck', 'haste', 'dmg', 'damage', 'delay', 'range',
+      'hpregen', 'manaregen', 'endregen', 'hp_regen', 'mana_regen', 'end_regen',
     ];
     const statLabels = {
       ac: 'AC', hp: 'HP', mana: 'MANA', end: 'END', atk: 'ATK',
@@ -166,6 +176,8 @@
       svdisease: 'SV DISEASE', svcorrupt: 'SV CORRUPT',
       heroics: 'Heroics', healamount: 'Heal Amount', spelldmg: 'Spell Dmg', clairvoyance: 'Clairvoyance',
       purity: 'Purity', luck: 'Luck', haste: 'Haste', dmg: 'Damage', damage: 'Damage', delay: 'Delay', range: 'Range',
+      hpregen: 'Regen', manaregen: 'ManaRegen', endregen: 'EndRegen',
+      hp_regen: 'Regen', mana_regen: 'ManaRegen', end_regen: 'EndRegen',
     };
     for (const f of statFields) {
       const v = getField(obj, f);
@@ -183,10 +195,17 @@
       }
     }
     const name = getField(obj, 'name') || getField(obj, 'itemName') || getField(obj, 'item_name') || '';
-    const slot = getField(obj, 'slot') || getField(obj, 'slotName') || getField(obj, 'slot_name') || getField(obj, 'equipSlot') || '';
+    const rawSlot = getField(obj, 'slot') || getField(obj, 'slotName') || getField(obj, 'slot_name') ||
+      getField(obj, 'equipSlot') || getField(obj, 'slots') || getField(obj, 'allowedSlots') || '';
+    const slot = Array.isArray(rawSlot) ? rawSlot.join(', ') : rawSlot;
     const rawId = getField(obj, 'id') != null ? getField(obj, 'id') : getField(obj, 'itemId');
     const id = rawId != null ? String(rawId) : '';
     const classes = parseClasses(classValue);
+    const type = getField(obj, 'type') || getField(obj, 'itemType') || getField(obj, 'item_type') || '';
+    const augmentTypes = parseAugmentTypes(getField(obj, 'augTypes') || getField(obj, 'augSlots') ||
+      getField(obj, 'augType') || getField(obj, 'augSlot') || type);
+    const isAugment = !!(getField(obj, 'isAugment') || getField(obj, 'augment') || getField(obj, 'is_aug')) ||
+      augmentTypes.length > 0 || /\baugment(?:ation)?\b/i.test(String(type)) || /\baugment(?:ation)?\b/i.test(String(slot));
     return {
       id,
       name,
@@ -194,7 +213,8 @@
       slotKey: LC.slots.canonicalSlot(slot),
       classes,
       stats,
-      isAugment: false,
+      isAugment,
+      augmentTypes,
       isWishlist: false,
       isTotalsRow: false,
     };
@@ -234,9 +254,9 @@
     }
     // Slot detection from common patterns and the plain slot line in hover cards.
     let slot = '';
-    const slotLine = lines.find((line) => /^\s*(?:Slot|Equip Slot|EquipSlot)\s*:/i.test(line));
-    const sm = (slotLine && slotLine.match(/^(?:Slot|Equip Slot|EquipSlot)\s*:\s*([A-Za-z ,/]+)$/i)) ||
-      text.match(/(?:Slot|Equip Slot|EquipSlot)\s*:\s*([A-Za-z ,/]+?)(?=\s+(?:Class|Race|Size|AC|HP|MANA|END|DMG|Damage|Delay|Ratio|Required)\s*:|$)/i);
+    const slotLine = lines.find((line) => /^\s*(?:Slots?|Equip Slots?|EquipSlot)\s*:/i.test(line));
+    const sm = (slotLine && slotLine.match(/^(?:Slots?|Equip Slots?|EquipSlot)\s*:\s*([A-Za-z ,/]+)$/i)) ||
+      text.match(/(?:Slots?|Equip Slots?|EquipSlot)\s*:\s*([A-Za-z ,/]+?)(?=\s+(?:Class|Race|Size|AC|HP|MANA|END|DMG|Damage|Delay|Ratio|Required)\s*:|$)/i);
     if (sm) slot = sm[1].trim();
     if (!slot) {
       const slotNames = ['Charm', 'Ear', 'Head', 'Face', 'Neck', 'Shoulders', 'Shoulder', 'Arms', 'Arm', 'Back', 'Wrist', 'Range', 'Hands', 'Hand', 'Primary', 'Secondary', 'Finger', 'Fingers', 'Chest', 'Legs', 'Leg', 'Feet', 'Foot', 'Waist', 'Power Source'];
@@ -246,6 +266,8 @@
         slot = slotMatch ? slotMatch[1] : '';
       }
     }
+    const augmentTypes = parseAugmentTypes(text);
+    const isAugment = augmentTypes.length > 0 || /\baugment(?:ation)?\b/i.test(text);
     return {
       id: '',
       name,
@@ -253,7 +275,8 @@
       slotKey: LC.slots.canonicalSlot(slot),
       classes,
       stats,
-      isAugment: false,
+      isAugment,
+      augmentTypes,
       isWishlist: false,
       isTotalsRow: false,
     };
@@ -272,6 +295,7 @@
     parseOpenDkpJson,
     parseOpenDkpDom,
     parseOpenDkpTooltip,
+    parseAugmentTypes,
     canonicalStat,
     normalizeStats,
     normalizeClass,

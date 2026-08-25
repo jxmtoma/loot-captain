@@ -14,6 +14,8 @@ const SCORE_FORMULAS = [
   { key: 'hp', label: 'HP' },
   { key: 'mana', label: 'Mana' },
   { key: 'end', label: 'Endurance' },
+  { key: 'regen', label: 'HP Regen' },
+  { key: 'manaregen', label: 'Mana Regen' },
   { key: 'endregen', label: 'End Regen' },
   { key: 'netpos', label: 'Net positive' },
 ];

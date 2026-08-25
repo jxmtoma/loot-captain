@@ -32,7 +32,13 @@ function canonicalSingleSlot(raw) {
 
 function canonicalSlot(raw) {
   if (!raw) return null;
-  const slots = String(raw).split(/\s*(?:,|\/|\band\b)\s*/i)
+  const text = String(raw).trim();
+  const allExcept = text.match(/^all\s+except\s+(.+)$/i);
+  const rawSlots = allExcept
+    ? [...EQUIPMENT_SLOTS].filter((key) => !allExcept[1].split(/\s*(?:,|\/|\band\b)\s*/i)
+      .map(canonicalSingleSlot).filter(Boolean).some((slot) => slot.key === key))
+    : /^all$/i.test(text) ? [...EQUIPMENT_SLOTS] : text.split(/\s*(?:,|\/|\band\b)\s*/i);
+  const slots = rawSlots
     .map(canonicalSingleSlot)
     .filter(Boolean);
   if (!slots.length) return null;

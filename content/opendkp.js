@@ -127,19 +127,20 @@
       if (prepend) host.prepend(badge); else host.appendChild(badge);
       return;
     }
-    const compact = comparison.rows.length > 1 || LC.diff.weaponType(cand) != null;
+    const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
     const badges = [];
-    for (const row of comparison.rows) {
+    for (const [index, row] of comparison.rows.entries()) {
+      if (cand.isAugment && index) break;
       if (!row.diff || !row.diff.comparable) continue;
       const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
         LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
-      rowBadge.dataset.lcSlot = row.slotKey && row.slotKey.key || '';
       rowBadge.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         const existing = host.querySelector(':scope > .lc-compare-panel');
-        if (existing) existing.remove();
-        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key));
+        if (existing) { existing.remove(); return; }
+        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+          row.isAugment ? comparison.rows : null, index));
       });
       badges.push(rowBadge);
     }

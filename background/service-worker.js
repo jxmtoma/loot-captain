@@ -5,7 +5,7 @@ const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
 const MAX_ID_LENGTH = 12;
 const MAX_NAME_LENGTH = 200;
-const MAX_ITEM_COUNT = 32;
+const MAX_ITEM_COUNT = 128;
 
 importScripts('raidloot-parser.js');
 
@@ -220,6 +220,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               name: item.name || loaded.name,
               icon: item.icon || loaded.icon || '',
               slot: item.slot || loaded.slot,
+              augmentTypes: (Array.isArray(loaded.augmentTypes) && loaded.augmentTypes.length)
+                ? [...loaded.augmentTypes] : (item.augmentTypes || []),
               stats: loaded.stats || item.stats,
             },
             debug,

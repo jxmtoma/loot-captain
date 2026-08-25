@@ -127,8 +127,9 @@
           <p class="hint">Items are compared by slot. Paired slots (ear, wrist, finger) can hold two items.</p>
           <div class="inventory-editor-layout">
           <div id="inventory-preview" class="inventory-preview">
-              <div class="inventory-tabs" aria-hidden="true">
-                <span class="active">Equipment</span>
+              <div class="inventory-tabs" role="tablist" aria-label="Inventory view">
+                <button type="button" class="active" data-inventory-tab="equipment" role="tab" aria-selected="true">Equipment</button>
+                <button type="button" data-inventory-tab="augments" role="tab" aria-selected="false">Augments</button>
             </div>
             <div class="inventory-body">
               <div class="inventory-stage">
