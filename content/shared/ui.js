@@ -61,6 +61,8 @@
     '.lc-compare-panel th{color:#e6c26d !important;text-transform:uppercase;letter-spacing:.06em;}',
     '.lc-compare-panel td:first-child{color:#c3ceda !important;font-weight:bold;}',
     '.lc-compare-panel .lc-head{color:#f0d18a !important;text-shadow:1px 1px #07101b;}',
+    '.lc-effect-details{margin-top:6px;color:#dbe3dc;}',
+    '.lc-effect-details summary{cursor:pointer;color:#c6a45e;font-weight:bold;}',
   ].join('\n');
 
   function injectCSS() {
@@ -94,9 +96,64 @@
   }
 
   // ---------- Compare panel ----------
-  function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0) {
+  function effectValue(effect, effective, level, damage) {
+    if (!effect) return '—';
+    const name = effect.name || effect.raw || 'Unnamed effect';
+    const rank = effect.rank == null || name.includes(String(effect.rank)) ? '' : ' [' + effect.rank + ']';
+    const source = effect.source ? ' · ' + effect.source : '';
+    const adjusted = effective ? ' · effective ' +
+      (effective.min === effective.max ? effective.max : effective.min + '-' + effective.max) + '% @ L' + level : '';
+    const procDamage = damage == null ? '' : ' · ' + damage + ' dmg';
+    return name + rank + adjusted + procDamage + source;
+  }
+
+  function effectStatus(status) {
+    return { added: 'added', removed: 'removed', changed: 'changed', covered: 'covered', different: 'different', same: 'same' }[status] || status;
+  }
+
+  function buildEffectDetails(label, group) {
+    if (!group || !group.rows || !group.rows.length) return null;
+    const details = document.createElement('details');
+    details.className = 'lc-effect-details';
+    const summary = document.createElement('summary');
+    const changes = group.rows.filter((row) => row.status !== 'same' && row.status !== 'covered').length;
+    summary.textContent = label + ' (' + (changes ? changes + ' change' + (changes === 1 ? '' : 's') : 'covered') + ')';
+    details.appendChild(summary);
+    const table = document.createElement('table');
+    const header = document.createElement('tr');
+    for (const label of ['status', 'current', 'candidate']) {
+      const cell = document.createElement('th');
+      cell.textContent = label;
+      header.appendChild(cell);
+    }
+    const thead = document.createElement('thead');
+    thead.appendChild(header);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const effectRow of group.rows) {
+      const row = document.createElement('tr');
+      const comparison = effectRow.focusComparison;
+      const procComparison = effectRow.procComparison;
+      const status = effectRow.direction > 0 ? 'upgrade' : effectRow.direction < 0 ? 'downgrade' : effectStatus(effectRow.status);
+      for (const value of [status,
+        effectValue(effectRow.current, comparison && comparison.current, comparison && comparison.level, procComparison && procComparison.current),
+        effectValue(effectRow.candidate, comparison && comparison.candidate, comparison && comparison.level, procComparison && procComparison.candidate)]) {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.appendChild(cell);
+      }
+      tbody.appendChild(row);
+    }
+    table.appendChild(tbody);
+    details.appendChild(table);
+    return details;
+  }
+
+  function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0, view = 'stats') {
     const div = document.createElement('div');
     div.className = 'lc-compare-panel';
+    div.dataset.lcView = view;
+    div.dataset.lcRow = String(selectedIndex);
     const head = document.createElement('div');
     head.className = 'lc-head';
     if (!worn) {
@@ -137,27 +194,32 @@
       tbody.appendChild(row);
     }
     table.appendChild(tbody);
-    const scoreCls = diff.score > 0 ? 'lc-pos' : (diff.score < 0 ? 'lc-neg' : 'lc-zero');
-    const fLabel = (diff.formula && diff.formula.label) || 'score';
-    const ratio = diff.weaponRatioDelta == null ? '' : '; Weapon ratio delta: ' + fmtDelta(diff.weaponRatioDelta);
     const title = document.createElement('span');
     title.className = 'lc-compare-title';
     title.appendChild(document.createTextNode(
-      (slotLabel ? slotLabel + ': ' : '') + (worn.name || ('#' + worn.id)) + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
+      (view === 'focus' ? 'Spell focus: ' : view === 'proc' ? 'Proc: ' : '') + (slotLabel ? slotLabel + ': ' : '') +
+      (worn.name || ('#' + worn.id)) + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
     ));
-    const score = document.createElement('span');
-    score.className = scoreCls;
-    score.textContent = '(' + fLabel + ' delta: ' + fmtDelta(diff.score) + ratio + ')';
-    title.appendChild(score);
+    if (view === 'stats' && diff.comparable) {
+      const scoreCls = diff.score > 0 ? 'lc-pos' : (diff.score < 0 ? 'lc-neg' : 'lc-zero');
+      const fLabel = (diff.formula && diff.formula.label) || 'score';
+      const ratio = diff.weaponRatioDelta == null ? '' : '; Weapon ratio delta: ' + fmtDelta(diff.weaponRatioDelta);
+      const score = document.createElement('span');
+      score.className = scoreCls;
+      score.textContent = '(' + fLabel + ' delta: ' + fmtDelta(diff.score) + ratio + ')';
+      title.appendChild(score);
+    } else if (view === 'stats' && diff.effectsComparable) {
+      title.appendChild(document.createTextNode('(effects only; not scored)'));
+    }
     head.appendChild(title);
-    if (alternatives && alternatives.length > 1) {
+    if (view === 'stats' && alternatives && alternatives.length > 1) {
       const nav = document.createElement('span');
       nav.className = 'lc-compare-nav';
       const move = (offset) => {
         const index = (selectedIndex + offset + alternatives.length) % alternatives.length;
         const row = alternatives[index];
         div.replaceWith(buildComparePanel(cand, row.target, row.diff,
-          row.slotKey && row.slotKey.key, alternatives, index));
+          row.slotKey && row.slotKey.key, alternatives, index, view));
       };
       for (const [label, title, offset] of [['‹', 'Previous worn augment', -1], ['›', 'Next worn augment', 1]]) {
         const button = document.createElement('button');
@@ -176,7 +238,17 @@
       head.appendChild(nav);
     }
     div.appendChild(head);
-    div.appendChild(table);
+    if (view === 'stats' && diff.comparable) div.appendChild(table);
+    const focusDetails = buildEffectDetails('Spell focus', diff.effects && diff.effects.focus);
+    const procDetails = buildEffectDetails('Proc', diff.effects && diff.effects.proc);
+    if (view === 'focus' && focusDetails) {
+      focusDetails.open = true;
+      div.appendChild(focusDetails);
+    }
+    if (view === 'proc' && procDetails) {
+      procDetails.open = true;
+      div.appendChild(procDetails);
+    }
     return div;
   }
 
@@ -186,14 +258,15 @@
 
   function comparisonBadgeText(row, formula, compact) {
     const diff = row.diff;
+    if (!diff.comparable && diff.effectsComparable) return [slotShort(row.slotKey), 'effects'].filter(Boolean).join(' ');
     const arrow = diff.score > 0 ? 'up' : diff.score < 0 ? 'dn' : 'eq';
     const slot = slotShort(row.slotKey);
-    if (row.isAugment) return 'aug ' + arrow + ' ' + fmtDelta(diff.score) + ' ' + formula.label;
+    if (row.isAugment) return 'aug ' + arrow + ' ' + fmtDelta(diff.score);
     if (compact) {
-      return [slot, arrow, fmtDelta(diff.score), diff.weaponRatioDelta == null ? formula.label : 'r ' + fmtDelta(diff.weaponRatioDelta)]
+      return [slot, arrow, fmtDelta(diff.score), diff.weaponRatioDelta == null ? '' : 'r ' + fmtDelta(diff.weaponRatioDelta)]
         .filter(Boolean).join(' ');
     }
-    return arrow + ' ' + fmtDelta(diff.score) + ' ' + formula.label +
+    return arrow + ' ' + fmtDelta(diff.score) +
       (diff.weaponRatioDelta == null ? '' : ' · ratio ' + fmtDelta(diff.weaponRatioDelta));
   }
 
@@ -204,10 +277,85 @@
       const compatible = (row.compatibleSlots || []).join(', ');
       return 'Augment; fits ' + compatible + '; ' + (slot || '?') + ': vs ' +
         (row.target && (row.target.name || ('#' + row.target.id)) || 'worn augment') +
-        ' (' + formula.label + ' delta ' + fmtDelta(row.diff.score) + ') -- click for full diff';
+        ' (delta ' + fmtDelta(row.diff.score) + ') -- click for full diff';
     }
     return (slot ? slot + ': ' : '') + 'vs ' + (row.target && (row.target.name || ('#' + row.target.id)) || 'worn item') +
-      ' (' + formula.label + ' delta ' + fmtDelta(row.diff.score) + ratio + ') -- click for full diff';
+      ' (delta ' + fmtDelta(row.diff.score) + ratio + ') -- click for full diff';
+  }
+
+  function buildComparisonBadge(row, formula, compact) {
+    const effectOnly = !row.diff.comparable && row.diff.effectsComparable;
+    const badge = buildBadge(
+      effectOnly ? 'sidegrade' : (row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade'),
+      comparisonBadgeText(row, formula, compact), comparisonBadgeTitle(row, formula));
+    badge.dataset.lcView = 'stats';
+    return badge;
+  }
+
+  function focusRankValue(effect) {
+    const raw = String(effect && effect.rank || '');
+    const number = raw.match(/-?\d+(?:\.\d+)?/);
+    if (number) return parseFloat(number[0]);
+    const roman = raw.match(/^[ivxlcdm]+$/i);
+    if (!roman) return null;
+    const values = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+    return roman[0].toUpperCase().split('').reduce((total, char, index, chars) =>
+      total + (values[char] < (values[chars[index + 1]] || 0) ? -values[char] : values[char]), 0);
+  }
+
+  function buildFocusBadge(row) {
+    const rows = row.diff.effects && row.diff.effects.focus && row.diff.effects.focus.rows || [];
+    let positive = false;
+    let negative = false;
+    for (const effectRow of rows) {
+      if (effectRow.direction > 0) { positive = true; continue; }
+      if (effectRow.direction < 0) { negative = true; continue; }
+      if (effectRow.status === 'added') positive = true;
+      if (effectRow.status === 'removed') negative = true;
+      if (effectRow.status === 'changed') {
+        const current = focusRankValue(effectRow.current);
+        const candidate = focusRankValue(effectRow.candidate);
+        if (current != null && candidate != null) candidate > current ? (positive = true) : (negative = true);
+        else positive = negative = true;
+      }
+    }
+    if (!positive && !negative) return null;
+    const state = positive && negative ? 'sidegrade' : positive ? 'upgrade' : 'downgrade';
+    const text = state === 'upgrade' ? 'focus up' : state === 'downgrade' ? 'focus dn' : 'focus change';
+    const badge = buildBadge(state, text, 'Spell focus ' + (state === 'sidegrade' ? 'changed' : state) + '; click for details');
+    badge.dataset.lcView = 'focus';
+    return badge;
+  }
+
+  function buildProcBadge(row) {
+    const rows = row.diff.effects && row.diff.effects.proc && row.diff.effects.proc.rows || [];
+    if (!rows.length) return null;
+    const changed = rows.filter((effectRow) => effectRow.status !== 'same');
+    const slot = slotShort(row.slotKey);
+    if (!changed.length) {
+      const badge = buildBadge('sidegrade', [slot, 'proc eq'].filter(Boolean).join(' '), 'Weapon proc damage is equal; click for proc-only details');
+      badge.dataset.lcView = 'proc';
+      return badge;
+    }
+    let positive = false;
+    let negative = false;
+    let unknown = false;
+    for (const effectRow of changed) {
+      if (effectRow.direction > 0 || effectRow.status === 'added') positive = true;
+      else if (effectRow.direction < 0 || effectRow.status === 'removed') negative = true;
+      else unknown = true;
+    }
+    const state = !unknown && positive !== negative ? (positive ? 'upgrade' : 'downgrade') : 'sidegrade';
+    const text = [slot, state === 'upgrade' ? 'proc up' : state === 'downgrade' ? 'proc dn' : 'proc change']
+      .filter(Boolean).join(' ');
+    const badge = buildBadge(state, text, 'Weapon proc ' + (state === 'sidegrade' ? 'changed' : state) + '; click for proc-only details');
+    badge.dataset.lcView = 'proc';
+    return badge;
+  }
+
+  function buildComparisonBadges(row, formula, compact) {
+    const main = row.diff.comparable ? buildComparisonBadge(row, formula, compact) : null;
+    return [main, buildFocusBadge(row), buildProcBadge(row)].filter(Boolean);
   }
 
   // ---------- Stat indicators ----------
@@ -295,6 +443,8 @@
     buildComparePanel,
     comparisonBadgeText,
     comparisonBadgeTitle,
+    buildComparisonBadge,
+    buildComparisonBadges,
     addStatIndicators,
     statifyItemDetail,
   };

@@ -5,7 +5,7 @@ const SELECTED_KEY = 'selectedProfileId';
 const SCORE_KEY = 'scoreFormula';
 const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
-const PROFILE_STATS_VERSION = 3;
+const PROFILE_STATS_VERSION = 4;
 const DEFAULT_FORMULA_KEY = 'ac10hp';
 const ICON_URL_PATTERN = /^(?:data:image\/|https:\/\/(?:cdn\.raidloot\.com|dlil5rqe0ybd2\.cloudfront\.net)\/)/i;
 const SCORE_FORMULAS = [
@@ -43,6 +43,7 @@ let editingId = null; // null = list view, 'new' = creating, else editing that i
 let editingProfile = null; // working copy while editing
 let itemsEditable = false;
 let selectedItemIndex = 0;
+let selectedFocusIndex = 0;
 let activeInventoryTab = 'equipment';
 
 // ---------- Storage ----------
@@ -198,6 +199,7 @@ async function openEditor(id) {
   editingId = id;
   itemsEditable = false;
   selectedItemIndex = 0;
+  selectedFocusIndex = 0;
   activeInventoryTab = 'equipment';
   if (id === 'new') {
     editingProfile = { id: '', name: '', cls: '', level: '', items: [] };
@@ -222,6 +224,7 @@ async function openEditor(id) {
         parentId: it.parentId || '',
         enriched: !!it.enriched,
         stats: Object.assign({}, it.stats || {}),
+        effects: Array.isArray(it.effects) ? it.effects.map((effect) => ({ ...effect })) : [],
       })),
     };
     $('#editor-title').textContent = 'Edit: ' + (p.name || 'Unnamed');
@@ -292,14 +295,72 @@ function slotRoot(slot) {
   return normalizeEditorSlot(slot).replace(/-[12]$/, '');
 }
 
+function isPowerSourceItem(item) {
+  return slotRoot(item && item.slot) === 'powersource';
+}
+
+function hasSpellFocus(item) {
+  return !item?.isAugment && !isPowerSourceItem(item) && Array.isArray(item.effects) &&
+    item.effects.some((effect) => effect && effect.type === 'focus');
+}
+
+function hasWeaponProc(item) {
+  return !item?.isAugment && ['primary', 'secondary', 'range'].includes(slotRoot(item && item.slot)) &&
+    Array.isArray(item.effects) && item.effects.some((effect) => effect && effect.type === 'proc');
+}
+
+function getGearEffectEntries() {
+  return (editingProfile && editingProfile.items || []).flatMap((item, itemIndex) =>
+    (hasSpellFocus(item) || hasWeaponProc(item) ? item.effects : [])
+      .filter((effect) => effect && (effect.type === 'focus' && hasSpellFocus(item) || effect.type === 'proc' && hasWeaponProc(item)))
+      .map((effect) => ({ effect, item, itemIndex })));
+}
+
 function renderInventoryPreview() {
   const slots = $('#inventory-slots');
   if (!slots || !editingProfile) return;
   const showAugments = activeInventoryTab === 'augments';
+  const showFocus = activeInventoryTab === 'focus';
+  if (showFocus) {
+    const grid = document.querySelector('.inventory-grid');
+    const entries = getGearEffectEntries();
+    grid.classList.add('focus-list-view');
+    slots.classList.add('focus-list');
+    slots.replaceChildren(...entries.map((entry, index) => {
+      const button = el('button', 'focus-list-entry');
+      button.type = 'button';
+      button.classList.toggle('proc', entry.effect.type === 'proc');
+      button.classList.toggle('selected', index === selectedFocusIndex);
+      button.setAttribute('aria-pressed', String(index === selectedFocusIndex));
+      button.appendChild(el('span', 'focus-list-type', entry.effect.type === 'proc' ? 'PROC' : 'FOCUS'));
+      button.appendChild(el('span', 'focus-list-name', entry.effect.name || entry.effect.raw || 'Unnamed effect'));
+      button.appendChild(el('span', 'focus-list-item', entry.item.name || 'Unnamed item'));
+      button.addEventListener('click', () => {
+        selectedFocusIndex = index;
+        selectedItemIndex = entry.itemIndex;
+        renderItemList();
+      });
+      return button;
+    }));
+    const visibleCount = entries.length;
+    const meta = [editingProfile.cls, editingProfile.level ? 'Level ' + editingProfile.level : '', visibleCount + ' gear effects'].filter(Boolean).join(' · ') || 'Local profile';
+    $('#inventory-stage-name').textContent = editingProfile.name || 'Unnamed Character';
+    $('#inventory-stage-meta').textContent = meta;
+    $('.inventory-stage-title').textContent = 'SPELL FOCUS & PROCS';
+    $('#inventory-slot-count').textContent = visibleCount + ' gear effects';
+    document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
+      const active = tab.dataset.inventoryTab === activeInventoryTab;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+    });
+    return;
+  }
+  document.querySelector('.inventory-grid').classList.remove('focus-list-view');
+  slots.classList.remove('focus-list');
   const equipmentGrouped = {};
   const augmentGrouped = {};
   editingProfile.items.forEach((item, index) => {
-    if (!item.slot) return;
+    if (!item.slot || (showFocus && !hasSpellFocus(item))) return;
     const slot = normalizeEditorSlot(item.slot);
     const grouped = item.isAugment ? augmentGrouped : equipmentGrouped;
     (grouped[slot] || (grouped[slot] = [])).push({ item, index });
@@ -353,9 +414,12 @@ function renderInventoryPreview() {
     }
     return box;
   };
-  slots.replaceChildren(...INVENTORY_SLOT_LAYOUT.map(makeSlot));
-  const visibleCount = editingProfile.items.filter((item) => !!item.isAugment === showAugments).length;
-  const meta = [editingProfile.cls, editingProfile.level ? 'Level ' + editingProfile.level : '', visibleCount + (showAugments ? ' augments' : ' items')].filter(Boolean).join(' · ') || 'Local profile';
+  slots.replaceChildren(...INVENTORY_SLOT_LAYOUT
+    .filter(({ slot }) => !(showAugments && slotRoot(slot) === 'powersource'))
+    .map(makeSlot));
+  const visibleCount = editingProfile.items.filter((item) => !!item.isAugment === showAugments && !(showAugments && isPowerSourceItem(item))).length;
+  const visibleLabel = showAugments ? 'augments' : 'items';
+  const meta = [editingProfile.cls, editingProfile.level ? 'Level ' + editingProfile.level : '', visibleCount + ' ' + visibleLabel].filter(Boolean).join(' · ') || 'Local profile';
   $('#inventory-stage-name').textContent = editingProfile.name || 'Unnamed Character';
   $('#inventory-stage-meta').textContent = meta;
   $('.inventory-stage-title').textContent = showAugments ? 'WORN AUGMENTS' : 'WORN EQUIPMENT';
@@ -374,6 +438,10 @@ function hasNumericStats(item) {
   });
 }
 
+function hasItemData(item) {
+  return hasNumericStats(item) || hasSpellFocus(item) || (item && Array.isArray(item.effects) && item.effects.length > 0);
+}
+
 function hasAugmentTypes(item) {
   return !item.isAugment || (Array.isArray(item.augmentTypes) && item.augmentTypes.length > 0);
 }
@@ -386,7 +454,7 @@ async function loadEditorStats(profile) {
   if (!profile || editingProfile !== profile) return;
   const refreshAll = profile.statsVersion !== PROFILE_STATS_VERSION;
   const pending = profile.items.filter((item) => (item.id || item.name) &&
-    (!hasNumericStats(item) || !item.icon || !hasAugmentTypes(item)) && (refreshAll || !item.enriched));
+    (refreshAll || ((!hasItemData(item) || !item.icon || !hasAugmentTypes(item)) && !item.enriched)));
   if (!pending.length) {
     if (editingId !== 'new' && refreshAll) {
       profiles[editingId] = { ...profiles[editingId], statsVersion: PROFILE_STATS_VERSION };
@@ -413,13 +481,14 @@ async function loadEditorStats(profile) {
       if (!loaded) continue;
       item.enriched = true;
       enrichedCount++;
-      if (!hasNumericStats(loaded) && !loaded.icon) continue;
+      if (!hasItemData(loaded) && !loaded.icon) continue;
       item.id = loaded.id || item.id || '';
       item.icon = loaded.icon || item.icon || '';
       item.slot = item.slot || loaded.slot || '';
       item.augmentTypes = (Array.isArray(loaded.augmentTypes) && loaded.augmentTypes.length)
         ? [...loaded.augmentTypes] : (item.augmentTypes || []);
       item.stats = statsToPlain(loaded.stats);
+      item.effects = Array.isArray(loaded.effects) ? loaded.effects : (item.effects || []);
       loadedCount++;
     }
     renderItemList();
@@ -433,6 +502,29 @@ async function loadEditorStats(profile) {
   }
 }
 
+function renderFocusDetails() {
+  const list = $('#item-list');
+  const entries = getGearEffectEntries();
+  list.replaceChildren();
+  if (!entries.length) {
+    list.appendChild(el('div', 'empty-state', 'No spell focus or weapon proc found on worn items.'));
+    return;
+  }
+  selectedFocusIndex = Math.min(selectedFocusIndex, entries.length - 1);
+  const entry = entries[selectedFocusIndex];
+  const detailsLabel = document.querySelector('.item-details-label');
+  if (detailsLabel) detailsLabel.textContent = entry.effect.type === 'proc' ? 'WEAPON PROC DETAILS' : 'SPELL FOCUS DETAILS';
+  const row = el('div', 'item-row selected');
+  row.appendChild(el('div', 'item-row-header', entry.effect.name || entry.effect.raw || 'Unnamed effect'));
+  const details = el('div', 'focus-detail');
+  details.appendChild(el('div', 'focus-detail-label', 'DETAILS'));
+  details.appendChild(el('div', 'focus-detail-text', entry.effect.raw || entry.effect.name || 'No details available.'));
+  details.appendChild(el('div', 'focus-detail-label', 'ON ITEM'));
+  details.appendChild(el('div', 'focus-detail-text', entry.item.name || 'Unnamed item'));
+  row.appendChild(details);
+  list.appendChild(row);
+}
+
 function renderItemList() {
   const list = $('#item-list');
   list.innerHTML = '';
@@ -444,8 +536,17 @@ function renderItemList() {
   const addItemButton = $('#btn-add-item');
   if (addItemButton) addItemButton.disabled = !itemsEditable;
   renderInventoryPreview();
+  const focusView = activeInventoryTab === 'focus';
+  const detailsLabel = document.querySelector('.item-details-label');
+  if (detailsLabel) detailsLabel.textContent = focusView ? 'GEAR EFFECT DETAILS' : 'ITEM DETAILS';
+  if (editButton) editButton.hidden = focusView;
+  if (addItemButton) addItemButton.hidden = focusView;
+  if (focusView) {
+    renderFocusDetails();
+    return;
+  }
   const visibleIndices = editingProfile.items
-    .map((item, index) => (!!item.isAugment === (activeInventoryTab === 'augments') ? index : -1))
+    .map((item, index) => ((activeInventoryTab === 'augments' ? !!item.isAugment && !isPowerSourceItem(item) : activeInventoryTab === 'focus' ? hasSpellFocus(item) : !item.isAugment) ? index : -1))
     .filter((index) => index >= 0);
   if (!visibleIndices.length) {
     list.appendChild(el('div', 'empty-state', activeInventoryTab === 'augments' ? 'No augments. Import an inventory file or add one.' : 'No worn items. Add one to start comparing.'));
@@ -495,6 +596,7 @@ function renderItemList() {
         item.augmentTypes = [];
         item.enriched = false;
         item.stats = {};
+        item.effects = [];
       }
       header.querySelector('.item-name').textContent = nameInput.value || ('Item ' + (idx + 1));
       renderInventoryPreview();
@@ -587,6 +689,15 @@ function renderItemList() {
       }
     }
     row.appendChild(statsBlock);
+    const focusEffects = hasSpellFocus(item) ? item.effects.filter((effect) => effect && effect.type === 'focus') : [];
+    if (focusEffects.length) {
+      const focusBlock = el('div', 'item-stats');
+      const focusHeader = el('div', 'item-stats-header');
+      focusHeader.appendChild(el('span', '', 'Spell Focus'));
+      focusBlock.appendChild(focusHeader);
+      for (const effect of focusEffects) focusBlock.appendChild(el('div', 'hint', effect.raw || effect.name || 'Unnamed focus'));
+      row.appendChild(focusBlock);
+    }
     list.appendChild(row);
   });
 }
@@ -611,7 +722,7 @@ async function saveProfile() {
       return {
         id: it.id, name: it.name, icon: it.icon || '', slot: it.slot,
         isAugment: !!it.isAugment, augmentTypes: Array.isArray(it.augmentTypes) ? [...it.augmentTypes] : [],
-        augSlot: it.augSlot || '', parentId: it.parentId || '', enriched: !!it.enriched, stats,
+        augSlot: it.augSlot || '', parentId: it.parentId || '', enriched: !!it.enriched, stats, effects: it.effects || [],
       };
     });
   if (editingId === 'new') {
@@ -685,6 +796,7 @@ function parseInventoryText(text) {
       id: idStr,
       slot,
       stats: {},
+      effects: [],
     };
     lastEquipmentBySlot[slot] = item;
     items.push(item);
@@ -806,6 +918,7 @@ async function importRaidlootProfile() {
       augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
       enriched: true,
       stats: statsToPlain(item.stats),
+      effects: Array.isArray(item.effects) ? item.effects : [],
     })).filter((item) => item.name && item.slot);
     if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
     addImportedProfile({

@@ -114,7 +114,7 @@
     const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
     if (!comparison.eligible) return;
     const summary = LC.diff.summarizeComparisons(comparison);
-    if (!summary.hasWorn) {
+    if (!summary.hasWorn && !summary.hasEffects) {
       badge.dataset.state = 'empty';
       badge.textContent = 'empty slot';
       badge.title = 'No worn item in slot ' + cand.slotKey.key;
@@ -131,18 +131,22 @@
     const badges = [];
     for (const [index, row] of comparison.rows.entries()) {
       if (cand.isAugment && index) break;
-      if (!row.diff || !row.diff.comparable) continue;
-      const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
-        LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
-      rowBadge.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const existing = host.querySelector(':scope > .lc-compare-panel');
-        if (existing) { existing.remove(); return; }
-        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-          row.isAugment ? comparison.rows : null, index));
-      });
-      badges.push(rowBadge);
+      if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+      for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact)) {
+        rowBadge.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const existing = host.querySelector(':scope > .lc-compare-panel');
+          if (existing) {
+            const same = existing.dataset.lcView === rowBadge.dataset.lcView && existing.dataset.lcRow === String(index);
+            existing.remove();
+            if (same) return;
+          }
+          host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+            row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView));
+        });
+        badges.push(rowBadge);
+      }
     }
     if (prepend) host.prepend(...badges); else host.append(...badges);
   }

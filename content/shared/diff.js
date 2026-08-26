@@ -36,6 +36,18 @@
     { key: 'netpos', label: 'Net positive', terms: '__POSITIVE__' },
   ];
   const DEFAULT_FORMULA_KEY = 'ac10hp';
+  const PROC_FAMILIES = [
+    ['damage', /\b(?:damage|strike|blast|nuke|dot|burn|harm|decrease current hp)\b/i],
+    ['hate', /\b(?:hate|aggro|agro|threat|taunt)\b/i],
+    ['stun', /\bstun(?:s|ning)?\b/i],
+    ['slow', /\bslow(?:s|ing)?\b/i],
+    ['debuff', /\bdebuff(?:s|ing)?\b/i],
+    ['heal', /\b(?:heal|healing|restore)\b/i],
+    ['mana', /\b(?:mana|mind)\b/i],
+    ['root', /\broot(?:s|ing)?\b/i],
+    ['snare', /\bsnare(?:s|ing)?\b/i],
+    ['silence', /\bsilence(?:s|d)?\b/i],
+  ];
 
   function findWornInSlot(profile, slotKey) {
     if (!profile || !slotKey) return [];
@@ -86,6 +98,208 @@
 
   function hasNumericStats(item) {
     return Object.entries(item && item.stats || {}).some(([key, value]) => isDiffStatKey(key) && numericStat(value) != null);
+  }
+
+  function itemEffects(item, type) {
+    const slot = item && (item.slotKey || LC.slots.canonicalSlot(item.slot));
+    if (type === 'focus' && item && (item.isAugment || (slot && (slot.keys || [slot.key]).includes('powersource')))) return [];
+    return (item && Array.isArray(item.effects) ? item.effects : [])
+      .filter((effect) => !type || effect.type === type)
+      .map((effect) => ({ ...effect, source: item && item.name || '', sourceItem: item }));
+  }
+
+  function effectFamily(effect) {
+    if (!effect || effect.type !== 'proc') return '';
+    const text = [effect.name, effect.raw].filter(Boolean).join(' ');
+    return (PROC_FAMILIES.find(([, pattern]) => pattern.test(text)) || ['unknown'])[0];
+  }
+
+  function effectSimilarity(a, b) {
+    return LC.parser && LC.parser.effectSimilarity ? LC.parser.effectSimilarity(a, b) : (a.key === b.key ? 1 : 0);
+  }
+
+  function focusPolarity(effect) {
+    const text = String(effect && (effect.name || effect.raw) || '');
+    if (/\bbeneficial\b/i.test(text)) return 'beneficial';
+    if (/\bdetrimental\b/i.test(text)) return 'detrimental';
+    return '';
+  }
+
+  function canMatchEffects(a, b) {
+    if (!a || !b || a.type !== b.type) return false;
+    if (a.type === 'focus') {
+      const leftPolarity = focusPolarity(a);
+      const rightPolarity = focusPolarity(b);
+      if (leftPolarity && rightPolarity && leftPolarity !== rightPolarity) return false;
+    }
+    if (a.key === b.key) return true;
+    if (a.type === 'proc') {
+      const leftFamily = effectFamily(a);
+      const rightFamily = effectFamily(b);
+      if (leftFamily === 'unknown' || leftFamily !== rightFamily) return false;
+      if (leftFamily === 'damage' && procDamage(a) != null && procDamage(b) != null) return true;
+    }
+    return effectSimilarity(a, b) >= (a.type === 'focus' ? 0.75 : 0.5);
+  }
+
+  function sameEffectRank(a, b) {
+    return a.rank == null || b.rank == null ? true : String(a.rank) === String(b.rank);
+  }
+
+  function bestEffectMatch(effect, effects) {
+    let best = null;
+    for (let index = 0; index < effects.length; index++) {
+      const candidate = effects[index];
+      if (!canMatchEffects(effect, candidate)) continue;
+      const score = effectSimilarity(effect, candidate);
+      if (!best || score > best.score) best = { index, effect: candidate, score };
+    }
+    return best;
+  }
+
+  function focusPotency(effect) {
+    const text = String(effect && (effect.raw || effect.name) || '');
+    const levelMatch = text.match(/\bL\s*(\d+)\b/i);
+    if (!levelMatch) return null;
+    const prefix = text.slice(0, levelMatch.index).trim();
+    const range = prefix.match(/(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)\s*%?\s*$/);
+    const single = prefix.match(/(-?\d+(?:\.\d+)?)\s*%?\s*$/);
+    if (!range && !single) return null;
+    return {
+      level: parseInt(levelMatch[1], 10),
+      min: parseFloat(range ? range[1] : single[1]),
+      max: parseFloat(range ? range[2] : single[1]),
+    };
+  }
+
+  function compareFocusPotency(candidate, current) {
+    const candidatePower = focusPotency(candidate);
+    const currentPower = focusPotency(current);
+    if (!candidatePower || !currentPower) return null;
+    const level = Math.max(candidatePower.level, currentPower.level);
+    const adjust = (power) => {
+      const loss = Math.max(0, level - power.level) * 5;
+      return { min: Math.max(0, power.min - loss), max: Math.max(0, power.max - loss) };
+    };
+    const candidateEffective = adjust(candidatePower);
+    const currentEffective = adjust(currentPower);
+    const delta = candidateEffective.max !== currentEffective.max
+      ? candidateEffective.max - currentEffective.max
+      : candidateEffective.min - currentEffective.min;
+    return { level, current: currentEffective, candidate: candidateEffective, direction: Math.sign(delta) };
+  }
+
+  function strongestFocus(effects) {
+    return effects.reduce((best, effect) => {
+      if (!best) return effect;
+      const comparison = compareFocusPotency(effect, best);
+      return comparison && comparison.direction > 0 ? effect : best;
+    }, null);
+  }
+
+  function compareFocusEffects(profile, cand, worn) {
+    const candidate = itemEffects(cand, 'focus');
+    const target = itemEffects(worn, 'focus');
+    const other = (profile.items || []).filter((item) => item !== worn).flatMap((item) => itemEffects(item, 'focus'));
+    const remainingTarget = [...target];
+    const rows = [];
+    for (const effect of candidate) {
+      const currentMatches = [...other, ...target].filter((current) => canMatchEffects(effect, current));
+      if (!currentMatches.length) {
+        rows.push({ status: 'added', direction: 1, current: null, candidate: effect });
+        continue;
+      }
+      const currentBest = strongestFocus(currentMatches);
+      const otherMatches = other.filter((current) => canMatchEffects(effect, current));
+      const finalBest = strongestFocus([effect, ...otherMatches]);
+      const comparison = compareFocusPotency(finalBest, currentBest);
+      const displayComparison = compareFocusPotency(effect, currentBest);
+      for (let index = remainingTarget.length - 1; index >= 0; index--) {
+        if (canMatchEffects(effect, remainingTarget[index])) remainingTarget.splice(index, 1);
+      }
+      let status;
+      let direction = comparison && comparison.direction || 0;
+      if (finalBest.sourceItem !== cand) {
+        status = 'covered';
+        direction = 0;
+      } else if (comparison) {
+        status = direction === 0 ? (currentBest.sourceItem === worn ? 'same' : 'covered') : 'changed';
+      } else {
+        status = sameEffectRank(effect, currentBest) ? (currentBest.sourceItem === worn ? 'same' : 'covered') : 'changed';
+      }
+      rows.push({ status, direction, focusComparison: displayComparison, current: currentBest, candidate: effect });
+    }
+    for (const effect of remainingTarget) {
+      if (!other.some((current) => canMatchEffects(effect, current))) {
+        rows.push({ status: 'removed', direction: -1, current: effect, candidate: null });
+      }
+    }
+    return { rows, comparable: candidate.length > 0 || target.length > 0 };
+  }
+
+  function procDamage(effect) {
+    const text = String(effect && (effect.raw || effect.name) || '');
+    const matches = [...text.matchAll(/Decrease Current HP by\s+(-?\d+(?:\.\d+)?)/gi)];
+    return matches.length ? matches.reduce((total, match) => total + Math.abs(parseFloat(match[1])), 0) : null;
+  }
+
+  function compareProcDamage(candidate, current) {
+    const candidateDamage = procDamage(candidate);
+    const currentDamage = procDamage(current);
+    if (candidateDamage == null || currentDamage == null) return null;
+    return { current: currentDamage, candidate: candidateDamage, direction: Math.sign(candidateDamage - currentDamage) };
+  }
+
+  function compareEffectType(profile, cand, worn, type) {
+    if (type === 'focus') return compareFocusEffects(profile, cand, worn);
+    const candidate = itemEffects(cand, type);
+    const target = itemEffects(worn, type);
+    const other = type === 'focus' ? (profile.items || [])
+      .filter((item) => item !== worn)
+      .flatMap((item) => itemEffects(item, type)) : [];
+    const remainingOther = [...other];
+    const remainingTarget = [...target];
+    const rows = [];
+    for (const effect of candidate) {
+      const covered = bestEffectMatch(effect, remainingOther);
+      if (covered) {
+        remainingOther.splice(covered.index, 1);
+        rows.push({ status: 'covered', current: covered.effect, candidate: effect });
+        continue;
+      }
+      const match = bestEffectMatch(effect, remainingTarget);
+      if (match) {
+        remainingTarget.splice(match.index, 1);
+        const procComparison = type === 'proc' ? compareProcDamage(effect, match.effect) : null;
+        rows.push({
+          status: procComparison ? (procComparison.direction === 0 ? 'same' : 'changed') :
+            (sameEffectRank(effect, match.effect) ? 'same' : 'changed'),
+          direction: procComparison && procComparison.direction || 0,
+          procComparison,
+          current: match.effect,
+          candidate: effect,
+        });
+      } else {
+        rows.push({ status: 'added', current: null, candidate: effect });
+      }
+    }
+    for (const effect of remainingTarget) rows.push({ status: 'removed', current: effect, candidate: null });
+    if (type === 'proc') {
+      const added = rows.filter((row) => row.status === 'added');
+      const removed = rows.filter((row) => row.status === 'removed');
+      for (let i = 0; i < Math.min(added.length, removed.length); i++) {
+        added[i].status = 'different';
+        added[i].current = removed[i].current;
+        rows.splice(rows.indexOf(removed[i]), 1);
+      }
+    }
+    return { rows, comparable: candidate.length > 0 || target.length > 0 };
+  }
+
+  function compareEffects(profile, cand, worn) {
+    const focus = compareEffectType(profile, cand, worn, 'focus');
+    const proc = compareEffectType(profile, cand, worn, 'proc');
+    return { focus, proc, comparable: focus.comparable || proc.comparable };
   }
 
   function weaponRatio(item) {
@@ -165,7 +379,10 @@
     if (cand.isAugment) {
       const damageAugment = hasDamageModifier(cand);
       const matches = findWornAugments(profile, cand.slotKey, damageAugment, cand.augmentTypes || [])
-        .map((worn) => ({ worn, diff: diffItems(cand, worn, formula) }))
+        .map((worn) => {
+          const effects = compareEffects(profile, cand, worn);
+          return { worn, diff: { ...diffItems(cand, worn, formula), effects, effectsComparable: effects.comparable } };
+        })
         .filter((match) => match.diff.comparable)
         .sort((a, b) => b.diff.score - a.diff.score);
       if (!matches.length) return { eligible: false, rows: [] };
@@ -198,17 +415,21 @@
       const slotKey = typeof key === 'string' ? LC.slots.canonicalSlot(key) : key;
       const worn = findWornInSlot(profile, slotKey);
       const target = bestComparisonTarget(cand, worn, formula);
-      return { slotKey, worn, target, diff: target ? diffItems(cand, target, formula) : null };
+      const numeric = diffItems(cand, target, formula);
+      const effects = compareEffects(profile, cand, target);
+      return { slotKey, worn, target, diff: { ...numeric, effects, effectsComparable: effects.comparable } };
     });
     return { eligible: true, rows };
   }
 
   function summarizeComparisons(comparison) {
     const rows = comparison.rows || [];
-    const comparable = comparison.eligible && rows.length > 0 && rows.every((row) => row.diff && row.diff.comparable);
+    const comparable = comparison.eligible && rows.length > 0 && rows.every((row) =>
+      row.diff && (row.diff.comparable || row.diff.effectsComparable));
     return {
       comparable,
       hasWorn: rows.some((row) => row.worn && row.worn.length),
+      hasEffects: rows.some((row) => row.diff && row.diff.effectsComparable),
       score: comparable ? (rows[0].isAugment ? rows[0].diff.score : rows.reduce((sum, row) => sum + row.diff.score, 0)) : 0,
       rows,
     };
@@ -226,6 +447,7 @@
     bestComparisonTarget,
     compareCandidate,
     summarizeComparisons,
+    compareEffects,
     weaponType,
   };
 })();

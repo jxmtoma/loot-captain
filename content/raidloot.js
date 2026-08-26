@@ -49,7 +49,7 @@
     const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
     if (!comparison.eligible) return;
     const summary = LC.diff.summarizeComparisons(comparison);
-    if (!summary.hasWorn) {
+    if (!summary.hasWorn && !summary.hasEffects) {
       badge.dataset.state = 'empty';
       badge.textContent = 'empty slot';
       badge.title = 'No worn item in slot ' + cand.slotKey.key;
@@ -66,19 +66,23 @@
     const badges = [];
     for (const [index, row] of comparison.rows.entries()) {
       if (cand.isAugment && index) break;
-      if (!row.diff || !row.diff.comparable) continue;
-      const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
-        LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
-      rowBadge.dataset.lcRow = index;
-      if (attachPanel) rowBadge.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const existing = host.querySelector(':scope > .lc-compare-panel');
-        if (existing) { existing.remove(); return; }
-        host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-          row.isAugment ? comparison.rows : null, index));
-      });
-      badges.push(rowBadge);
+      if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+      for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact)) {
+        rowBadge.dataset.lcRow = index;
+        if (attachPanel) rowBadge.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const existing = host.querySelector(':scope > .lc-compare-panel');
+          if (existing) {
+            const same = existing.dataset.lcView === rowBadge.dataset.lcView && existing.dataset.lcRow === String(index);
+            existing.remove();
+            if (same) return;
+          }
+          host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+            row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView));
+        });
+        badges.push(rowBadge);
+      }
     }
     host.prepend(...badges);
   }
@@ -101,10 +105,11 @@
       badge.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        const next = tr.nextSibling;
-        if (next && next.classList && next.classList.contains('lc-compare-row')) {
-          const same = next.dataset.lcRow === badge.dataset.lcRow;
-          next.remove();
+        const compareRow = Array.from(tr.parentNode.children).find((node) =>
+          node.classList && node.classList.contains('lc-compare-row') && node.dataset.lcOwner === id);
+        if (compareRow) {
+          const same = compareRow.dataset.lcRow === badge.dataset.lcRow && compareRow.dataset.lcView === badge.dataset.lcView;
+          compareRow.remove();
           if (same) return;
         }
         if (!LC.currentProfile) return;
@@ -115,13 +120,20 @@
         if (!comparison.eligible || !summary.comparable || !row) return;
         const newRow = document.createElement('tr');
         newRow.className = 'lc-compare-row';
+        newRow.dataset.lcOwner = id;
         newRow.dataset.lcRow = badge.dataset.lcRow;
+        newRow.dataset.lcView = badge.dataset.lcView;
         const td = document.createElement('td');
         td.colSpan = tr.cells.length;
         td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-          row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow)));
+          row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView));
         newRow.appendChild(td);
-        tr.parentNode.insertBefore(newRow, tr.nextSibling);
+        const nativeDetailRow = detail.closest('tr');
+        if (nativeDetailRow && nativeDetailRow !== tr && nativeDetailRow.parentNode === tr.parentNode) {
+          tr.parentNode.insertBefore(newRow, nativeDetailRow.nextElementSibling);
+        } else {
+          tr.parentNode.appendChild(newRow);
+        }
       }, true);
     });
   }
@@ -207,9 +219,10 @@
           continue;
         }
         const summary = LC.diff.summarizeComparisons(comparison);
-        if (!summary.hasWorn) {
+        if (!summary.hasWorn && !summary.hasEffects) {
           const emptyDiff = LC.diff.diffItems(cand, null, f);
-          if (!emptyDiff.comparable) {
+          const hasEffects = comparison.rows.some((row) => row.diff && row.diff.effectsComparable);
+          if (!emptyDiff.comparable && !hasEffects) {
             badge.dataset.state = 'nomatch';
             badge.textContent = '?';
             badge.title = 'Item stats are unresolved; no comparison is available';
@@ -217,11 +230,11 @@
             rows.push({ icon, sortKey });
             continue;
           }
-          sortKey = emptyDiff.score;
-          badge.dataset.state = 'empty';
-          const emptyRow = { slotKey: cand.slotKey, diff: emptyDiff };
-          badge.textContent = 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null);
-          badge.title = 'No worn item in slot ' + cand.slotKey.key + '. Score is the raw item value.';
+          sortKey = emptyDiff.score || 0;
+          badge.dataset.state = hasEffects && !emptyDiff.comparable ? 'sidegrade' : 'empty';
+          const emptyRow = { slotKey: cand.slotKey, diff: comparison.rows[0].diff };
+          badge.textContent = emptyDiff.comparable ? 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null) : 'effects';
+          badge.title = 'No worn item in slot ' + cand.slotKey.key + (hasEffects && !emptyDiff.comparable ? '; effect comparison available' : '. Score is the raw item value.');
         } else {
           if (!summary.comparable) {
             badge.dataset.state = 'nomatch';
@@ -235,9 +248,7 @@
           const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
           for (const [index, row] of comparison.rows.entries()) {
             if (cand.isAugment && index) break;
-            const rowBadge = LC.ui.buildBadge(row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade',
-              LC.ui.comparisonBadgeText(row, f, compact), LC.ui.comparisonBadgeTitle(row, f));
-            meta.appendChild(rowBadge);
+            meta.append(...LC.ui.buildComparisonBadges(row, f, compact));
           }
           rows.push({ icon, sortKey });
           continue;

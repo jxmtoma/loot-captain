@@ -13,6 +13,7 @@ const raidlootSource = read('content/raidloot.js');
 assert.match(optionsHtml, /<select id="profile-class"><\/select>/);
 assert.match(optionsHtml, /id="btn-edit-items"/);
 assert.match(optionsHtml, /data-inventory-tab="augments"/);
+assert.match(optionsHtml, /data-inventory-tab="focus"/);
 assert.doesNotMatch(optionsHtml, /id="profile-class"[^>]*type="text"/);
 for (const className of ['Bard', 'Beastlord', 'Berserker', 'Cleric', 'Druid', 'Enchanter', 'Magician', 'Monk', 'Necromancer', 'Paladin', 'Ranger', 'Rogue', 'Shadowknight', 'Shaman', 'Warrior', 'Wizard']) {
   assert.match(optionsSource, new RegExp("'" + className + "'"));
@@ -24,6 +25,12 @@ assert.match(optionsSource, /if \(idx !== selectedItemIndex\) return/);
 assert.match(optionsSource, /disabled = !itemsEditable/);
 assert.match(optionsSource, /if \(itemsEditable\) statRow\.appendChild\(rmBtn\)/);
 assert.match(optionsSource, /item-detail-icon/);
+assert.match(optionsSource, /hasSpellFocus/);
+assert.match(optionsSource, /isPowerSourceItem/);
+assert.match(optionsSource, /PROFILE_STATS_VERSION = 4/);
+assert.match(optionsSource, /renderFocusDetails/);
+assert.match(optionsSource, /focus-list-entry/);
+assert.match(optionsSource, /hasWeaponProc/);
 assert.match(popupSource, /key: 'regen'/);
 assert.match(popupSource, /key: 'manaregen'/);
 assert.match(optionsSource, /\{ slot: 'neck', label: 'Neck', column: 6, row: 2 \}/);
@@ -42,8 +49,19 @@ assert.match(read('options/options.js'), /data:image/);
 assert.match(read('content/shared/ui.js'), /padding:2px 8px 2px 0 !important/);
 assert.match(read('content/shared/ui.js'), /text-align:right !important/);
 assert.match(read('content/shared/ui.js'), /table-layout:fixed !important/);
+assert.match(read('content/shared/ui.js'), /focus up/);
+assert.match(read('content/shared/ui.js'), /proc up/);
+assert.match(read('content/shared/ui.js'), /proc eq/);
+assert.match(read('content/shared/ui.js'), /dataset\.lcView = 'proc'/);
+assert.match(read('content/shared/ui.js'), /slotShort\(row\.slotKey\)/);
+assert.match(read('content/shared/state.js'), /PROFILE_STATS_VERSION = 4/);
+assert.doesNotMatch(read('content/shared/ui.js'), /return arrow \+ ' ' \+ fmtDelta\(diff\.score\) \+ ' ' \+ formula\.label/);
 assert.match(read('content/shared/ui.js'), /\.lc-compare-panel \.lc-head\{display:flex/);
-assert.match(raidlootSource, /if \(existing\) \{ existing\.remove\(\); return; \}/);
+assert.match(raidlootSource, /existing\.dataset\.lcView/);
+assert.match(raidlootSource, /existing\.dataset\.lcRow/);
+assert.match(raidlootSource, /nativeDetailRow\.nextElementSibling/);
+assert.match(raidlootSource, /appendChild\(newRow\)/);
+assert.match(read('content/shared/ui.js'), /dataset\.lcView = 'focus'/);
 assert.equal(manifest.content_scripts.some((script) => script.world === 'MAIN'), true);
 const bridgeSource = read('content/opendkp-page.js');
 assert.match(bridgeSource, /event\.isTrusted/);
@@ -117,6 +135,32 @@ const dualComparison = LC.diff.compareCandidate(dualProfile, dualWeapon, weaponF
 assert.equal(dualComparison.eligible, true);
 assert.equal(dualComparison.rows.length, 2);
 assert.equal(LC.diff.summarizeComparisons(dualComparison).comparable, true);
+const dualProcCandidate = LC.parser.parseOpenDkpJson({
+  ItemID: 59, ItemName: 'Dual Proc Weapon', Slot: 'Primary, Secondary', Class: 'BST', DMG: 110, Delay: 19, HP: 200,
+  ProcEffect: 'Strike of Ice\n1: Decrease Current HP by 1200',
+});
+const dualProcProfile = {
+  cls: 'Beastlord',
+  items: [
+    { name: 'Primary Weapon', slot: 'Primary', stats: { Damage: 100, Delay: 20, HP: 100 }, effects: [LC.parser.parseStructuredEffects({ type: 'proc', name: 'Strike of Ice', raw: 'Strike of Ice\n1: Decrease Current HP by 1000' }, 'proc')[0]] },
+    { name: 'Secondary Weapon', slot: 'Secondary', stats: { Damage: 90, Delay: 20, HP: 100 }, effects: [LC.parser.parseStructuredEffects({ type: 'proc', name: 'Strike of Ice', raw: 'Strike of Ice\n1: Decrease Current HP by 1500' }, 'proc')[0]] },
+  ],
+};
+const dualProcComparison = LC.diff.compareCandidate(dualProcProfile, dualProcCandidate, weaponFormula);
+assert.equal(dualProcComparison.rows.length, 2);
+assert.equal(dualProcComparison.rows[0].slotKey.key, 'primary');
+assert.equal(dualProcComparison.rows[0].diff.effects.proc.rows[0].direction, 1);
+assert.equal(dualProcComparison.rows[1].slotKey.key, 'secondary');
+assert.equal(dualProcComparison.rows[1].diff.effects.proc.rows[0].direction, -1);
+const equalSecondaryProfile = {
+  ...dualProcProfile,
+  items: [dualProcProfile.items[0], {
+    ...dualProcProfile.items[1],
+    effects: [LC.parser.parseStructuredEffects({ type: 'proc', name: 'Strike of Ice', raw: 'Strike of Ice\n1: Decrease Current HP by 1200' }, 'proc')[0]],
+  }],
+};
+const equalSecondaryComparison = LC.diff.compareCandidate(equalSecondaryProfile, dualProcCandidate, weaponFormula);
+assert.equal(equalSecondaryComparison.rows[1].diff.effects.proc.rows[0].status, 'same');
 const twoHand = LC.parser.parseOpenDkpJson({
   ItemID: 44, ItemName: 'Two Handed Weapon', Slot: 'Primary', Class: 'ALL', DMG: 220, Delay: 40, HP: 300,
 });
@@ -157,6 +201,12 @@ const parsedOpenDkpDom = LC.parser.parseOpenDkpDom({
 });
 assert.equal(parsedOpenDkpDom.slotKey.keys.join(','), 'primary,secondary');
 assert.equal(parsedOpenDkpDom.classes.join(','), 'BST');
+const parsedOpenDkpEffects = LC.parser.parseOpenDkpDom({
+  textContent: 'Effect Item\nSlot: Head\nFocus Effect: Casting Haste 20%\nProc Effect: Strike of Ice\n1: Decrease Current HP by 2500',
+  querySelector: () => null,
+});
+assert.equal(parsedOpenDkpEffects.effects.map((effect) => effect.type).join(','), 'focus,proc');
+assert.match(parsedOpenDkpEffects.effects.find((effect) => effect.type === 'proc').raw, /2500/);
 const parsedOpenDkpAugDom = LC.parser.parseOpenDkpDom({
   textContent: 'Bloodied Stone of Might Aug: 7 8 P\nSlot: All except Charm, Secondary, Ammo\nHP: 250',
   querySelector: () => null,
@@ -189,6 +239,25 @@ const parsedIconItem = raidlootParser.parseItemNodeForTest({
   querySelectorAll: () => [],
 });
 assert.equal(parsedIconItem.icon, 'https://dlil5rqe0ybd2.cloudfront.net/123.png');
+const effectLabel = (name, value) => ({
+  textContent: name,
+  nextSibling: { nodeType: 3, textContent: value, nextSibling: null },
+});
+const parsedBackgroundEffects = raidlootParser.parseItemNodeForTest({
+  dataset: { id: '2' }, classList: iconClasses,
+  innerText: 'Background Effect Test\nFocus Effect: Casting Haste 20%\nProc Effect: Flame Damage 25% Proc Rate: +100\n1: Decrease Current HP by 2500',
+  textContent: '',
+  querySelector(selector) {
+    if (selector === '.itemname') return { textContent: 'Background Effect Test' };
+    return null;
+  },
+  querySelectorAll(selector) {
+    return selector === 'label' ? [effectLabel('Focus Effect:', 'Casting Haste 20%'), effectLabel('Proc Effect:', 'Flame Damage 25% Proc Rate: +100')] : [];
+  },
+});
+assert.equal(parsedBackgroundEffects.effects.map((effect) => effect.type).join(','), 'focus,proc');
+assert.equal(parsedBackgroundEffects.effects[1].name.includes('Flame Damage'), true);
+assert.match(parsedBackgroundEffects.effects[1].raw, /Decrease Current HP by 2500/);
 
 const openDkpItem = LC.parser.parseOpenDkpJson({
   ItemID: 42, ItemName: 'Casing Test', Slot: 'Head', HP: 100, Stats: { AC: 50 },
@@ -200,6 +269,113 @@ assert.deepEqual(
 );
 assert.equal(LC.diff.SCORE_FORMULAS.some((formula) => formula.key === 'regen'), true);
 assert.equal(LC.diff.SCORE_FORMULAS.some((formula) => formula.key === 'manaregen'), true);
+const parsedEffects = LC.parser.parseOpenDkpJson({
+  ItemID: 53, ItemName: 'Effect Test', Slot: 'Head', HP: 100,
+  Effects: { Focus: ['Casting Haste 20%', 'Mana Preservation 15%'], Procs: ['Flame Damage 25%'] },
+});
+assert.equal(parsedEffects.effects.map((effect) => effect.type).join(','), 'focus,focus,proc');
+assert.equal(parsedEffects.effects[0].key, 'focus:haste');
+const parsedProcJson = LC.parser.parseOpenDkpJson({
+  ItemID: 58, ItemName: 'Proc JSON Test', Slot: 'Primary', HP: 100,
+  ProcEffect: 'Strike of Ice (as level 119) Proc Rate: +100\n1: Decrease Current HP by 12000',
+});
+assert.equal(parsedProcJson.effects.length, 1);
+assert.equal(parsedProcJson.effects[0].type, 'proc');
+assert.equal(parsedProcJson.effects[0].rank, '119');
+assert.match(parsedProcJson.effects[0].raw, /12000/);
+const effectCandidate = LC.parser.parseOpenDkpJson({
+  ItemID: 54, ItemName: 'Candidate Effects', Slot: 'Head', HP: 120,
+  Effects: { Focus: ['Spell Haste 30%', 'Damage Absorption 10%'], Procs: ['Fire Damage 15%'] },
+});
+const effectProfile = {
+  cls: 'Warrior',
+  items: [
+    { name: 'Old Helm', slot: 'Head', stats: { HP: 100 }, effects: [{ type: 'proc', name: 'Stun II', key: 'proc:stun', rank: 'II', raw: 'Stun II' }] },
+    { name: 'Other Focus Item', slot: 'Finger-1', stats: { HP: 10 }, effects: [{ type: 'focus', name: 'Casting Haste 20%', key: 'focus:haste', rank: '20%', raw: 'Casting Haste 20%' }] },
+  ],
+};
+const effectComparison = LC.diff.compareCandidate(effectProfile, effectCandidate, formula);
+const focusRows = effectComparison.rows[0].diff.effects.focus.rows;
+assert.equal(focusRows.find((row) => row.candidate && row.candidate.key === 'focus:haste').status, 'changed');
+assert.equal(focusRows.find((row) => row.candidate && row.candidate.name === 'Damage Absorption 10%').status, 'added');
+assert.equal(effectComparison.rows[0].diff.effects.proc.rows[0].status, 'different');
+const fuzzyProcCandidate = { name: 'New Weapon', slot: 'Primary', slotKey: LC.slots.canonicalSlot('Primary'), stats: { HP: 110 }, effects: [{ type: 'proc', name: 'Flame Damage 25%', key: 'proc:flame damage', rank: '25%', raw: 'Flame Damage 25%' }] };
+const fuzzyProcProfile = { cls: 'Warrior', items: [{ name: 'Old Weapon', slot: 'Primary', stats: { HP: 100 }, effects: [{ type: 'proc', name: 'Fire Damage 15%', key: 'proc:fire damage', rank: '15%', raw: 'Fire Damage 15%' }] }] };
+const fuzzyProcRows = LC.diff.compareCandidate(fuzzyProcProfile, fuzzyProcCandidate, formula).rows[0].diff.effects.proc.rows;
+assert.equal(fuzzyProcRows.length, 1);
+assert.equal(fuzzyProcRows[0].status, 'changed');
+const damageProcProfile = { cls: 'Warrior', items: [{
+  name: 'Old Sword', slot: 'Primary', stats: { HP: 100 },
+  effects: [LC.parser.parseStructuredEffects({ type: 'proc', name: 'Strike of Ice', raw: 'Strike of Ice\n1: Decrease Current HP by 1000' }, 'proc')[0]],
+}] };
+const damageProcCandidate = {
+  name: 'New Sword', slot: 'Primary', slotKey: LC.slots.canonicalSlot('Primary'), stats: { HP: 110 },
+  effects: [LC.parser.parseStructuredEffects({ type: 'proc', name: 'Hammer of Magic', raw: 'Hammer of Magic\n1: Decrease Current HP by 1200' }, 'proc')[0]],
+};
+const damageProcRows = LC.diff.compareCandidate(damageProcProfile, damageProcCandidate, formula).rows[0].diff.effects.proc.rows;
+assert.equal(damageProcRows.length, 1);
+assert.equal(damageProcRows[0].status, 'changed');
+assert.equal(damageProcRows[0].direction, 1);
+assert.deepEqual(JSON.parse(JSON.stringify(damageProcRows[0].procComparison)), { current: 1000, candidate: 1200, direction: 1 });
+const beneficial100 = LC.parser.parseStructuredEffects('Beneficial Mana Pres 22 L100', 'focus')[0];
+const detrimental100 = LC.parser.parseStructuredEffects('Detrimental Mana Pres 22 L100', 'focus')[0];
+const beneficialDuration100 = LC.parser.parseStructuredEffects('Beneficial Duration 35 L100', 'focus')[0];
+const manaFocusCandidate = LC.parser.parseOpenDkpJson({
+  ItemID: 55, ItemName: 'Band of the Victor', Slot: 'Finger', HP: 110,
+  Effects: { Focus: ['Beneficial Mana Pres 22 L103'] },
+});
+const manaFocusProfile = {
+  cls: 'Cleric',
+  items: [
+    { name: 'Azure Ring of the Spiritualist', slot: 'Finger-1', stats: { HP: 100 }, effects: [beneficial100] },
+    { name: 'Horrorsilk Mantle', slot: 'Shoulders', stats: { HP: 100 }, effects: [detrimental100] },
+    { name: "Lone Walker's Cloak", slot: 'Back', stats: { HP: 100 }, effects: [beneficialDuration100] },
+  ],
+};
+const manaFocusRows = LC.diff.compareCandidate(manaFocusProfile, manaFocusCandidate, formula).rows[0].diff.effects.focus.rows;
+assert.equal(manaFocusRows.length, 1);
+assert.equal(manaFocusRows[0].status, 'changed');
+assert.equal(manaFocusRows[0].current.name.startsWith('Beneficial'), true);
+assert.equal(manaFocusRows[0].current.rank, '100');
+assert.equal(manaFocusRows[0].candidate.rank, '103');
+assert.equal(manaFocusRows[0].direction, 1);
+assert.equal(manaFocusRows[0].focusComparison.level, 103);
+assert.equal(manaFocusRows[0].focusComparison.current.max, 7);
+assert.equal(manaFocusRows[0].focusComparison.candidate.max, 22);
+const corruption100 = LC.parser.parseStructuredEffects('Corruption Damage 45-100 L100', 'focus')[0];
+const poison100 = LC.parser.parseStructuredEffects('Poison Damage 45-100 L100', 'focus')[0];
+const corruptionCandidate = LC.parser.parseOpenDkpJson({
+  ItemID: 57, ItemName: 'Beacon of Lost Souls', Slot: 'Range', HP: 110,
+  Effects: { Focus: ['Corruption Damage 50-100 L103'] },
+});
+const corruptionProfile = {
+  cls: 'Necromancer',
+  items: [
+    { name: 'Totem of Inner Tranquility', slot: 'Range', stats: { HP: 100 }, effects: [corruption100] },
+    { name: 'Dreadweave Dragonbrood Wristguard', slot: 'Wrist', stats: { HP: 100 }, effects: [poison100] },
+  ],
+};
+const corruptionRows = LC.diff.compareCandidate(corruptionProfile, corruptionCandidate, formula).rows[0].diff.effects.focus.rows;
+assert.equal(corruptionRows.length, 1);
+assert.equal(corruptionRows[0].current.name.startsWith('Corruption'), true);
+assert.equal(corruptionRows[0].direction, 1);
+assert.deepEqual(JSON.parse(JSON.stringify(corruptionRows[0].focusComparison)), {
+  level: 103,
+  current: { min: 30, max: 85 },
+  candidate: { min: 50, max: 100 },
+  direction: 1,
+});
+const augmentCoveredProfile = {
+  cls: 'Cleric',
+  items: [
+    { name: 'Old Helm', slot: 'Head', stats: { HP: 100 }, effects: [] },
+    { name: 'Type 3 Augment', slot: 'Head', isAugment: true, stats: { HP: 10 }, effects: [beneficial100] },
+  ],
+};
+const augmentIgnoredRows = LC.diff.compareCandidate(augmentCoveredProfile, LC.parser.parseOpenDkpJson({
+  ItemID: 56, ItemName: 'New Helm', Slot: 'Head', HP: 110, Effects: { Focus: ['Beneficial Mana Pres 22 L100'] },
+}), formula).rows[0].diff.effects.focus.rows;
+assert.equal(augmentIgnoredRows[0].status, 'added');
 const augCandidate = LC.parser.parseOpenDkpJson({
   ItemID: 50, ItemName: 'Flexible Augment', Slot: 'Ear, Wrist, Finger', Type: 'Augment',
   AugTypes: [7, 8], HP: 60, HPRegen: 2, ManaRegen: 3,
@@ -439,7 +615,8 @@ const stateContext = {
       profiles.p.name = 'Edited';
       return Promise.resolve({ ok: true, items: [{ id: '1', name: 'Sword', slot: 'Head', stats: { HP: 100 }, icon: 'data:image/png;base64,AA==' }] });
     }
-    if (mode === 'cache') return Promise.resolve({ ok: true, items: [{ id: '1', name: 'Focus Aug', slot: 'Head', isAugment: true, augmentTypes: [3], stats: { 'Focus Effect': 3 }, icon: 'data:image/png;base64,AA==' }] });
+    if (mode === 'cache') return Promise.resolve({ ok: true, items: [{ id: '1', name: 'Focus Aug', slot: 'Head', isAugment: true, augmentTypes: [3], stats: { 'Focus Effect': 3 }, effects: [{ type: 'focus', name: 'Spell Haste 10%', raw: 'Spell Haste 10%' }], icon: 'data:image/png;base64,AA==' }] });
+    if (mode === 'proc-refresh') return Promise.resolve({ ok: true, items: [{ id: '2', name: 'Old Sword', slot: 'Primary', stats: { HP: 100 }, effects: [{ type: 'proc', name: 'Strike of Ice', raw: 'Strike of Ice (as level 119) Proc Rate: +100' }], icon: 'data:image/png;base64,AA==' }] });
     if (mode === 'no-call') { unexpectedCalls++; return Promise.resolve({ ok: false }); }
     requests++;
     return new Promise((resolve) => {
@@ -483,16 +660,28 @@ const state = stateContext.LootCaptain.state;
   assert.equal(cachedProfile.items[0].icon, 'data:image/png;base64,AA==');
   assert.equal(cachedProfile.items[0].augmentTypes.join(','), '3');
   assert.equal(cachedProfile.items[0].enriched, true);
+  assert.equal(cachedProfile.items[0].effects[0].type, 'focus');
   mode = 'no-call';
   await state.getSelectedProfile();
   assert.equal(unexpectedCalls, 0);
 
-  profiles = { p: { id: 'p', name: 'Fast', statsVersion: 2, items: [{
+  profiles = { p: { id: 'p', name: 'Fast', statsVersion: 4, items: [{
     id: '1', name: 'Sword', slot: 'Head', icon: 'https://cdn.raidloot.com/1.png', stats: { HP: 100 },
   }] } };
   const fastProfile = await state.getSelectedProfile();
   assert.equal(unexpectedCalls, 0);
   assert.equal(fastProfile.items[0].stats.HP.num, 100);
+
+  mode = 'proc-refresh';
+  profiles = { p: { id: 'p', name: 'Proc Refresh', statsVersion: 3, items: [{
+    id: '2', name: 'Old Sword', slot: 'Primary', icon: 'data:image/png;base64,AA==', enriched: true, stats: { HP: 100 },
+  }] } };
+  const staleProcProfile = await state.getSelectedProfile();
+  assert.equal(staleProcProfile.items[0].effects.length, 0);
+  await new Promise((resolve) => setImmediate(resolve));
+  const procProfile = await state.getSelectedProfile();
+  assert.equal(procProfile.items[0].effects[0].type, 'proc');
+  assert.equal(profiles.p.statsVersion, 4);
 
   mode = 'race';
   profiles = { p: { id: 'p', name: 'Race', items: [{ id: '1', name: 'Sword', slot: 'Head', stats: {} }] } };
