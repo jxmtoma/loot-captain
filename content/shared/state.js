@@ -7,9 +7,10 @@
   const PROFILES_KEY = 'profiles';
   const SELECTED_KEY = 'selectedProfileId';
   const SCORE_KEY = 'scoreFormula';
-  const PROFILE_STATS_VERSION = 3;
+  const PROFILE_STATS_VERSION = 4;
   const NON_NUMERIC_STAT = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
   let profileLoadGeneration = 0;
+  const profileRefreshes = new Map();
 
   // profiles: { id: { id, name, cls, level, items: [...] } }
   async function getProfiles() {
@@ -43,6 +44,7 @@
     return {
       ...item,
       slotKey: LC.slots.canonicalSlot(item.slot),
+      effects: LC.parser.normalizeEffects(item.effects || []),
       stats,
     };
   }
@@ -54,13 +56,17 @@
     });
   }
 
+  function hasItemData(item) {
+    return hasNumericStats(item) || (item && Array.isArray(item.effects) && item.effects.length > 0);
+  }
+
   function hasAugmentTypes(item) {
     return !item.isAugment || (Array.isArray(item.augmentTypes) && item.augmentTypes.length > 0);
   }
 
   async function loadMissingStats(items, refreshAll) {
     const missing = items.filter((item) => (item.id || item.name) &&
-      (!hasNumericStats(item) || !hasAugmentTypes(item)) && (refreshAll || !item.enriched));
+      (refreshAll || ((!hasItemData(item) || !hasAugmentTypes(item)) && !item.enriched)));
     if (!missing.length) return { items, fetched: false };
     try {
       const response = await chrome.runtime.sendMessage({
@@ -78,7 +84,7 @@
         const nameKey = String(item.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
         const loaded = (item.id && byId.get(String(item.id))) || byName.get(nameKey);
         if (!loaded) return item;
-        const enriched = (hasNumericStats(loaded) || loaded.icon) ? normalizeItemStats({
+        const enriched = (hasItemData(loaded) || loaded.icon) ? normalizeItemStats({
           ...item,
           ...loaded,
           isAugment: !!item.isAugment || !!loaded.isAugment,
@@ -104,7 +110,21 @@
       id: item.id || '', name: item.name || '', icon: item.icon || '', slot: item.slot || '',
       isAugment: !!item.isAugment, augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
       augSlot: item.augSlot || '', parentId: item.parentId || '', enriched: !!item.enriched, stats,
+      effects: LC.parser.normalizeEffects(item.effects || []),
     };
+  }
+
+  function refreshProfileInBackground(id, profile, items) {
+    if (profileRefreshes.has(id)) return;
+    const refresh = loadMissingStats(items, true).then(async (loaded) => {
+      if (!loaded.fetched) return;
+      const latestProfiles = await getProfiles();
+      if (latestProfiles[id] && JSON.stringify(latestProfiles[id]) === JSON.stringify(profile)) {
+        latestProfiles[id] = { ...latestProfiles[id], statsVersion: PROFILE_STATS_VERSION, items: loaded.items.map(storageItem) };
+        await saveProfiles(latestProfiles);
+      }
+    }).catch(() => {}).finally(() => profileRefreshes.delete(id));
+    profileRefreshes.set(id, refresh);
   }
 
   async function getSelectedProfile() {
@@ -115,6 +135,10 @@
     if (!p) return null;
     const originalItems = (p.items || []).map(normalizeItemStats);
     const refreshAll = p.statsVersion !== PROFILE_STATS_VERSION;
+    if (refreshAll && originalItems.some(hasNumericStats)) {
+      refreshProfileInBackground(id, p, originalItems);
+      return { ...p, id, items: originalItems };
+    }
     const loaded = await loadMissingStats(originalItems, refreshAll);
     const items = loaded.items;
     if (refreshAll || loaded.fetched || items.some((item, index) => hasNumericStats(item) && !hasNumericStats(originalItems[index]))) {

@@ -355,6 +355,20 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
 .inventory-stage-title { padding-bottom: 7px; color: #9faec1; font: 10px Tahoma, sans-serif; letter-spacing: .16em; text-align: center; }
 .inventory-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-rows: repeat(8, 64px); align-items: stretch; gap: 5px; }
 .inventory-slots { display: contents; }
+.inventory-grid.focus-list-view { display: block; min-height: 390px; }
+.inventory-grid.focus-list-view .inventory-character { display: none; }
+.inventory-slots.focus-list { display: flex; flex-direction: column; gap: 6px; }
+.focus-list-entry { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid #52657d; border-radius: 3px; background: linear-gradient(145deg, #283d56, #0c1727 72%); color: #d8e0e8; cursor: pointer; text-align: left; }
+.focus-list-entry:hover, .focus-list-entry.selected { border-color: #e1bf6c; background: linear-gradient(145deg, #354d68, #132238 72%); }
+.focus-list-entry.proc { border-color: #3f7f7a; background: linear-gradient(145deg, #214b50, #102631 72%); }
+.focus-list-entry.proc:hover, .focus-list-entry.proc.selected { border-color: #76c9bd; background: linear-gradient(145deg, #2c6467, #163544 72%); }
+.focus-list-type { flex: 0 0 auto; color: #d8b767; font: 700 9px Tahoma, sans-serif; letter-spacing: .08em; }
+.focus-list-entry.proc .focus-list-type, .focus-list-entry.proc .focus-list-name { color: #9ee0d6; }
+.focus-list-name { flex: 1 1 auto; overflow: hidden; color: #f0dfad; font: 700 11px Tahoma, sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.focus-list-item { flex: 0 0 auto; max-width: 42%; overflow: hidden; color: #aab8c8; font: 10px Tahoma, sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.focus-detail { padding: 8px 0 0; }
+.focus-detail-label { margin-top: 8px; color: #d8b767; font: 10px Tahoma, sans-serif; letter-spacing: .12em; }
+.focus-detail-text { margin-top: 3px; color: #dbe3dc; font: 12px/1.4 Tahoma, sans-serif; }
 .gear-slot { display: flex; align-items: center; gap: 5px; min-width: 0; min-height: 0; height: 100%; box-sizing: border-box; padding: 3px; border: 1px solid #52657d; border-radius: 3px; background: linear-gradient(145deg, #283d56, #0c1727 72%); box-shadow: inset 0 1px rgba(255,255,255,.11), inset 0 0 0 1px rgba(0,0,0,.42); color: #9eabb9; cursor: default; }
 .gear-slot.filled { border-color: #a0834b; color: #f0dfad; cursor: pointer; }
 .gear-slot:hover, .gear-slot:focus { outline: none; border-color: #e1bf6c; box-shadow: 0 0 8px rgba(226,190,99,.22), inset 0 1px rgba(255,255,255,.16); }

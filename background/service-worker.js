@@ -57,6 +57,10 @@ function hasNumericItemStats(item) {
   return numericItemStatCount(item) > 0;
 }
 
+function hasItemData(item) {
+  return hasNumericItemStats(item) || (item && Array.isArray(item.effects) && item.effects.length > 0);
+}
+
 async function lookupItemStats(name) {
   const cleanName = String(name || '').trim();
   if (!cleanName) throw new Error('OpenDKP item has no name');
@@ -72,7 +76,7 @@ async function lookupItemStats(name) {
     const detailHtml = await fetchText('https://www.raidloot.com/items/' + encodeURIComponent(searchItem.id));
     item = await parseHtmlInOffscreen({ type: 'PARSE_ITEM', html: detailHtml, expectedId: searchItem.id }) || searchItem;
   } catch (e) {
-    if (!hasNumericItemStats(searchItem)) throw e;
+    if (!hasItemData(searchItem)) throw e;
     detailWarning = e && e.message || String(e);
   }
   if (detailWarning) item.lookupWarning = 'detail fallback: ' + detailWarning;
@@ -223,6 +227,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               augmentTypes: (Array.isArray(loaded.augmentTypes) && loaded.augmentTypes.length)
                 ? [...loaded.augmentTypes] : (item.augmentTypes || []),
               stats: loaded.stats || item.stats,
+              effects: Array.isArray(loaded.effects) ? loaded.effects : (item.effects || []),
             },
             debug,
           };

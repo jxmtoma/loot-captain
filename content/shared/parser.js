@@ -33,6 +33,132 @@
 
   const HEROIC_STATS = { STR: 'HStr', STA: 'HSta', AGI: 'HAgi', DEX: 'HDex', INT: 'HInt', WIS: 'HWis', CHA: 'HCha' };
   const NON_NUMERIC_LABEL = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
+  const EFFECT_STOP_WORDS = new Set(['a', 'an', 'and', 'beneficial', 'detrimental', 'effect', 'focus', 'for', 'of', 'on', 'proc', 'procs', 'spell', 'the', 'to', 'weapon', 'with']);
+
+  function canonicalEffectType(raw) {
+    const key = String(raw || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    if (/^(?:spell)?focus(?:effect)?s?$/.test(key)) return 'focus';
+    if (/^(?:weapon)?proc(?:effect)?s?$/.test(key)) return 'proc';
+    return '';
+  }
+
+  function normalizeEffectText(raw) {
+    let text = String(raw || '').replace(/<[^>]*>/g, ' ').toLowerCase();
+    text = text.replace(/\b(?:spell )?focus(?: effect)?s?\s*:?/g, ' ')
+      .replace(/\b(?:weapon )?proc(?: effect)?s?\s*:?/g, ' ')
+      .replace(/\bl\s*\d+\b/g, ' ')
+      .replace(/\b(?:rank|level|tier|version|v)\s*(?:[ivxlcdm]+|\d+)\b/g, ' ')
+      .replace(/[+-]?\d+(?:\.\d+)?\s*%?/g, ' ')
+      .replace(/\b(?:aggro|agro|threat)\b/g, 'hate')
+      .replace(/\b(?:dmg|damaging)\b/g, 'damage')
+      .replace(/\b(?:healing|heals)\b/g, 'heal')
+      .replace(/\b(?:stuns|stunning)\b/g, 'stun')
+      .replace(/\b(?:slows|slowing)\b/g, 'slow')
+      .replace(/\b(?:debuffs|debuffing)\b/g, 'debuff')
+      .replace(/\b(?:spell|casting|cast)\s+haste\b/g, 'haste')
+      .replace(/\b(?:casts|casting|cast)\b/g, 'cast')
+      .replace(/\b(?:preservation|preserve)\b/g, 'preserve');
+    return [...new Set(text.replace(/[^a-z]+/g, ' ').trim().split(/\s+/)
+      .filter((token) => token && !EFFECT_STOP_WORDS.has(token)))].sort().join(' ');
+  }
+
+  function effectRank(raw) {
+    const text = String(raw || '');
+    const level = text.match(/\bL\s*(\d+)\b/i);
+    if (level) return level[1];
+    const rank = text.match(/\b(?:rank|level|tier|version|v)\s*([ivxlcdm]+|\d+)\b/i);
+    if (rank) return rank[1];
+    const percent = text.match(/([+-]?\d+(?:\.\d+)?)\s*%/);
+    return percent ? percent[1] + '%' : null;
+  }
+
+  function effectName(raw) {
+    return String(raw || '').replace(/^\s*(?:spell )?focus(?: effect)?s?\s*:\s*/i, '')
+      .replace(/^\s*(?:weapon )?proc(?: effect)?s?\s*:\s*/i, '').trim();
+  }
+
+  function normalizeEffect(value, defaultType) {
+    const object = value && typeof value === 'object' ? value : null;
+    const field = (name) => object && getField(object, name);
+    const raw = String(object ? (field('raw') ?? field('description') ?? field('text') ?? field('name') ?? '') : value || '').trim();
+    const type = canonicalEffectType(object && (field('type') || field('kind') || field('category'))) ||
+      canonicalEffectType(defaultType) || canonicalEffectType(raw.match(/^\s*([^:]+):/)?.[1]);
+    if (!type || !raw) return null;
+    const name = effectName(String(field('name') || raw));
+    const explicitId = field('id') ?? field('spellId') ?? field('effectId');
+    const normalized = normalizeEffectText(name || raw);
+    const key = field('key') ? String(field('key')) :
+      (explicitId != null && String(explicitId).trim() ? type + ':id:' + String(explicitId).trim() : type + ':' + (normalized || 'unknown'));
+    const rank = field('rank') != null ? String(field('rank')) : effectRank(raw);
+    return { type, name: name || raw, key, rank, raw };
+  }
+
+  function normalizeEffects(effects) {
+    const out = [];
+    const seen = new Map();
+    for (const effect of effects || []) {
+      const normalized = normalizeEffect(effect);
+      if (!normalized) continue;
+      const identity = normalized.type + '|' + normalized.key;
+      const index = seen.get(identity);
+      if (index == null) {
+        seen.set(identity, out.length);
+        out.push(normalized);
+      } else if (normalized.raw.length > out[index].raw.length) {
+        out[index] = normalized;
+      }
+    }
+    return out;
+  }
+
+  function parseStructuredEffects(value, defaultType) {
+    if (value == null) return [];
+    if (Array.isArray(value)) return normalizeEffects(value.flatMap((item) => parseStructuredEffects(item, defaultType)));
+    if (typeof value === 'object') {
+      if (value.type || value.kind || value.category || value.name || value.raw || value.description || value.text) {
+        const effect = normalizeEffect(value, defaultType);
+        return effect ? [effect] : [];
+      }
+      return normalizeEffects(Object.entries(value).flatMap(([key, item]) =>
+        parseStructuredEffects(item, canonicalEffectType(key) || defaultType)));
+    }
+    const type = canonicalEffectType(defaultType);
+    if (type) {
+      const raw = String(value).trim();
+      const effect = normalizeEffect({ type, name: raw.split(/\r?\n/)[0], raw }, type);
+      return effect ? [effect] : [];
+    }
+    return String(value).split(/\r?\n/).map((line) => normalizeEffect(line.trim(), defaultType)).filter(Boolean);
+  }
+
+  function parseEffectLines(text) {
+    const effects = [];
+    const lines = String(text || '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      const match = line.match(/^\s*(Focus(?: Effect)?|Spell Focus|Proc(?: Effect)?|Weapon Proc|Procs|Effect)\s*:\s*(.+)$/i);
+      if (!match) continue;
+      const type = canonicalEffectType(match[1]);
+      const name = match[2].trim();
+      const details = [];
+      while (lines[index + 1] && (/^\d+\s*:/.test(lines[index + 1]) || /^Recourse\s*:/i.test(lines[index + 1]))) {
+        details.push(lines[++index]);
+      }
+      effects.push(...parseStructuredEffects({ type, name, raw: [name, ...details].join('\n') }, type));
+    }
+    return normalizeEffects(effects);
+  }
+
+  function effectSimilarity(a, b) {
+    if (!a || !b || a.type !== b.type) return 0;
+    if (a.key && a.key === b.key) return 1;
+    const left = new Set(normalizeEffectText(a.name || a.raw).split(' ').filter(Boolean));
+    const right = new Set(normalizeEffectText(b.name || b.raw).split(' ').filter(Boolean));
+    if (!left.size || !right.size) return 0;
+    let intersection = 0;
+    for (const token of left) if (right.has(token)) intersection++;
+    return intersection / Math.min(left.size, right.size);
+  }
 
   function canonicalStat(raw) {
     const key = String(raw || '').replace(/:\s*$/, '').trim().replace(/\s+/g, ' ');
@@ -94,6 +220,7 @@
     const nameEl = node.querySelector('.itemname');
     const name = nameEl ? nameEl.textContent.trim() : '';
     const stats = {};
+    const effects = [];
     node.querySelectorAll('label').forEach((lbl) => {
       const key = canonicalStat(lbl.textContent);
       if (!key) return;
@@ -111,11 +238,13 @@
         cur = cur.nextSibling;
       }
       valTxt = valTxt.replace(/\s+/g, ' ').trim();
+      effects.push(...parseStructuredEffects(valTxt, canonicalEffectType(key)));
       const num = valTxt.match(/-?\d+(\.\d+)?/);
       stats[key] = { raw: valTxt, num: NON_NUMERIC_LABEL.test(key) ? null : (num ? parseFloat(num[0]) : null) };
       const heroic = valTxt.match(/\+\s*(-?\d+(?:\.\d+)?)/);
       if (heroic && HEROIC_STATS[key]) stats[HEROIC_STATS[key]] = { raw: heroic[0], num: parseFloat(heroic[1]) };
     });
+    effects.push(...parseEffectLines(node.innerText || node.textContent));
     // Derive regen stats from "+ N/tick" suffix on HP/MANA/END.
     const REGEN_MAP = { HP: 'Regen', MANA: 'ManaRegen', END: 'EndRegen' };
     for (const src of Object.keys(REGEN_MAP)) {
@@ -142,7 +271,7 @@
     const augmentTypes = parseAugmentTypes(node.textContent);
     const isWishlist = !!node.querySelector('.wish-remove');
     const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), classes, stats, isAugment, augmentTypes, isWishlist, isTotalsRow };
+    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), classes, stats, effects: normalizeEffects(effects), isAugment, augmentTypes, isWishlist, isTotalsRow };
   }
 
   // ---------- openDKP JSON parsing ----------
@@ -151,6 +280,7 @@
   function parseOpenDkpJson(obj) {
     if (!obj) return null;
     const stats = {};
+    const effects = [];
     const nestedStats = getField(obj, 'stats');
     let classValue = getField(obj, 'classes');
     if (classValue == null) classValue = getField(obj, 'class');
@@ -185,11 +315,18 @@
       const label = canonicalStat(statLabels[f] || f);
       stats[label] = { raw: String(v), num: parseFloat(v) };
     }
+    for (const [key, value] of Object.entries(obj)) {
+      effects.push(...parseStructuredEffects(value, canonicalEffectType(key)));
+    }
     // openDKP may nest stats under an object.
     if (nestedStats && typeof nestedStats === 'object') {
       for (const k of Object.keys(nestedStats)) {
         const v = nestedStats[k];
         if (v == null) continue;
+        if (canonicalEffectType(k)) {
+          effects.push(...parseStructuredEffects(v, canonicalEffectType(k)));
+          continue;
+        }
         const label = canonicalStat(statLabels[k.toLowerCase()] || k);
         stats[label] = { raw: String(v), num: parseFloat(v) };
       }
@@ -213,6 +350,7 @@
       slotKey: LC.slots.canonicalSlot(slot),
       classes,
       stats,
+      effects: normalizeEffects(effects),
       isAugment,
       augmentTypes,
       isWishlist: false,
@@ -240,6 +378,7 @@
       if (marker > 0) name = name.slice(0, marker).trim();
     }
     const stats = {};
+    const effects = parseEffectLines(text);
     const classes = classesFromText(text);
     // Look for "Label: value [+heroic]" patterns from the EQ-style hover card.
     const labelRe = /([A-Za-z][A-Za-z ]{1,30}?):\s*(-?\d+(?:\.\d+)?)(?:\s+([+-]\d+(?:\.\d+)?))?/g;
@@ -275,6 +414,7 @@
       slotKey: LC.slots.canonicalSlot(slot),
       classes,
       stats,
+      effects,
       isAugment,
       augmentTypes,
       isWishlist: false,
@@ -285,7 +425,7 @@
   function parseOpenDkpTooltip(container) {
     if (!container) return null;
     const text = container.textContent || '';
-    if (!/(?:\bAC|\bHP|\bMana|\bStrength)\s*:\s*-?\d/i.test(text)) return null;
+    if (!/(?:\bAC|\bHP|\bMana|\bStrength)\s*:\s*-?\d/i.test(text) && !parseEffectLines(text).length) return null;
     const item = parseOpenDkpDom(container);
     return item && item.name && item.slotKey ? item : null;
   }
@@ -301,5 +441,9 @@
     normalizeClass,
     parseClasses,
     classMatches,
+    canonicalEffectType,
+    normalizeEffects,
+    parseStructuredEffects,
+    effectSimilarity,
   };
 })();
