@@ -35,6 +35,8 @@ assert.match(optionsSource, /focus-list-entry/);
 assert.match(optionsSource, /hasWeaponProc/);
 assert.match(optionsSource, /renderWishlist/);
 assert.match(optionsSource, /type: 'SAVE_PROFILES'/);
+assert.match(optionsSource, /editingId = savedId/);
+assert.doesNotMatch(optionsSource, /await saveAll\(\[savedId\]\);\s*closeEditor\(\);/);
 assert.match(optionsSource, /https:\/\/www\.raidloot\.com\/items\?name=/);
 assert.match(optionsSource, /details\.rel = 'noopener'/);
 assert.match(popupSource, /key: 'regen'/);
@@ -63,6 +65,8 @@ assert.match(read('content/shared/ui.js'), /slotShort\(row\.slotKey\)/);
 assert.match(read('content/shared/state.js'), /PROFILE_STATS_VERSION = 4/);
 assert.match(read('content/shared/state.js'), /type: 'MUTATE_WISHLIST'/);
 assert.match(read('background/service-worker.js'), /let profileMutationQueue = Promise\.resolve\(\)/);
+assert.match(read('background/service-worker.js'), /RAIDLOOT_ITEM_CACHE_KEY = 'raidlootItemCache'/);
+assert.match(read('background/service-worker.js'), /debug\.source = 'cache'/);
 assert.match(read('content/shared/ui.js'), /Wishlist item stats unavailable/);
 assert.match(read('content/shared/ui.js'), /\.lc-wishlist-toggle\{[^']*width:auto !important/);
 assert.match(read('content/shared/ui.js'), /background:transparent !important/);
@@ -814,6 +818,14 @@ assert.equal(state.compatibleWishlistItem(
   ]);
   assert.equal(workerStorage.profiles.p.name, 'Saved Profile');
   assert.equal(workerStorage.profiles.p.wishlist.some((item) => item.raidlootId === '503'), true);
+  workerStorage.raidlootItemCache = {
+    'id:1': { id: '1', name: 'Cached Sword', slot: 'Head', stats: { HP: 100 }, effects: [] },
+  };
+  const cachedEnrichment = await sendWorkerMessage({ type: 'ENRICH_PROFILE_ITEMS', items: [{ id: '1', name: 'Cached Sword', slot: 'Head' }] },
+    'chrome-extension://test/options/options.html');
+  assert.equal(cachedEnrichment.ok, true);
+  assert.equal(cachedEnrichment.debug[0].source, 'cache');
+  assert.equal(cachedEnrichment.items[0].stats.HP, 100);
   await state.getSelectedProfile();
   assert.equal(profiles.p.name, 'Edited');
   assert.equal(saves, 0);

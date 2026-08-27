@@ -6,6 +6,7 @@ const CONSENT_VERSION = 1;
 const MAX_ID_LENGTH = 12;
 const MAX_NAME_LENGTH = 200;
 const MAX_ITEM_COUNT = 128;
+const RAIDLOOT_ITEM_CACHE_KEY = 'raidlootItemCache';
 const MAX_WISHLIST_ITEM_BYTES = 128 * 1024;
 const MAX_PROFILE_MUTATION_BYTES = 4 * 1024 * 1024;
 let profileMutationQueue = Promise.resolve();
@@ -62,6 +63,27 @@ function hasNumericItemStats(item) {
 
 function hasItemData(item) {
   return hasNumericItemStats(item) || (item && Array.isArray(item.effects) && item.effects.length > 0);
+}
+
+function raidlootCacheKey(item) {
+  if (item && item.id) return 'id:' + String(item.id);
+  const name = String(item && item.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return name ? 'name:' + name : '';
+}
+
+async function getRaidlootItemCache() {
+  try {
+    const cache = await storageGet(RAIDLOOT_ITEM_CACHE_KEY, {});
+    return cache && typeof cache === 'object' ? cache : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+async function saveRaidlootItemCache(cache) {
+  try {
+    await chrome.storage.local.set({ [RAIDLOOT_ITEM_CACHE_KEY]: cache });
+  } catch (e) {}
 }
 
 async function lookupItemStats(name) {
@@ -321,6 +343,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case 'ENRICH_PROFILE_ITEMS': {
         const items = sanitizeEnrichmentItems(msg.items);
+        const itemCache = await getRaidlootItemCache();
         const results = await Promise.all(items.map(async (item) => {
           const debug = { id: item && item.id || '', name: item && item.name || '', result: 'unchanged' };
           if (!item || (!item.id && !item.name)) {
@@ -330,8 +353,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           let loaded = null;
           let idError = '';
+          const cacheKey = raidlootCacheKey(item);
+          const cached = cacheKey && itemCache[cacheKey];
+          if (cached && (!item.name || !cached.name || sameItemName(cached.name, item.name))) {
+            loaded = cached;
+            debug.source = 'cache';
+          }
           try {
-            if (item.id) {
+            if (!loaded && item.id) {
               try {
                 loaded = await fetchItemStats(item.id);
                 if (loaded && item.name && !sameItemName(loaded.name, item.name)) {
@@ -376,8 +405,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               effects: Array.isArray(loaded.effects) ? loaded.effects : (item.effects || []),
             },
             debug,
+            cacheItem: debug.source === 'cache' ? null : (hasItemData(loaded) || loaded.icon ? loaded : null),
           };
         }));
+        const cacheUpdates = results.filter((result) => result.cacheItem);
+        if (cacheUpdates.length) {
+          for (const result of cacheUpdates) {
+            const item = result.cacheItem;
+            const idKey = raidlootCacheKey({ id: item.id });
+            const nameKey = raidlootCacheKey({ name: item.name });
+            if (idKey) itemCache[idKey] = item;
+            if (nameKey) itemCache[nameKey] = item;
+          }
+          await saveRaidlootItemCache(itemCache);
+        }
         sendResponse({ ok: true, items: results.map((result) => result.item), debug: results.map((result) => result.debug) });
         break;
       }

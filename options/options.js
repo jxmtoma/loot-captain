@@ -796,7 +796,10 @@ async function saveProfile() {
     profiles[editingId] = editingProfile;
   }
   await saveAll([savedId]);
-  closeEditor();
+  editingId = savedId;
+  $('#editor-title').textContent = 'Edit: ' + (editingProfile.name || 'Unnamed');
+  $('#btn-delete-profile').classList.remove('hidden');
+  renderEditorProfileSelector();
 }
 
 async function deleteProfile() {
