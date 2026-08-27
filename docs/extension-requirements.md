@@ -8,7 +8,7 @@ Profiles do not require a RaidLoot account. A profile can be created manually or
 
 ## Requirements
 
-- Target Chrome and Edge using Manifest V3.
+- Target Chrome and Edge 109 or newer using Manifest V3.
 - Store profiles, selected character, and score formula in extension-local storage.
 - Support multiple local character profiles without requiring RaidLoot login.
 - Import worn equipment from EverQuest `/output inventory` files.
@@ -25,7 +25,7 @@ Profiles do not require a RaidLoot account. A profile can be created manually or
 
 - `storage` for local profiles and fetched item data.
 - `offscreen` for DOMParser-based RaidLoot HTML parsing from the MV3 service worker.
-- RaidLoot host access for profile/item reads.
+- `www.raidloot.com` host access for public profile/item reads.
 - OpenDKP content-script matches for page annotations; no OpenDKP host permission is requested.
 - A page-world request bridge for OpenDKP sites that load item data through their app API.
 

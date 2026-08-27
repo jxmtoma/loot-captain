@@ -1,6 +1,6 @@
 # Loot Captain Privacy Policy
 
-Effective date: August 22, 2026
+Effective date: August 26, 2026
 
 Loot Captain is a local-first browser extension for comparing EverQuest gear. This policy explains what the extension stores and what network requests it makes.
 
@@ -8,7 +8,8 @@ Loot Captain is a local-first browser extension for comparing EverQuest gear. Th
 
 The extension stores the following in the browser's extension-local `chrome.storage.local` area:
 
-- Character/profile names, class, level, equipment slots, item IDs, item names, and item stats entered or imported by the user.
+- Character/profile names, class, level, equipment slots, item IDs, item names, item stats, augments, and item effects entered or imported by the user.
+- Per-character wishlist item identities, slots, cached stats, and effects used for highlighting and comparison.
 - The selected character and score formula.
 - Imported profile data and fetched public RaidLoot item stats used in comparisons.
 

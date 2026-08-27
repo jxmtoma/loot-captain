@@ -4,13 +4,9 @@
   "version": "0.1.0",
   "description": "Compare EverQuest gear on RaidLoot and OpenDKP against local character profiles.",
   "homepage_url": "https://jxmtoma.github.io/loot-captain/",
+  "minimum_chrome_version": "109",
   "permissions": ["storage", "offscreen"],
-  "host_permissions": [
-    "https://www.raidloot.com/*",
-    "https://raidloot.com/*",
-    "https://cdn.raidloot.com/*",
-    "https://dlil5rqe0ybd2.cloudfront.net/*"
-  ],
+  "host_permissions": ["https://www.raidloot.com/*"],
   "background": {
     "service_worker": "background/service-worker.js"
   },

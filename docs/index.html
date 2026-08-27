@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Loot Captain compares EverQuest gear on RaidLoot and OpenDKP against local character profiles.">
+  <meta name="description" content="Loot Captain compares EverQuest gear, effects, augments, and wishlists on RaidLoot and OpenDKP against local character profiles.">
   <title>Loot Captain — EverQuest gear comparison</title>
   <link rel="stylesheet" href="./site.css">
 </head>
@@ -23,66 +23,174 @@
     <section class="hero shell">
       <p class="eyebrow">EverQuest gear comparison</p>
       <h1>Know the upgrade before you spend the loot.</h1>
-      <p class="lede">Loot Captain compares items on RaidLoot and OpenDKP against character profiles stored locally in your browser.</p>
+      <p class="lede">Loot Captain turns RaidLoot and OpenDKP into a local gear planner—with slot-aware comparisons, focus and proc changes, and a wishlist for every character.</p>
       <div class="actions">
         <a class="button primary" href="https://github.com/jxmtoma/loot-captain">View on GitHub</a>
         <a class="button" href="./support.html">Get support</a>
       </div>
     </section>
 
-    <section class="section shell" aria-labelledby="features-title">
-      <p class="eyebrow">What it does</p>
-      <h2 id="features-title">Fast, slot-aware comparisons</h2>
-      <div class="card-grid">
-        <article class="card">
-          <h3>Local profiles</h3>
-          <p>Create multiple characters or import worn gear from RaidLoot and EverQuest <code>/output inventory</code> files.</p>
-        </article>
-        <article class="card">
-          <h3>Useful scoring</h3>
-          <p>Choose a formula and compare upgrades, downgrades, and individual stat changes—including paired ears, wrists, and fingers.</p>
-        </article>
-        <article class="card">
-          <h3>Two supported sites</h3>
-          <p>See compact badges and expandable stat differences on RaidLoot and OpenDKP item pages.</p>
-        </article>
+    <section class="section shell feature-tour" aria-labelledby="features-title">
+      <div class="feature-tour-heading">
+        <p class="eyebrow">Feature tour</p>
+        <h2 id="features-title">From character setup to loot night.</h2>
+        <p>Everything in Loot Captain works together as one local gear-planning flow.</p>
       </div>
-    </section>
+      <div class="feature-carousel" data-slideshow role="region" aria-roledescription="carousel" aria-label="Loot Captain feature tour">
+        <div class="feature-track">
+          <article class="feature-slide" aria-label="1 of 8">
+            <div class="feature-slide-copy">
+              <span class="slide-number">01 / 08</span>
+              <h3>Build your crew</h3>
+              <p>Create, edit, delete, and switch between multiple local characters.</p>
+              <ul>
+                <li>Keep name, class, level, equipment, and wishlist together.</li>
+                <li>Switch the active character from the popup or profile editor.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img src="./assets/screenshot-character-select-1280x800.png" alt="Loot Captain character selection page with three local profiles">
+              <figcaption>Multiple characters, one active comparison profile.</figcaption>
+            </figure>
+          </article>
 
-    <section class="section shell product-shot" aria-labelledby="product-shot-title">
-      <div class="product-shot-copy">
-        <p class="eyebrow">Character management</p>
-        <h2 id="product-shot-title">See every slot at a glance.</h2>
-        <p>Arrange EverQuest equipment around the character and inspect one selected item on the right without scrolling through the entire inventory.</p>
-      </div>
-      <div class="product-shot-carousel" data-slideshow role="region" aria-roledescription="carousel" aria-label="Loot Captain screenshots">
-        <div class="product-shot-track">
-          <figure class="product-shot-frame product-shot-slide">
-            <img src="./assets/screenshot-character-select-1280x800.png" alt="Loot Captain character selection page with local profiles and import options">
-            <figcaption>Create, select, and import local character profiles.</figcaption>
-          </figure>
-          <figure class="product-shot-frame product-shot-slide" hidden>
-            <img src="./assets/screenshot-options-1280x800.png" alt="Loot Captain character editor showing an EverQuest-style inventory layout and selected item details">
-            <figcaption>Character profiles, slot-aware inventory, and read-only item details.</figcaption>
-          </figure>
-          <figure class="product-shot-frame product-shot-slide" hidden>
-          <img src="./assets/screenshot-comparison-1280x800.png" alt="Loot Captain comparison shown beside an EverQuest item on RaidLoot">
-          <figcaption>See the upgrade score and stat differences on RaidLoot.</figcaption>
-          </figure>
-          <figure class="product-shot-frame product-shot-slide" hidden>
-          <img src="./assets/screenshot-opendkp-1280x800.png" alt="Loot Captain comparison shown beside a guild auction item on OpenDKP">
-          <figcaption>Review the same comparison flow on OpenDKP.</figcaption>
-          </figure>
+          <article class="feature-slide" aria-label="2 of 8" hidden>
+            <div class="feature-slide-copy">
+              <span class="slide-number">02 / 08</span>
+              <h3>Import gear in seconds</h3>
+              <p>Start from a public RaidLoot profile or an EverQuest <code>/output inventory</code> file.</p>
+              <ul>
+                <li>Import worn equipment and augments, then edit anything manually.</li>
+                <li>Fetch missing stats and icons now or automatically when comparing.</li>
+                <li>Use built-in diagnostics when a public item cannot be resolved.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img loading="lazy" src="./assets/screenshot-character-select-1280x800.png" alt="Loot Captain RaidLoot and EverQuest inventory import controls">
+              <figcaption>Two import paths, with manual editing as a fallback.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-slide" aria-label="3 of 8" hidden>
+            <div class="feature-slide-copy">
+              <span class="slide-number">03 / 08</span>
+              <h3>See the whole character</h3>
+              <p>Review worn gear in a familiar EverQuest-style 19-slot layout.</p>
+              <ul>
+                <li>Inspect paired ears, wrists, and fingers separately.</li>
+                <li>Move between equipment, augments, and spell focus or proc views.</li>
+                <li>Open item details without hunting through a long inventory list.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img loading="lazy" src="./assets/screenshot-options-1280x800.png" alt="Loot Captain character editor with a 19-slot EverQuest equipment layout">
+              <figcaption>Equipment organized around the character, with details beside it.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-slide" aria-label="4 of 8" hidden>
+            <div class="feature-slide-copy">
+              <span class="slide-number">04 / 08</span>
+              <h3>Know the real upgrade</h3>
+              <p>See a compact verdict first, then expand the exact worn, candidate, and delta values.</p>
+              <ul>
+                <li>Choose from eleven score formulas for defenses, pools, heroics, and regeneration.</li>
+                <li>Respect class eligibility, paired slots, empty slots, and weapon layouts.</li>
+                <li>Compare compatible augments and weapon Damage/Delay ratio.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img loading="lazy" src="./assets/screenshot-comparison-1280x800.png" alt="Loot Captain upgrade badge and stat differences on a RaidLoot item page">
+              <figcaption>Upgrade, downgrade, or sidegrade—with the numbers behind it.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-slide" aria-label="5 of 8" hidden>
+            <div class="feature-slide-copy">
+              <span class="slide-number">05 / 08</span>
+              <h3>Compare more than raw stats</h3>
+              <p>Loot Captain keeps important named effects visible instead of hiding them inside one score.</p>
+              <ul>
+                <li>See spell focus effects as added, removed, covered, or changed in potency.</li>
+                <li>Compare weapon procs by identity and damage direction.</li>
+                <li>Open dedicated focus and proc detail panels.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img loading="lazy" src="./assets/screenshot-comparison-1280x800.png" alt="RaidLoot item page with focus effect and numeric stat comparisons">
+              <figcaption>Named effects stay explicit and inspectable.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-slide" aria-label="6 of 8" hidden>
+            <div class="feature-slide-copy">
+              <span class="slide-number">06 / 08</span>
+              <h3>Turn browsing into a loot plan</h3>
+              <p>Star items into a wishlist that belongs to the active character.</p>
+              <ul>
+                <li>Highlight wanted items on RaidLoot and in live OpenDKP auctions.</li>
+                <li>Compare a candidate with equipped gear or a compatible wishlist baseline.</li>
+                <li>Match the same item across both sites and enrich missing details later.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img loading="lazy" src="./assets/screenshot-opendkp-1280x800.png" alt="Loot Captain comparison badge on an OpenDKP item table">
+              <figcaption>Your local wishlist follows the active character across both sites.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-slide" aria-label="7 of 8" hidden>
+            <div class="feature-slide-copy">
+              <span class="slide-number">07 / 08</span>
+              <h3>Works where loot decisions happen</h3>
+              <p>Compare items without leaving the RaidLoot or OpenDKP page you are already using.</p>
+              <ul>
+                <li>Annotate RaidLoot item pages, search rows, stats, and wishlist cards.</li>
+                <li>Cover OpenDKP item details, tables, live auctions, and hover tooltips.</li>
+                <li>Refresh annotations when the active profile or formula changes.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img loading="lazy" src="./assets/screenshot-opendkp-1280x800.png" alt="Loot Captain upgrade badges embedded in an OpenDKP table">
+              <figcaption>Compact comparisons appear inside the sites you already browse.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-slide" aria-label="8 of 8" hidden>
+            <div class="feature-slide-copy">
+              <span class="slide-number">08 / 08</span>
+              <h3>Local-first by design</h3>
+              <p>Your profiles, settings, cached item stats, and wishlists stay in your browser.</p>
+              <ul>
+                <li>No Loot Captain account, analytics, advertising, or tracking.</li>
+                <li>No authenticated cookies or remotely hosted code.</li>
+                <li>Public RaidLoot lookups run only when imports or missing item data need them.</li>
+              </ul>
+            </div>
+            <figure class="feature-visual">
+              <img loading="lazy" src="./assets/screenshot-options-1280x800.png" alt="Loot Captain local character profile editor">
+              <figcaption>Your character data remains in extension-local storage.</figcaption>
+            </figure>
+          </article>
         </div>
+
         <div class="slide-controls">
-          <button class="slide-button" type="button" data-slide-prev aria-label="Previous screenshot">←</button>
-          <div class="slide-dots" role="tablist" aria-label="Choose screenshot">
-            <button class="slide-dot" type="button" data-slide-dot="0" aria-label="Show character select screenshot" aria-current="true"></button>
-            <button class="slide-dot" type="button" data-slide-dot="1" aria-label="Show character editor screenshot"></button>
-            <button class="slide-dot" type="button" data-slide-dot="2" aria-label="Show RaidLoot screenshot"></button>
-            <button class="slide-dot" type="button" data-slide-dot="3" aria-label="Show OpenDKP screenshot"></button>
+          <button class="slide-button" type="button" data-slide-prev aria-label="Previous feature">←</button>
+          <div class="slide-position">
+            <div class="slide-dots" aria-label="Choose feature">
+              <button class="slide-dot" type="button" data-slide-dot="0" aria-label="Show Build your crew" aria-current="true"></button>
+              <button class="slide-dot" type="button" data-slide-dot="1" aria-label="Show Import gear in seconds"></button>
+              <button class="slide-dot" type="button" data-slide-dot="2" aria-label="Show See the whole character"></button>
+              <button class="slide-dot" type="button" data-slide-dot="3" aria-label="Show Know the real upgrade"></button>
+              <button class="slide-dot" type="button" data-slide-dot="4" aria-label="Show Compare more than raw stats"></button>
+              <button class="slide-dot" type="button" data-slide-dot="5" aria-label="Show Turn browsing into a loot plan"></button>
+              <button class="slide-dot" type="button" data-slide-dot="6" aria-label="Show Works where loot decisions happen"></button>
+              <button class="slide-dot" type="button" data-slide-dot="7" aria-label="Show Local-first by design"></button>
+            </div>
+            <span class="slide-status" data-slide-status>1 of 8</span>
           </div>
-          <button class="slide-button" type="button" data-slide-next aria-label="Next screenshot">→</button>
+          <button class="slide-toggle" type="button" data-slide-toggle aria-label="Pause automatic feature tour">Pause</button>
+          <button class="slide-button" type="button" data-slide-next aria-label="Next feature">→</button>
         </div>
       </div>
     </section>
@@ -103,7 +211,7 @@
       <div class="callout">
         <div>
           <p class="eyebrow">Local-first by design</p>
-          <h2>Your profiles stay in your browser.</h2>
+          <h2>Your profiles and wishlists stay in your browser.</h2>
           <p>Loot Captain has no account, analytics, advertising, or tracking. Public RaidLoot pages are requested only when an import or missing-stat lookup needs them.</p>
         </div>
         <a class="button" href="./privacy-policy.html">Read the privacy policy</a>
@@ -119,17 +227,46 @@
   </footer>
   <script>
     document.querySelectorAll('[data-slideshow]').forEach((slideshow) => {
-      const slides = [...slideshow.querySelectorAll('.product-shot-slide')];
+      const slides = [...slideshow.querySelectorAll('.feature-slide')];
       const dots = [...slideshow.querySelectorAll('[data-slide-dot]')];
+      const status = slideshow.querySelector('[data-slide-status]');
+      const toggle = slideshow.querySelector('[data-slide-toggle]');
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       let current = 0;
+      let timer;
+      let playing = !reducedMotion;
       const show = (index) => {
         current = (index + slides.length) % slides.length;
         slides.forEach((slide, i) => { slide.hidden = i !== current; });
         dots.forEach((dot, i) => { dot.setAttribute('aria-current', i === current ? 'true' : 'false'); });
+        status.textContent = `${current + 1} of ${slides.length}`;
       };
-      slideshow.querySelector('[data-slide-prev]').addEventListener('click', () => show(current - 1));
-      slideshow.querySelector('[data-slide-next]').addEventListener('click', () => show(current + 1));
-      dots.forEach((dot, i) => dot.addEventListener('click', () => show(i)));
+      const schedule = () => {
+        window.clearTimeout(timer);
+        if (!playing || document.hidden || slideshow.matches(':hover') || slideshow.contains(document.activeElement)) return;
+        timer = window.setTimeout(() => { show(current + 1); schedule(); }, 7000);
+      };
+      const select = (index) => { show(index); schedule(); };
+      slideshow.querySelector('[data-slide-prev]').addEventListener('click', () => select(current - 1));
+      slideshow.querySelector('[data-slide-next]').addEventListener('click', () => select(current + 1));
+      dots.forEach((dot, i) => dot.addEventListener('click', () => select(i)));
+      toggle.addEventListener('click', () => {
+        playing = !playing;
+        toggle.textContent = playing ? 'Pause' : 'Play';
+        toggle.setAttribute('aria-label', playing ? 'Pause automatic feature tour' : 'Start automatic feature tour');
+        schedule();
+      });
+      slideshow.addEventListener('mouseenter', schedule);
+      slideshow.addEventListener('mouseleave', schedule);
+      slideshow.addEventListener('focusin', schedule);
+      slideshow.addEventListener('focusout', () => window.setTimeout(schedule));
+      document.addEventListener('visibilitychange', schedule);
+      if (reducedMotion) {
+        toggle.textContent = 'Play';
+        toggle.setAttribute('aria-label', 'Start automatic feature tour');
+      }
+      show(0);
+      schedule();
     });
   </script>
 </body>

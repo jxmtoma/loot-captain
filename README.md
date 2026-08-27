@@ -1,6 +1,6 @@
 # Loot Captain
 
-Loot Captain is a Manifest V3 Chrome/Edge extension for comparing EverQuest gear against local character profiles. It adds upgrade, downgrade, and stat-diff badges to RaidLoot and OpenDKP pages.
+Loot Captain is a Manifest V3 Chrome/Edge 109+ extension for comparing EverQuest gear against local character profiles. It adds upgrade, downgrade, and stat-diff badges to RaidLoot and OpenDKP pages.
 
 ## Features
 
@@ -26,8 +26,8 @@ The GitHub Pages site is in `docs/`. Enable **Settings → Pages → GitHub Acti
 | --- | --- |
 | `storage` | Store local profiles, settings, and fetched public item stats. |
 | `offscreen` | Parse fetched RaidLoot HTML with `DOMParser` from the MV3 service worker. |
-| RaidLoot host permission | Fetch public RaidLoot profile and item pages for imports and stat enrichment. |
-| RaidLoot image CDN host permission | Load public item icons in the profile editor. |
+| `www.raidloot.com` host permission | Fetch public RaidLoot profile and item pages for imports and stat enrichment. |
+| RaidLoot content-script matches | Add comparisons on both `raidloot.com` and `www.raidloot.com`; these matches do not grant background fetch access. |
 | OpenDKP content-script matches | Read the current OpenDKP item UI/API responses and add comparison badges; no OpenDKP host permission is requested. |
 
 ## Development
@@ -40,4 +40,4 @@ Run the dependency-free regression check with:
 node tests/regression.js
 ```
 
-The Chrome Web Store ZIP should contain only `background/`, `content/`, `icons/`, `options/`, `popup/`, and `manifest.json`. Upload the screenshots and promotional tiles from `store-assets/`, plus `docs/store-listing.md` and the privacy policy, separately. The legacy standalone userscript is intentionally not part of the release.
+The Chrome Web Store ZIP should contain only `background/`, `content/`, `icons/`, `options/`, `popup/`, and `manifest.json`. Upload the current screenshots and promotional tiles from `store-assets/`, plus `docs/store-listing.md` and the privacy policy, separately. The legacy standalone userscript is intentionally not part of the release.

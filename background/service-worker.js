@@ -7,6 +7,8 @@ const MAX_ID_LENGTH = 12;
 const MAX_NAME_LENGTH = 200;
 const MAX_ITEM_COUNT = 128;
 const RAIDLOOT_ITEM_CACHE_KEY = 'raidlootItemCache';
+const MAX_RAIDLOOT_CACHE_ENTRIES = 256;
+const MAX_RAIDLOOT_CACHE_BYTES = 2 * 1024 * 1024;
 const MAX_WISHLIST_ITEM_BYTES = 128 * 1024;
 const MAX_PROFILE_MUTATION_BYTES = 4 * 1024 * 1024;
 let profileMutationQueue = Promise.resolve();
@@ -27,17 +29,30 @@ async function fetchText(url) {
 
 let offscreenReady = null;
 
+async function hasOffscreenDocument() {
+  const url = chrome.runtime.getURL('background/offscreen.html');
+  if (chrome.offscreen.hasDocument) return chrome.offscreen.hasDocument();
+  if ('getContexts' in chrome.runtime) {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT'],
+      documentUrls: [url],
+    });
+    return contexts.length > 0;
+  }
+  const matchedClients = await clients.matchAll();
+  return matchedClients.some((client) => client.url === url);
+}
+
 async function ensureOffscreenDocument() {
   if (!chrome.offscreen) throw new Error('Chrome offscreen document API is unavailable');
-  if (chrome.offscreen.hasDocument && await chrome.offscreen.hasDocument()) return;
+  if (await hasOffscreenDocument()) return;
   if (!offscreenReady) {
     offscreenReady = chrome.offscreen.createDocument({
       url: 'background/offscreen.html',
       reasons: ['DOM_PARSER'],
       justification: 'Parse RaidLoot HTML for item and profile imports',
-    }).catch((e) => {
+    }).finally(() => {
       offscreenReady = null;
-      throw e;
     });
   }
   await offscreenReady;
@@ -74,15 +89,31 @@ function raidlootCacheKey(item) {
 async function getRaidlootItemCache() {
   try {
     const cache = await storageGet(RAIDLOOT_ITEM_CACHE_KEY, {});
-    return cache && typeof cache === 'object' ? cache : {};
+    const validCache = cache && typeof cache === 'object' ? cache : {};
+    const trimmedCache = trimRaidlootItemCache(validCache);
+    if (Object.keys(trimmedCache).length !== Object.keys(validCache).length) await saveRaidlootItemCache(trimmedCache);
+    return trimmedCache;
   } catch (e) {
     return {};
   }
 }
 
+function trimRaidlootItemCache(cache) {
+  let bytes = 2;
+  const kept = [];
+  const entries = Object.entries(cache || {});
+  for (let index = entries.length - 1; index >= 0 && kept.length < MAX_RAIDLOOT_CACHE_ENTRIES; index--) {
+    const entryBytes = new TextEncoder().encode(JSON.stringify(entries[index])).byteLength + 1;
+    if (bytes + entryBytes > MAX_RAIDLOOT_CACHE_BYTES) continue;
+    bytes += entryBytes;
+    kept.push(entries[index]);
+  }
+  return Object.fromEntries(kept.reverse());
+}
+
 async function saveRaidlootItemCache(cache) {
   try {
-    await chrome.storage.local.set({ [RAIDLOOT_ITEM_CACHE_KEY]: cache });
+    await chrome.storage.local.set({ [RAIDLOOT_ITEM_CACHE_KEY]: trimRaidlootItemCache(cache) });
   } catch (e) {}
 }
 

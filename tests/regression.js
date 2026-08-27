@@ -11,6 +11,17 @@ const optionsSource = read('options/options.js');
 const popupSource = read('popup/popup.js');
 const raidlootSource = read('content/raidloot.js');
 const opendkpSource = read('content/opendkp.js');
+const serviceWorkerSource = read('background/service-worker.js');
+const siteHtml = read('docs/index.html');
+assert.equal((siteHtml.match(/class="feature-slide"/g) || []).length, 8);
+for (const feature of ['wishlists', 'augments', 'spell focus', 'weapon procs', 'live OpenDKP auctions', 'hover tooltips']) {
+  assert.match(siteHtml, new RegExp(feature, 'i'));
+}
+assert.match(siteHtml, /data-slide-toggle/);
+assert.match(siteHtml, /prefers-reduced-motion: reduce/);
+assert.match(siteHtml, /setTimeout\(\(\) => \{ show\(current \+ 1\); schedule\(\); \}, 7000\)/);
+assert.match(siteHtml, /mouseenter/);
+assert.match(siteHtml, /focusin/);
 assert.match(optionsHtml, /<select id="profile-class"><\/select>/);
 assert.match(optionsHtml, /id="btn-edit-items"/);
 assert.match(optionsHtml, /data-inventory-tab="augments"/);
@@ -51,8 +62,10 @@ assert.match(optionsSource, /\{ slot: 'feet', label: 'Feet', column: 5, row: 6 \
 assert.match(optionsSource, /\{ slot: 'wrist-1', label: 'Left Wrist', column: 1, row: 5 \}/);
 assert.doesNotMatch(optionsSource, /ammo/i);
 assert.equal(manifest.permissions.includes('scripting'), false);
-assert.equal(manifest.host_permissions.includes('https://dlil5rqe0ybd2.cloudfront.net/*'), true);
-assert.doesNotMatch(read('background/service-worker.js'), /inlineRaidlootIcon/);
+assert.equal(manifest.minimum_chrome_version, '109');
+assert.deepEqual(manifest.host_permissions, ['https://www.raidloot.com/*']);
+assert.deepEqual([...new Set([...serviceWorkerSource.matchAll(/https:\/\/[a-z0-9.-]+/g)].map((match) => new URL(match[0]).hostname))], ['www.raidloot.com']);
+assert.doesNotMatch(serviceWorkerSource, /inlineRaidlootIcon/);
 assert.match(read('options/options.js'), /data:image/);
 assert.match(read('content/shared/ui.js'), /padding:2px 8px 2px 0 !important/);
 assert.match(read('content/shared/ui.js'), /text-align:right !important/);
@@ -64,8 +77,10 @@ assert.match(read('content/shared/ui.js'), /dataset\.lcView = 'proc'/);
 assert.match(read('content/shared/ui.js'), /slotShort\(row\.slotKey\)/);
 assert.match(read('content/shared/state.js'), /PROFILE_STATS_VERSION = 4/);
 assert.match(read('content/shared/state.js'), /type: 'MUTATE_WISHLIST'/);
-assert.match(read('background/service-worker.js'), /let profileMutationQueue = Promise\.resolve\(\)/);
-assert.match(read('background/service-worker.js'), /RAIDLOOT_ITEM_CACHE_KEY = 'raidlootItemCache'/);
+assert.match(serviceWorkerSource, /let profileMutationQueue = Promise\.resolve\(\)/);
+assert.match(serviceWorkerSource, /RAIDLOOT_ITEM_CACHE_KEY = 'raidlootItemCache'/);
+assert.match(serviceWorkerSource, /chrome\.runtime\.getContexts/);
+assert.match(serviceWorkerSource, /clients\.matchAll/);
 assert.match(read('background/service-worker.js'), /debug\.source = 'cache'/);
 assert.match(read('content/shared/ui.js'), /Wishlist item stats unavailable/);
 assert.match(read('content/shared/ui.js'), /\.lc-wishlist-toggle\{[^']*width:auto !important/);
@@ -618,6 +633,7 @@ const workerStorage = {
 };
 const workerContext = {
   console,
+  TextEncoder,
   URL,
   fetch,
   importScripts() {},
@@ -638,6 +654,22 @@ const workerContext = {
 };
 vm.runInNewContext(read('background/raidloot-parser.js'), workerContext, { filename: 'background/raidloot-parser.js' });
 vm.runInNewContext(read('background/service-worker.js'), workerContext, { filename: 'background/service-worker.js' });
+const oversizedItemCache = Object.fromEntries(Array.from({ length: 300 }, (_, index) => [
+  'id:' + index, { id: String(index), name: 'Item ' + index, stats: { HP: index } },
+]));
+const trimmedItemCache = workerContext.trimRaidlootItemCache(oversizedItemCache);
+assert.equal(Object.keys(trimmedItemCache).length, 256);
+assert.equal(trimmedItemCache['id:299'].id, '299');
+assert.equal(trimmedItemCache['id:0'], undefined);
+assert.equal(new TextEncoder().encode(JSON.stringify(trimmedItemCache)).byteLength <= 2 * 1024 * 1024, true);
+const byteLimitedCache = workerContext.trimRaidlootItemCache({
+  old: { raw: 'a'.repeat(800 * 1024) },
+  middle: { raw: 'b'.repeat(800 * 1024) },
+  newest: { raw: 'c'.repeat(800 * 1024) },
+});
+assert.equal(byteLimitedCache.old, undefined);
+assert.equal(byteLimitedCache.newest.raw.length, 800 * 1024);
+assert.equal(new TextEncoder().encode(JSON.stringify(byteLimitedCache)).byteLength <= 2 * 1024 * 1024, true);
 const sendWorkerMessage = (message, url = 'https://guild.opendkp.com/#/bids') => new Promise((resolve) => {
   workerListener(message, { url }, resolve);
 });
@@ -788,6 +820,29 @@ assert.equal(state.compatibleWishlistItem(
 ), true);
 
 (async () => {
+  let offscreenExists = true;
+  let offscreenCreates = 0;
+  workerContext.chrome.runtime.getURL = (path) => 'chrome-extension://test/' + path;
+  workerContext.chrome.runtime.getContexts = async () => offscreenExists ? [{}] : [];
+  workerContext.chrome.offscreen = {
+    async createDocument() { offscreenCreates++; offscreenExists = true; },
+  };
+  await workerContext.ensureOffscreenDocument();
+  assert.equal(offscreenCreates, 0);
+  offscreenExists = false;
+  await Promise.all([workerContext.ensureOffscreenDocument(), workerContext.ensureOffscreenDocument()]);
+  assert.equal(offscreenCreates, 1);
+  offscreenExists = false;
+  await workerContext.ensureOffscreenDocument();
+  assert.equal(offscreenCreates, 2);
+  delete workerContext.chrome.runtime.getContexts;
+  workerContext.clients = { async matchAll() { return [{ url: 'chrome-extension://test/background/offscreen.html' }]; } };
+  await workerContext.ensureOffscreenDocument();
+  assert.equal(offscreenCreates, 2);
+  workerStorage.raidlootItemCache = oversizedItemCache;
+  const migratedItemCache = await workerContext.getRaidlootItemCache();
+  assert.equal(Object.keys(migratedItemCache).length, 256);
+  assert.equal(Object.keys(workerStorage.raidlootItemCache).length, 256);
   await Promise.all([oversizedFetch, validFetch]);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(oversizedFetchReads, 1);

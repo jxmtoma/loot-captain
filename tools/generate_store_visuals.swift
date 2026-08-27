@@ -164,6 +164,86 @@ func drawButton(x: CGFloat, y: CGFloat, width: CGFloat, label: String, primary: 
     drawText(label, x: x + width / 2, y: y + 8, size: 12, fill: color(primary ? "#1a170f" : "#dfe6ef", alpha: disabled ? 0.48 : 1), bold: true, align: .center)
 }
 
+func drawTabs(x: CGFloat, y: CGFloat, width: CGFloat, labels: [String], active: Int, height: CGFloat = 34) {
+    guard !labels.isEmpty else { return }
+    drawRect(NSRect(x: x, y: y, width: width, height: height), fill: color("#0e1827"), stroke: color("#8e713d"), radius: 2)
+    let gap: CGFloat = 3
+    let tabWidth = (width - gap * CGFloat(labels.count + 1)) / CGFloat(labels.count)
+    for (index, label) in labels.enumerated() {
+        let tx = x + gap + CGFloat(index) * (tabWidth + gap)
+        drawRect(NSRect(x: tx, y: y + 4, width: tabWidth, height: height - 4), fill: color(index == active ? "#17263a" : "#0e1827"), stroke: color(index == active ? "#8e713d" : "#31455e"), radius: 2)
+        drawText(label.uppercased(), x: tx + tabWidth / 2, y: y + 14, size: width < 520 ? 9 : 10, fill: color(index == active ? "#f3d277" : "#a7b2c0"), bold: true, align: .center)
+    }
+}
+
+func drawBadge(x: CGFloat, y: CGFloat, width: CGFloat, label: String, state: String = "upgrade") {
+    let fill: String
+    let stroke: String
+    let text: String
+    switch state {
+    case "downgrade":
+        fill = "#673c36"; stroke = "#b78162"; text = "#ffe3d0"
+    case "sidegrade":
+        fill = "#655735"; stroke = "#d0aa5b"; text = "#fff1c8"
+    case "focus":
+        fill = "#315c4a"; stroke = "#76c9bd"; text = "#d9f4d6"
+    default:
+        fill = "#315c4a"; stroke = "#c8a85a"; text = "#d9f4d6"
+    }
+    drawRect(NSRect(x: x, y: y, width: width, height: 25), fill: color(fill), stroke: color(stroke), radius: 3)
+    drawText(label, x: x + width / 2, y: y + 6, size: 10, fill: color(text), bold: true, align: .center)
+}
+
+func drawStar(x: CGFloat, y: CGFloat, filled: Bool = true, size: CGFloat = 20) {
+    drawText(filled ? "★" : "☆", x: x, y: y, size: size, fill: color(filled ? "#e0b95f" : "#b7974f"), bold: true, align: .center)
+}
+
+func drawCompareTable(x: CGFloat, y: CGFloat, width: CGFloat, rows: [(String, String, String, String)], baseline: String = "wishlist") {
+    let rowHeight: CGFloat = 25
+    drawText("stat", x: x, y: y, size: 10, fill: color("#e6c26d"), bold: true)
+    drawText(baseline, x: x + width * 0.43, y: y, size: 10, fill: color("#e6c26d"), bold: true, align: .right)
+    drawText("candidate", x: x + width * 0.68, y: y, size: 10, fill: color("#e6c26d"), bold: true, align: .right)
+    drawText("delta", x: x + width, y: y, size: 10, fill: color("#e6c26d"), bold: true, align: .right)
+    drawLine(NSPoint(x: x, y: y + 18), NSPoint(x: x + width, y: y + 18), color: color("#465d78"))
+    for (index, row) in rows.enumerated() {
+        let ry = y + 23 + CGFloat(index) * rowHeight
+        if index % 2 == 0 { drawRect(NSRect(x: x - 4, y: ry - 4, width: width + 8, height: rowHeight), fill: color("#14243a")) }
+        drawText(row.0, x: x, y: ry, size: 10, fill: color("#c3ceda"), bold: true)
+        drawText(row.1, x: x + width * 0.43, y: ry, size: 10, fill: color("#dbe3dc"), align: .right)
+        drawText(row.2, x: x + width * 0.68, y: ry, size: 10, fill: color("#dbe3dc"), align: .right)
+        drawText(row.3, x: x + width, y: ry, size: 10, fill: color("#84d7a2"), bold: true, align: .right)
+    }
+}
+
+func drawFocusList(x: CGFloat, y: CGFloat, width: CGFloat) {
+    let entries: [(String, String, String, Bool)] = [
+        ("FOCUS", "Improved Damage V", "Phantasmal Luclinite Idol", false),
+        ("FOCUS", "Mana Preservation IV", "Embervault Cuirass", false),
+        ("PROC", "Strike of Ice", "Frostbound Claw", true),
+        ("PROC", "Flame of the Ancients", "Stormedge Blade", true),
+    ]
+    for (index, entry) in entries.enumerated() {
+        let rowY = y + CGFloat(index) * 39
+        drawRect(NSRect(x: x, y: rowY, width: width, height: 32), fill: color(entry.3 ? "#102631" : "#0c1727"), stroke: color(entry.3 ? "#3f7f7a" : (index == 0 ? "#e1bf6c" : "#52657d")), radius: 3)
+        drawText(entry.0, x: x + 12, y: rowY + 10, size: 9, fill: color(entry.3 ? "#9ee0d6" : "#d8b767"), bold: true)
+        drawText(entry.1, x: x + 67, y: rowY + 9, size: 11, fill: color(entry.3 ? "#9ee0d6" : "#f0dfad"), bold: true)
+        drawText(entry.2, x: x + width - 12, y: rowY + 10, size: 10, fill: color("#aab8c8"), align: .right)
+    }
+}
+
+func drawEffectDetails(x: CGFloat, y: CGFloat, width: CGFloat) {
+    drawText("SPELL FOCUS DETAILS", x: x, y: y, size: 11, fill: color("#d8b767"), bold: true)
+    drawLine(NSPoint(x: x, y: y + 20), NSPoint(x: x + width, y: y + 20), color: color("#4a5b70"))
+    drawText("Improved Damage V", x: x, y: y + 33, size: 15, fill: color("#f0d381"), bold: true, serif: true)
+    drawText("DETAILS", x: x, y: y + 62, size: 9, fill: color("#d8b767"), bold: true)
+    drawText("Increase Spell Damage by 105% to 120%", x: x, y: y + 78, size: 11, fill: color("#dbe3dc"))
+    drawText("(v124, Before DoT Crit, After DD Crit)", x: x, y: y + 96, size: 10, fill: color("#aab8c8"))
+    drawText("ON ITEM", x: x, y: y + 125, size: 9, fill: color("#d8b767"), bold: true)
+    drawText("Phantasmal Luclinite Idol", x: x, y: y + 141, size: 11, fill: color("#dbe3dc"))
+    drawText("PROC  ·  Strike of Ice  ·  1,200 dmg", x: x, y: y + 169, size: 10, fill: color("#9ee0d6"), bold: true)
+    drawText("Frostbound Claw  ·  Primary", x: x, y: y + 186, size: 10, fill: color("#aab8c8"))
+}
+
 let optionsImage = newImage(width: 1280, height: 800) {
     drawRect(NSRect(x: 0, y: 0, width: 1280, height: 800), fill: color("#080e18"))
     drawRect(NSRect(x: 0, y: 0, width: 1280, height: 82), fill: color("#101d2e"))
@@ -172,35 +252,42 @@ let optionsImage = newImage(width: 1280, height: 800) {
     drawText("Local character profiles for gear comparison", x: 104, y: 54, size: 13, fill: color("#9eacbc"))
     drawText("CHARACTER SELECT / INVENTORY", x: 64, y: 96, size: 10, fill: color("#8e9daf"))
     drawText("Edit: Ashenvale", x: 64, y: 122, size: 24, fill: color("#e6c26d"), bold: true, serif: true)
-    drawButton(x: 1048, y: 119, width: 150, label: "← Back")
-    drawRect(NSRect(x: 64, y: 164, width: 1152, height: 100), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
+    drawText("Character", x: 592, y: 129, size: 10, fill: color("#aeb8c5"))
+    drawRect(NSRect(x: 652, y: 119, width: 170, height: 28), fill: color("#09121f"), stroke: color("#4b5b70"), radius: 2)
+    drawText("Ashenvale  ▾", x: 664, y: 126, size: 11, fill: color("#f0eee5"))
+    drawButton(x: 830, y: 119, width: 76, label: "+ New")
+    drawButton(x: 914, y: 119, width: 78, label: "Delete")
+    drawButton(x: 1000, y: 119, width: 78, label: "Save", primary: true)
+    drawButton(x: 1086, y: 119, width: 130, label: "← Back")
+    drawRect(NSRect(x: 64, y: 164, width: 1152, height: 170), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
     drawText("CHARACTER SHEET", x: 84, y: 178, size: 12, fill: color("#f0d381"), bold: true)
     for (x, label, value, width) in [(84, "Name", "Ashenvale", 330), (448, "Class", "Beastlord", 330), (812, "Level", "100", 330)] {
         drawText(label, x: CGFloat(x), y: 204, size: 11, fill: color("#9eacbc"))
         drawRect(NSRect(x: CGFloat(x), y: 228, width: CGFloat(width), height: 27), fill: color("#07101b"), stroke: color("#4b5b70"), radius: 3)
         drawText(value, x: CGFloat(x + 12), y: 234, size: 12, fill: color("#dfe6ef"))
     }
-    drawRect(NSRect(x: 64, y: 284, width: 1152, height: 455), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
-    drawText("INVENTORY", x: 84, y: 296, size: 16, fill: color("#e1bd69"), bold: true, serif: true)
-    drawButton(x: 1100, y: 299, width: 90, label: "+ Add Item", disabled: true)
-    drawInventoryPreview(x: 84, y: 332, width: 680, height: 390)
-    drawRect(NSRect(x: 786, y: 332, width: 410, height: 390), fill: color("#0b1523"), stroke: color("#52677f"), radius: 5)
-    drawText("ITEM DETAILS", x: 806, y: 346, size: 11, fill: color("#d8b767"), bold: true)
-    drawButton(x: 1118, y: 342, width: 60, label: "Edit")
-    drawIcon(NSRect(x: 806, y: 378, width: 58, height: 58))
-    drawText("Embervault Cuirass", x: 878, y: 382, size: 17, fill: color("#f0d381"), bold: true, serif: true)
-    drawText("Read-only until Edit", x: 878, y: 408, size: 11, fill: color("#9eacbc"))
-    for (yy, label, value) in [(462, "Item Name", "Embervault Cuirass"), (522, "Slot", "Chest")] {
-        drawText(label, x: 806, y: CGFloat(yy), size: 10, fill: color("#9eacbc"))
-        drawRect(NSRect(x: 806, y: CGFloat(yy + 8), width: 370, height: 27), fill: color("#08111d"), stroke: color("#33475e"), radius: 3)
-        drawText(value, x: 818, y: CGFloat(yy + 14), size: 12, fill: color("#8f9dac"))
+    drawLine(NSPoint(x: 84, y: 274), NSPoint(x: 1196, y: 274), color: color("#3a4a61"))
+    drawText("WISHLIST", x: 84, y: 286, size: 11, fill: color("#e1bd69"), bold: true)
+    drawText("3 items", x: 1196, y: 286, size: 10, fill: color("#8bd0a9"), align: .right)
+    for (x, name, slot) in [(84, "Nebulous Assault's Cloak", "Back"), (420, "Dreadstone Band", "Finger"), (760, "Gleaming Augment", "Augment")] {
+        drawStar(x: CGFloat(x), y: 304, filled: true, size: 17)
+        drawText(name, x: CGFloat(x + 16), y: 307, size: 10, fill: color("#dfe6ef"), bold: true)
+        drawText(slot, x: CGFloat(x + 16), y: 322, size: 9, fill: color("#8e9daf"))
     }
-    drawText("STATS", x: 806, y: 584, size: 10, fill: color("#d6b565"), bold: true)
-    for (yy, label, value) in [(610, "AC", "+185"), (646, "HP", "+1,540"), (682, "HDex", "+55")] {
-        drawText(label, x: 806, y: CGFloat(yy), size: 12, fill: color("#aab8c8"))
-        drawText(value, x: 1130, y: CGFloat(yy), size: 12, fill: color("#8bd0a9"), bold: true, align: .right)
-        if yy != 682 { drawLine(NSPoint(x: 806, y: CGFloat(yy + 10)), NSPoint(x: 1176, y: CGFloat(yy + 10)), color: color("#24384f")) }
-    }
+    drawRect(NSRect(x: 64, y: 350, width: 1152, height: 400), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
+    drawText("INVENTORY", x: 84, y: 362, size: 16, fill: color("#e1bd69"), bold: true, serif: true)
+    drawText("18 worn items  ·  4 augments  ·  4 gear effects", x: 280, y: 366, size: 10, fill: color("#8bd0a9"))
+    drawButton(x: 1100, y: 359, width: 90, label: "+ Add Item", disabled: true)
+    drawRect(NSRect(x: 84, y: 392, width: 700, height: 340), fill: color("#090e17"), stroke: color("#826738"), radius: 5, lineWidth: 2)
+    drawTabs(x: 96, y: 402, width: 676, labels: ["Equipment", "Augments", "Spell Focus"], active: 2)
+    drawText("SPELL FOCUS & PROCS", x: 108, y: 449, size: 10, fill: color("#9faec1"), bold: true)
+    drawFocusList(x: 108, y: 467, width: 652)
+    drawRect(NSRect(x: 108, y: 644, width: 652, height: 31), fill: color("#191a24"), stroke: color("#a27c40"), radius: 4)
+    drawText("Auto-Inventory", x: 120, y: 654, size: 10, fill: color("#efd080"), bold: true)
+    drawText("4 gear effects", x: 748, y: 654, size: 10, fill: color("#efd080"), bold: true, align: .right)
+    drawRect(NSRect(x: 802, y: 392, width: 394, height: 340), fill: color("#0b1523"), stroke: color("#52677f"), radius: 5)
+    drawButton(x: 1118, y: 402, width: 60, label: "Edit")
+    drawEffectDetails(x: 822, y: 410, width: 354)
 }
 
 let characterSelectImage = newImage(width: 1280, height: 800) {
@@ -231,8 +318,8 @@ let characterSelectImage = newImage(width: 1280, height: 800) {
     drawText("USED ON RAIDLOOT & OPENDKP", x: 1022, y: 442, size: 11, fill: color("#8bd0a9"), bold: true, align: .right)
     drawText("Score formula", x: 84, y: 470, size: 11, fill: color("#aeb8c5"))
     drawRect(NSRect(x: 84, y: 486, width: 420, height: 28), fill: color("#07101b"), stroke: color("#4b5b70"), radius: 3)
-    drawText("Weighted upgrade score", x: 98, y: 493, size: 12, fill: color("#dfe6ef"))
-    drawText("Controls the base upgrade score shown on supported item pages.", x: 540, y: 492, size: 12, fill: color("#aeb8c5"))
+    drawText("1AC = 10HP", x: 98, y: 493, size: 12, fill: color("#dfe6ef"))
+    drawText("Controls the base upgrade score. Weapons also show Damage/Delay ratio when available.", x: 540, y: 492, size: 12, fill: color("#aeb8c5"))
     drawRect(NSRect(x: 64, y: 550, width: 568, height: 176), fill: color("#17263a"), stroke: color("#b08b44"), radius: 4)
     drawText("IMPORT FROM RAIDLOOT", x: 84, y: 568, size: 12, fill: color("#e1bd69"), bold: true)
     drawText("Recommended", x: 512, y: 568, size: 11, fill: color("#8bd0a9"), bold: true, align: .right)
@@ -249,10 +336,53 @@ let characterSelectImage = newImage(width: 1280, height: 800) {
 
 let raidLootImage = newImage(width: 1280, height: 800) {
     drawSourceImage("raidloot-live-base.jpg", rect: NSRect(x: 0, y: 0, width: 1280, height: 800))
+    // The live page leaves a wide margin beside the item detail; use it for
+    // the extension's intentionally compact, click-through comparison panel.
+    drawStar(x: 620, y: 77, filled: true, size: 22)
+    drawBadge(x: 646, y: 76, width: 110, label: "vs wishlist ↑")
+    drawRect(NSRect(x: 674, y: 68, width: 540, height: 700), fill: color("#0b1523", alpha: 0.97), stroke: color("#a38348"), radius: 4, lineWidth: 2)
+    drawText("LOOT CAPTAIN", x: 698, y: 88, size: 12, fill: color("#d8b767"), bold: true)
+    drawText("Ashenvale  ·  Beastlord  ·  Level 100", x: 698, y: 111, size: 12, fill: color("#b7c4d2"))
+    drawStar(x: 700, y: 137, filled: true, size: 22)
+    drawText("Nebulous Assault's Cloak", x: 716, y: 141, size: 15, fill: color("#f0d381"), bold: true, serif: true)
+    drawText("Local wishlist baseline", x: 716, y: 163, size: 10, fill: color("#8bd0a9"))
+    drawBadge(x: 698, y: 184, width: 108, label: "up +1,240")
+    drawBadge(x: 816, y: 184, width: 86, label: "focus up", state: "focus")
+    drawBadge(x: 912, y: 184, width: 92, label: "R proc up", state: "focus")
+    drawText("COMPARE VS WISHLIST", x: 698, y: 231, size: 11, fill: color("#e6c26d"), bold: true)
+    drawCompareTable(x: 698, y: 250, width: 482, rows: [
+        ("HP", "6,120", "11,008", "+4,888"),
+        ("AC", "325", "409", "+84"),
+        ("Spell Dmg", "23", "90", "+67"),
+    ])
+    drawText("SPELL FOCUS (1 change)", x: 698, y: 363, size: 10, fill: color("#d8b767"), bold: true)
+    drawText("Improved Damage V  →  Improved Damage VI", x: 698, y: 382, size: 11, fill: color("#dbe3dc"))
+    drawText("105–120% effective @ L125", x: 698, y: 400, size: 10, fill: color("#8bd0a9"))
+    drawText("PROC (1 change)", x: 698, y: 432, size: 10, fill: color("#d8b767"), bold: true)
+    drawText("Strike of Ice  ·  900 dmg  →  1,200 dmg", x: 698, y: 451, size: 11, fill: color("#9ee0d6"))
+    drawLine(NSPoint(x: 698, y: 481), NSPoint(x: 1180, y: 481), color: color("#465d78"))
+    drawText("Click any badge for the full stat/effect diff.", x: 698, y: 502, size: 11, fill: color("#c3ceda"))
+    drawText("Profiles and wishlist data stay in this browser.", x: 698, y: 523, size: 10, fill: color("#8e9daf"))
 }
 
 let openDkpImage = newImage(width: 1280, height: 800) {
     drawSourceImage("opendkp-item-live.jpg", rect: NSRect(x: 0, y: 0, width: 1280, height: 800))
+    // Live auction rows are highlighted only when a local wishlist matches.
+    drawRect(NSRect(x: 386, y: 291, width: 837, height: 50), fill: color("#8c6e29", alpha: 0.16), stroke: color("#d3ae5a", alpha: 0.82), radius: 2, lineWidth: 2)
+    drawStar(x: 810, y: 302, filled: true, size: 20)
+    drawBadge(x: 836, y: 297, width: 108, label: "vs wishlist ↑")
+    drawBadge(x: 950, y: 297, width: 77, label: "P up")
+    drawBadge(x: 1033, y: 297, width: 86, label: "focus up", state: "focus")
+    drawRect(NSRect(x: 356, y: 474, width: 897, height: 169), fill: color("#111c2b", alpha: 0.98), stroke: color("#a38348"), radius: 4, lineWidth: 2)
+    drawText("LOOT CAPTAIN  ·  ASHENVALE", x: 382, y: 492, size: 12, fill: color("#f0d381"), bold: true)
+    drawBadge(x: 1038, y: 484, width: 128, label: "LIVE AUCTION", state: "focus")
+    drawText("★  Wishlist match highlighted", x: 382, y: 520, size: 11, fill: color("#e0b95f"), bold: true)
+    drawText("Phantasmal Luclinite Idol  ·  Range", x: 382, y: 541, size: 11, fill: color("#c3ceda"))
+    drawCompareTable(x: 382, y: 560, width: 842, rows: [
+        ("HP", "6,120", "11,008", "+4,888"),
+        ("AC", "325", "409", "+84"),
+        ("Spell Dmg", "23", "90", "+67"),
+    ])
 }
 
 let smallImage = newImage(width: 440, height: 280) {
@@ -284,6 +414,8 @@ save(raidLootImage, as: "screenshot-comparison-1280x800.png", alsoCopyTo: docsAs
 save(openDkpImage, as: "screenshot-opendkp-1280x800.png", alsoCopyTo: docsAssets.appendingPathComponent("screenshot-opendkp-1280x800.png"))
 save(smallImage, as: "promo-small-440x280.png")
 save(marqueeImage, as: "promo-marquee-1400x560.png")
-save(newImage(width: 128, height: 128) { drawLootCaptainMark(NSRect(x: 0, y: 0, width: 128, height: 128)) }, as: "icon128.png", directory: iconDirectory)
+// Chrome's store icon should breathe: keep roughly 16 px transparent padding
+// around the 96 px artwork. Toolbar icons intentionally remain full-size.
+save(newImage(width: 128, height: 128) { drawLootCaptainMark(NSRect(x: 18, y: 18, width: 92, height: 92)) }, as: "icon128.png", directory: iconDirectory)
 save(newImage(width: 48, height: 48) { drawLootCaptainMark(NSRect(x: 0, y: 0, width: 48, height: 48)) }, as: "icon48.png", directory: iconDirectory)
 save(newImage(width: 16, height: 16) { drawLootCaptainMark(NSRect(x: 0, y: 0, width: 16, height: 16)) }, as: "icon16.png", directory: iconDirectory)
