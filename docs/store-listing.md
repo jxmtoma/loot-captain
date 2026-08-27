@@ -8,13 +8,21 @@ Compare EverQuest gear against local character profiles and show slot-aware upgr
 
 ### Detailed description
 
-Loot Captain is a local-first gear comparison and wishlist tool for EverQuest players. Create or import character profiles, choose a scoring formula, and see whether an item is an upgrade before spending time or raid currency on it.
+Compare EverQuest gear before you spend raid time or currency.
 
-Profiles can be imported from a public RaidLoot profile or from an EverQuest `/output inventory` file, including worn augments. Missing item stats are looked up from public RaidLoot pages and saved in the local profile. On RaidLoot and OpenDKP pages, Loot Captain adds compact upgrade/downgrade badges and expandable comparisons for numeric stats, compatible augments, spell focus effects, weapon procs, and weapon Damage/Delay ratio—including paired ear, wrist, and finger slots.
+Loot Captain helps you:
 
-Each character also has a local wishlist. Star items on RaidLoot or OpenDKP, highlight them in RaidLoot and live OpenDKP auctions, and compare new candidates with equipped gear or a compatible wishlist item. Loot Captain matches the same item across both supported sites when its identity can be resolved.
+- Import worn gear from a public RaidLoot profile or an EverQuest `/output inventory` file.
+- Manage multiple character profiles and choose your scoring formula.
+- See upgrade, downgrade, and per-stat differences on RaidLoot and OpenDKP.
+- Compare numeric stats, augments, spell focus effects, weapon procs, and Damage/Delay ratio.
+- Handle paired ear, wrist, and finger slots automatically.
+- Save a local wishlist and highlight wanted items in RaidLoot and OpenDKP auctions.
+- Fill in missing item stats from public RaidLoot pages.
 
-Your profiles and settings stay in browser-local extension storage. Loot Captain has no account, analytics, tracking, advertising, or remote code.
+Profiles and settings stay in browser-local storage. Loot Captain has no account, analytics, tracking, advertising, or remote code.
+
+Support ongoing development: https://github.com/sponsors/jxmtoma
 
 ### Category and language
 

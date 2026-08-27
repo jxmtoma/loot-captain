@@ -40,4 +40,12 @@ Run the dependency-free regression check with:
 node tests/regression.js
 ```
 
+Create the Chrome Web Store upload ZIP with:
+
+```sh
+./tools/package-extension.sh
+```
+
+The versioned archive is written to `dist/` and contains only the extension runtime files.
+
 The Chrome Web Store ZIP should contain only `background/`, `content/`, `icons/`, `options/`, `popup/`, and `manifest.json`. Upload the current screenshots and promotional tiles from `store-assets/`, plus `docs/store-listing.md` and the privacy policy, separately. The legacy standalone userscript is intentionally not part of the release.
