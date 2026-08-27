@@ -1,6 +1,6 @@
 # Wishlist and character-aware scoring roadmap
 
-Status: design proposal, 2026-08-22. This document defines scope before implementation.
+Status: local wishlist implemented; remaining sections are roadmap, 2026-08-25.
 
 ## Product decision
 
@@ -8,9 +8,9 @@ Build one local, per-character loot workflow:
 
 1. Choose how the character values gear.
 2. Add items from RaidLoot or OpenDKP to that character's wishlist.
-3. Highlight wanted items when they appear on either site.
-4. Compare the item with the character's current equipment.
-5. Mark an acquired item as equipped, updating the local profile.
+3. Highlight wanted items in RaidLoot and live OpenDKP auctions.
+4. Compare an item with the character's current equipment or a selected wishlist baseline.
+5. Manage wishlist entries from the character editor.
 
 The first release should improve decisions without claiming to simulate the EverQuest combat engine. Full character totals and DPS forecasts come later, only where their assumptions can be shown and tested.
 
@@ -21,37 +21,41 @@ The first release should improve decisions without claiming to simulate the Ever
 - Class eligibility, paired slots, one-hand/two-hand layouts, and per-slot comparison targets.
 - Fixed score formulas selected globally for the extension.
 - Weapon `Damage / Delay` ratio and ratio delta. This is a useful proxy, not a DPS forecast.
-- Annotation of RaidLoot's own wishlist. This is separate from the proposed local Loot Captain wishlist.
+- A local per-character Loot Captain wishlist with RaidLoot and live OpenDKP highlighting. This is separate from RaidLoot's own wishlist.
+- Cached canonical numeric stats and structured effects for wishlist comparisons; scores are never cached.
 
 Important gaps:
 
-- OpenDKP does not provide every stat consistently.
-- Focus, proc, worn, click, and other named effects are not preserved as structured comparison data.
-- Profile storage keeps numeric item stats but discards most effect text.
+- OpenDKP does not provide every stat or effect consistently.
+- Some focus, proc, worn, click, and other named effects remain unresolved or informational rather than scoreable.
+- Wishlist entries preserve canonical numeric stats and structured effects when available; missing source data remains unresolved.
 - Profiles do not contain base character totals, AAs, buffs, caps, augments, or combat assumptions.
 - The selected score formula is global, even though profiles can represent different classes and roles.
 
-## 1. Local wishlist
+## 1. Local wishlist (implemented)
 
 ### Scope
 
 The wishlist belongs to a local character profile. It does not modify RaidLoot's account wishlist, submit bids, sync with a guild, or send wishlist data anywhere.
 
-Each entry stores identity, not a frozen score:
+Each entry stores source identity plus cached canonical item data needed for comparison, never a frozen score:
 
 ```js
 profile.wishlist = [{
-  key: "raidloot:12345",
+  raidlootId: "12345",
+  opendkpHost: "",
+  opendkpId: "",
   name: "Example Item",
   slot: "Head",
-  raidlootId: "12345",
-  opendkpHost: "guild.opendkp.com",
-  opendkpId: "67890",
+  isAugment: false,
+  augmentTypes: [],
+  stats: { HP: 100 },
+  effects: [],
   addedAt: 1787443200000
 }];
 ```
 
-Scores must be recalculated from the current profile and its current formula. This prevents stale wishlist rankings after gear or scoring changes.
+Scores must be recalculated from the current profile and its current formula. This prevents stale wishlist rankings after gear or scoring changes. When an item is resolved from another source, merge its discovered identity and richer canonical data into the existing entry.
 
 Identity matching order:
 
@@ -65,7 +69,8 @@ When the same item is later resolved from another source, merge the discovered I
 
 - Add or remove a candidate with an accessible star button on RaidLoot and OpenDKP item details, tables, and tooltips.
 - Allow identity-only wishlist additions when stats cannot be resolved yet.
-- Highlight wanted items with a gold row/host treatment and a clear `Wanted` marker.
+- Highlight wanted items in RaidLoot and live OpenDKP auction rows with a gold treatment and a clear `Wanted` marker.
+- Compare a candidate directly with a compatible wishlist baseline alongside the existing equipped-item comparison; select a baseline when multiple targets are available.
 - Highlight only for the active character. Cross-character and guild-wide wishlists are deferred.
 - Show wishlist count and a simple remove/manage list in the character editor.
 - Do not reorder OpenDKP auction tables; highlighting must not interfere with the site's bidding UI.
@@ -78,6 +83,8 @@ When the same item is later resolved from another source, merge the discovered I
 4. Missing stats do not prevent add/remove or highlighting.
 5. Wishlist data remains local and is removed with its character profile.
 6. RaidLoot's native wishlist continues to work independently.
+7. A candidate can be compared with a compatible wishlist baseline without changing existing equipped-item comparisons.
+8. An unresolved wishlist item remains marked and reports unavailable stats instead of being discarded.
 
 ## 2. Mark obtained / equip in local profile
 
@@ -205,8 +212,8 @@ Do not display a single “+X% DPS” number until it survives comparison with r
 
 ## Recommended implementation order
 
-1. Preserve profile metadata and add per-profile formula/wishlist fields.
-2. Add local wishlist toggle, cross-source identity matching, highlights, and management.
+1. Preserve profile metadata and add per-profile wishlist fields. (implemented)
+2. Add local wishlist toggles, cross-source identity matching, highlights, editor management, and direct wishlist-baseline comparisons. (implemented)
 3. Add safe per-row equip actions.
 4. Make numeric stat coverage consistent across RaidLoot, OpenDKP, storage, and display.
 5. Add per-character role presets with transparent score breakdowns.

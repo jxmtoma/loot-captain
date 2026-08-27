@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const LC = window.LootCaptain = window.LootCaptain || {};
-  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-compare-row, .lc-wish-meta, .lc-stat-indicator, .lc-stat-line, .lc-statified';
+  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-compare-row, .lc-wishlist-toggle, .lc-wishlist-compare, .lc-wish-meta, .lc-stat-indicator, .lc-stat-line, .lc-statified';
   const CONSENT_KEY = 'consentVersion';
   const CONSENT_VERSION = 1;
   let started = false;
@@ -37,30 +37,63 @@
   }
 
   // ---------- Annotators ----------
+  function raidlootCandidate(cand) {
+    return cand && { ...cand, raidlootId: cand.raidlootId || cand.id || '' };
+  }
+
+  function decorateWishlist(host, cand, attachPanel) {
+    if (!LC.currentProfile || !host || !cand) return null;
+    const existingButton = host.querySelector(':scope > .lc-wishlist-compare');
+    if (host.querySelector(':scope > .lc-wishlist-toggle')) return existingButton;
+    const wantedEntry = LC.state.findWishlistEntry(LC.currentProfile, cand);
+    const highlightHost = host.closest('tr') || host;
+    if (wantedEntry) {
+      highlightHost.classList.add('lc-wanted');
+      if (LC.state.wishlistNeedsMerge(wantedEntry, cand, LC.currentProfile)) {
+        LC.state.mergeWishlistCandidate(cand, LC.currentProfile.id).catch(() => {});
+      }
+    }
+    const toggle = LC.ui.buildWishlistToggle(cand, !!wantedEntry, LC.currentProfile.id);
+    const targets = LC.state.wishlistTargets(LC.currentProfile, cand);
+    const compare = targets.length ? LC.ui.buildWishlistCompareButton(cand, targets, LC.currentFormula, LC.currentProfile.level) : null;
+    if (compare && attachPanel) compare.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const existing = host.querySelector(':scope > .lc-wishlist-compare-panel');
+      if (existing) { existing.remove(); return; }
+      host.appendChild(LC.ui.buildWishlistComparePanel(cand, targets, LC.currentProfile, LC.currentFormula));
+    });
+    host.prepend(...[toggle, compare].filter(Boolean));
+    return compare;
+  }
+
   function annotateItemElement(host, cand, attachPanel = true) {
-    if (!cand || !cand.slotKey) return;
-    if (host.querySelector(':scope > .lc-badge')) return;
+    cand = raidlootCandidate(cand);
+    if (!cand) return null;
+    const wishlistCompare = decorateWishlist(host, cand, attachPanel);
+    if (!cand.slotKey) return wishlistCompare;
+    if (host.querySelector(':scope > .lc-badge')) return wishlistCompare;
     const badge = LC.ui.buildBadge('nomatch', 'no char', 'Pick a character in the popup');
     if (!LC.currentProfile) {
       host.prepend(badge);
-      return;
+      return wishlistCompare;
     }
     const f = LC.currentFormula;
     const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
-    if (!comparison.eligible) return;
+    if (!comparison.eligible) return wishlistCompare;
     const summary = LC.diff.summarizeComparisons(comparison);
     if (!summary.hasWorn && !summary.hasEffects) {
       badge.dataset.state = 'empty';
       badge.textContent = 'empty slot';
       badge.title = 'No worn item in slot ' + cand.slotKey.key;
       host.prepend(badge);
-      return;
+      return wishlistCompare;
     }
     if (!summary.comparable) {
       badge.textContent = '?';
       badge.title = 'Item stats are unresolved; no comparison is available';
       host.prepend(badge);
-      return;
+      return wishlistCompare;
     }
     const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
     const badges = [];
@@ -85,6 +118,7 @@
       }
     }
     host.prepend(...badges);
+    return wishlistCompare;
   }
 
   function annotateSearchRow(tr) {
@@ -97,7 +131,37 @@
     const nameAnchor = tr.querySelector('a[href*="/items/"]');
     const nameCell = nameAnchor ? nameAnchor.closest('td') : null;
     if (!nameCell) return;
-    annotateItemElement(nameCell, cand, false);
+    const wishlistButton = annotateItemElement(nameCell, cand, false);
+    if (wishlistButton && !wishlistButton.dataset.rewired) {
+      wishlistButton.dataset.rewired = '1';
+      wishlistButton.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const compareRow = Array.from(tr.parentNode.children).find((node) =>
+          node.classList && node.classList.contains('lc-compare-row') && node.dataset.lcOwner === id);
+        if (compareRow) {
+          const same = compareRow.dataset.lcView === 'wishlist';
+          compareRow.remove();
+          if (same) return;
+        }
+        const newRow = document.createElement('tr');
+        newRow.className = 'lc-compare-row';
+        newRow.dataset.lcOwner = id;
+        newRow.dataset.lcRow = 'wishlist';
+        newRow.dataset.lcView = 'wishlist';
+        const td = document.createElement('td');
+        td.colSpan = tr.cells.length;
+        td.appendChild(LC.ui.buildWishlistComparePanel(raidlootCandidate(cand),
+          LC.state.wishlistTargets(LC.currentProfile, raidlootCandidate(cand)), LC.currentProfile, LC.currentFormula));
+        newRow.appendChild(td);
+        const nativeDetailRow = detail.closest('tr');
+        if (nativeDetailRow && nativeDetailRow !== tr && nativeDetailRow.parentNode === tr.parentNode) {
+          tr.parentNode.insertBefore(newRow, nativeDetailRow.nextElementSibling);
+        } else {
+          tr.parentNode.appendChild(newRow);
+        }
+      }, true);
+    }
     const badges = nameCell.querySelectorAll(':scope > .lc-badge');
     badges.forEach((badge) => {
       if (badge.dataset.rewired) return;
@@ -187,6 +251,9 @@
       if (!itemDiv) continue;
       const cand = LC.parser.parseRaidlootNode(itemDiv);
       if (!cand) continue;
+      const localCandidate = raidlootCandidate(cand);
+      const localWanted = LC.currentProfile && LC.state.findWishlistEntry(LC.currentProfile, localCandidate);
+      if (localWanted) icon.classList.add('lc-wanted');
       let meta = icon.querySelector(':scope > .lc-wish-meta');
       if (!meta) {
         meta = document.createElement('span');
@@ -201,6 +268,7 @@
         meta.appendChild(slotSpan);
         icon.appendChild(meta);
       }
+      if (LC.currentProfile) meta.appendChild(LC.ui.buildWishlistToggle(localCandidate, !!localWanted, LC.currentProfile.id));
       const badge = document.createElement('span');
       badge.className = 'lc-badge';
       let sortKey = -Infinity;
@@ -263,10 +331,11 @@
 
   // ---------- Rerun ----------
   function rerunPageAnnotations(clearPanels) {
-    const selectors = ['.lc-badge', '.lc-compare-row', '.lc-wish-meta', '.lc-stat-indicator'];
+    const selectors = ['.lc-badge', '.lc-compare-row', '.lc-wishlist-toggle', '.lc-wishlist-compare', '.lc-wish-meta', '.lc-stat-indicator'];
     if (clearPanels) selectors.push('.lc-compare-panel');
     document.querySelectorAll(selectors.join(', '))
       .forEach((el) => el.remove());
+    document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));
     document.querySelectorAll('tr[id^="row-item"]').forEach(annotateSearchRow);
     annotateLinkedItemRows();
     document.querySelectorAll('div.item[id^="item"][data-id]').forEach((div) => {

@@ -12,12 +12,15 @@
   let profileLoadGeneration = 0;
   const profileRefreshes = new Map();
 
-  // profiles: { id: { id, name, cls, level, items: [...] } }
+  // profiles: { id: { id, name, cls, level, items: [...], wishlist: [...] } }
   async function getProfiles() {
     return await LC.ui.store.get(PROFILES_KEY, {});
   }
-  async function saveProfiles(profiles) {
-    await LC.ui.store.set(PROFILES_KEY, profiles);
+  async function saveProfiles(profiles, expectedProfiles) {
+    const response = await chrome.runtime.sendMessage({
+      type: 'SAVE_PROFILES', profiles, expectedProfiles: expectedProfiles || {}, deletedIds: [],
+    });
+    return response && response.ok ? response.profiles : null;
   }
   async function getSelectedId() {
     return await LC.ui.store.get(SELECTED_KEY, '');
@@ -114,14 +117,165 @@
     };
   }
 
+  function cleanId(value) {
+    return String(value || '').trim();
+  }
+
+  function cleanName(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function wishlistStats(item) {
+    const stats = {};
+    for (const [key, value] of Object.entries(item && item.stats || {})) {
+      const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
+      if (num != null && !isNaN(num)) stats[key] = num;
+    }
+    return stats;
+  }
+
+  function wishlistSlot(item) {
+    const slotKey = item && (item.slotKey || LC.slots.canonicalSlot(item.slot));
+    return slotKey && slotKey.key || '';
+  }
+
+  function normalizeWishlistEntry(item, existing) {
+    const current = existing || {};
+    const candidateStats = wishlistStats(item);
+    const currentStats = wishlistStats(current);
+    const candidateEffects = LC.parser.normalizeEffects(item && item.effects || []);
+    const currentEffects = LC.parser.normalizeEffects(current.effects || []);
+    return {
+      raidlootId: cleanId(item && item.raidlootId || current.raidlootId),
+      opendkpHost: String(item && item.opendkpHost || current.opendkpHost || '').trim().toLowerCase(),
+      opendkpId: cleanId(item && item.opendkpId || current.opendkpId),
+      name: String(item && item.name || current.name || '').trim(),
+      slot: String(item && item.slot || current.slot || '').trim(),
+      isAugment: !!(item && item.isAugment || current.isAugment),
+      augmentTypes: [...new Set([...(current.augmentTypes || []), ...(item && item.augmentTypes || [])].map(String))],
+      stats: { ...currentStats, ...candidateStats },
+      effects: candidateEffects.length >= currentEffects.length ? candidateEffects : currentEffects,
+      addedAt: Number(current.addedAt || item && item.addedAt) || Date.now(),
+    };
+  }
+
+  function wishlistMatches(entry, item) {
+    if (!entry || !item) return false;
+    const entryRaidlootId = cleanId(entry.raidlootId);
+    const itemRaidlootId = cleanId(item.raidlootId);
+    if (entryRaidlootId && itemRaidlootId) return entryRaidlootId === itemRaidlootId;
+    const entryOpenDkpId = cleanId(entry.opendkpId);
+    const itemOpenDkpId = cleanId(item.opendkpId);
+    const entryHost = String(entry.opendkpHost || '').trim().toLowerCase();
+    const itemHost = String(item.opendkpHost || '').trim().toLowerCase();
+    if (entryOpenDkpId && itemOpenDkpId && entryHost && entryHost === itemHost) return entryOpenDkpId === itemOpenDkpId;
+    return !!cleanName(entry.name) && cleanName(entry.name) === cleanName(item.name) &&
+      !!wishlistSlot(entry) && wishlistSlot(entry) === wishlistSlot(item);
+  }
+
+  function findWishlistEntry(profile, item) {
+    return (profile && profile.wishlist || []).find((entry) => wishlistMatches(entry, item)) || null;
+  }
+
+  function wishlistItem(entry) {
+    return normalizeItemStats({
+      ...entry,
+      id: entry.raidlootId || entry.opendkpId || '',
+      effects: entry.effects || [],
+      stats: entry.stats || {},
+    });
+  }
+
+  function itemLayout(item) {
+    if (!item || item.isAugment) return '';
+    const slotKey = item.slotKey || LC.slots.canonicalSlot(item.slot);
+    const keys = slotKey && (slotKey.keys || [slotKey.key]) || [];
+    if (keys.includes('range')) return 'range';
+    if (keys.includes('primary') && keys.includes('secondary')) return 'one-hand';
+    if (keys.length === 1 && keys[0] === 'primary') return 'two-hand';
+    return '';
+  }
+
+  function compatibleWishlistItem(candidate, target) {
+    if (!candidate || !target || !!candidate.isAugment !== !!target.isAugment) return false;
+    if (candidate.isAugment) {
+      const targetTypes = new Set((target.augmentTypes || []).map(String));
+      return (candidate.augmentTypes || []).some((type) => targetTypes.has(String(type)));
+    }
+    const candidateSlot = candidate.slotKey || LC.slots.canonicalSlot(candidate.slot);
+    const targetSlot = target.slotKey || LC.slots.canonicalSlot(target.slot);
+    const candidateKeys = candidateSlot && (candidateSlot.keys || [candidateSlot.key]) || [];
+    const targetKeys = new Set(targetSlot && (targetSlot.keys || [targetSlot.key]) || []);
+    if (!candidateKeys.some((key) => targetKeys.has(key))) return false;
+    const candidateLayout = itemLayout(candidate);
+    const targetLayout = itemLayout(target);
+    return !candidateLayout && !targetLayout || candidateLayout === targetLayout;
+  }
+
+  function wishlistTargets(profile, candidate) {
+    return (profile && profile.wishlist || [])
+      .filter((entry) => !wishlistMatches(entry, candidate))
+      .map(wishlistItem)
+      .filter((entry) => compatibleWishlistItem(candidate, entry));
+  }
+
+  function wishlistNeedsMerge(entry, item, profile) {
+    if (!entry || !item) return false;
+    if (profile && (profile.wishlist || []).filter((candidate) => wishlistMatches(candidate, item)).length > 1) return true;
+    const merged = normalizeWishlistEntry(item, entry);
+    return JSON.stringify(normalizeWishlistEntry(entry)) !== JSON.stringify(merged);
+  }
+
+  async function wishlistMutation(action, item, profileId) {
+    const id = profileId || await getSelectedId();
+    if (!id) return { ok: false, wanted: false };
+    try {
+      return await chrome.runtime.sendMessage({
+        type: 'MUTATE_WISHLIST',
+        profileId: id,
+        action,
+        item: normalizeWishlistEntry(item),
+      });
+    } catch (e) {
+      return { ok: false, wanted: false };
+    }
+  }
+
+  async function mergeWishlistCandidate(item, profileId) {
+    const result = await wishlistMutation('merge', item, profileId);
+    return result && result.entry || null;
+  }
+
+  function toggleWishlist(item, profileId) {
+    return wishlistMutation('toggle', item, profileId);
+  }
+
+  async function enrichWishlistEntry(entry, profileId) {
+    const target = wishlistItem(entry);
+    if (hasItemData(target)) return target;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'ENRICH_PROFILE_ITEMS',
+        items: [{ id: entry.raidlootId || '', name: entry.name || '', slot: entry.slot || '' }],
+      });
+      const loaded = response && response.ok && response.items && response.items[0];
+      if (!loaded) return target;
+      const resolved = wishlistItem(normalizeWishlistEntry({ ...loaded, raidlootId: loaded.id || entry.raidlootId }, entry));
+      mergeWishlistCandidate(resolved, profileId).catch(() => {});
+      return resolved;
+    } catch (e) {
+      return target;
+    }
+  }
+
   function refreshProfileInBackground(id, profile, items) {
     if (profileRefreshes.has(id)) return;
     const refresh = loadMissingStats(items, true).then(async (loaded) => {
       if (!loaded.fetched) return;
       const latestProfiles = await getProfiles();
       if (latestProfiles[id] && JSON.stringify(latestProfiles[id]) === JSON.stringify(profile)) {
-        latestProfiles[id] = { ...latestProfiles[id], statsVersion: PROFILE_STATS_VERSION, items: loaded.items.map(storageItem) };
-        await saveProfiles(latestProfiles);
+        const updated = { ...latestProfiles[id], statsVersion: PROFILE_STATS_VERSION, items: loaded.items.map(storageItem) };
+        await saveProfiles({ [id]: updated }, { [id]: profile });
       }
     }).catch(() => {}).finally(() => profileRefreshes.delete(id));
     profileRefreshes.set(id, refresh);
@@ -144,8 +298,8 @@
     if (refreshAll || loaded.fetched || items.some((item, index) => hasNumericStats(item) && !hasNumericStats(originalItems[index]))) {
       const latestProfiles = await getProfiles();
       if (latestProfiles[id] && JSON.stringify(latestProfiles[id]) === JSON.stringify(p)) {
-        latestProfiles[id] = { ...latestProfiles[id], statsVersion: PROFILE_STATS_VERSION, items: items.map(storageItem) };
-        await saveProfiles(latestProfiles);
+        const updated = { ...latestProfiles[id], statsVersion: PROFILE_STATS_VERSION, items: items.map(storageItem) };
+        await saveProfiles({ [id]: updated }, { [id]: p });
       }
     }
     return { ...p, id, items };
@@ -188,5 +342,14 @@
     setFormulaKey: setScoreFormulaKey,
     getFormula,
     loadAndCacheProfile,
+    normalizeWishlistEntry,
+    wishlistMatches,
+    findWishlistEntry,
+    compatibleWishlistItem,
+    wishlistTargets,
+    wishlistNeedsMerge,
+    mergeWishlistCandidate,
+    toggleWishlist,
+    enrichWishlistEntry,
   };
 })();

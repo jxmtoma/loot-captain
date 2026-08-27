@@ -10,10 +10,12 @@ const optionsHtml = read('options/options.html');
 const optionsSource = read('options/options.js');
 const popupSource = read('popup/popup.js');
 const raidlootSource = read('content/raidloot.js');
+const opendkpSource = read('content/opendkp.js');
 assert.match(optionsHtml, /<select id="profile-class"><\/select>/);
 assert.match(optionsHtml, /id="btn-edit-items"/);
 assert.match(optionsHtml, /data-inventory-tab="augments"/);
 assert.match(optionsHtml, /data-inventory-tab="focus"/);
+assert.match(optionsHtml, /id="wishlist-list"/);
 assert.doesNotMatch(optionsHtml, /id="profile-class"[^>]*type="text"/);
 for (const className of ['Bard', 'Beastlord', 'Berserker', 'Cleric', 'Druid', 'Enchanter', 'Magician', 'Monk', 'Necromancer', 'Paladin', 'Ranger', 'Rogue', 'Shadowknight', 'Shaman', 'Warrior', 'Wizard']) {
   assert.match(optionsSource, new RegExp("'" + className + "'"));
@@ -31,6 +33,10 @@ assert.match(optionsSource, /PROFILE_STATS_VERSION = 4/);
 assert.match(optionsSource, /renderFocusDetails/);
 assert.match(optionsSource, /focus-list-entry/);
 assert.match(optionsSource, /hasWeaponProc/);
+assert.match(optionsSource, /renderWishlist/);
+assert.match(optionsSource, /type: 'SAVE_PROFILES'/);
+assert.match(optionsSource, /https:\/\/www\.raidloot\.com\/items\?name=/);
+assert.match(optionsSource, /details\.rel = 'noopener'/);
 assert.match(popupSource, /key: 'regen'/);
 assert.match(popupSource, /key: 'manaregen'/);
 assert.match(optionsSource, /\{ slot: 'neck', label: 'Neck', column: 6, row: 2 \}/);
@@ -55,6 +61,19 @@ assert.match(read('content/shared/ui.js'), /proc eq/);
 assert.match(read('content/shared/ui.js'), /dataset\.lcView = 'proc'/);
 assert.match(read('content/shared/ui.js'), /slotShort\(row\.slotKey\)/);
 assert.match(read('content/shared/state.js'), /PROFILE_STATS_VERSION = 4/);
+assert.match(read('content/shared/state.js'), /type: 'MUTATE_WISHLIST'/);
+assert.match(read('background/service-worker.js'), /let profileMutationQueue = Promise\.resolve\(\)/);
+assert.match(read('content/shared/ui.js'), /Wishlist item stats unavailable/);
+assert.match(read('content/shared/ui.js'), /\.lc-wishlist-toggle\{[^']*width:auto !important/);
+assert.match(read('content/shared/ui.js'), /background:transparent !important/);
+assert.match(raidlootSource, /raidlootId: cand\.raidlootId \|\| cand\.id/);
+assert.match(opendkpSource, /\.p-progressbar-value\.p-progressbar-value-animate/);
+assert.match(opendkpSource, /raidlootId,/);
+assert.match(opendkpSource, /opendkpHost: OPENDKP_HOST/);
+assert.match(opendkpSource, /let annotationGeneration = 0/);
+assert.match(read('content/shared/ui.js'), /let renderGeneration = 0/);
+assert.match(read('content/shared/ui.js'), /enrichWishlistEntry\(target, profile && profile\.id\)/);
+assert.match(opendkpSource, /new MutationObserver\(\(records\) =>/);
 assert.doesNotMatch(read('content/shared/ui.js'), /return arrow \+ ' ' \+ fmtDelta\(diff\.score\) \+ ' ' \+ formula\.label/);
 assert.match(read('content/shared/ui.js'), /\.lc-compare-panel \.lc-head\{display:flex/);
 assert.match(raidlootSource, /existing\.dataset\.lcView/);
@@ -86,6 +105,29 @@ const formula = LC.diff.SCORE_FORMULAS.find((item) => item.key === 'hp');
 const unresolved = LC.diff.diffItems({ stats: { HP: { num: 100 } } }, { stats: {} }, formula);
 assert.equal(unresolved.comparable, false);
 assert.equal(unresolved.score, 0);
+const wishlistPair = LC.diff.compareItemPair(
+  { name: 'Candidate Helm', slot: 'Head', stats: { HP: { num: 150 } } },
+  { name: 'Wanted Helm', slot: 'Head', stats: { HP: { num: 100 } } },
+  formula,
+  125,
+);
+assert.equal(wishlistPair.comparable, true);
+assert.equal(wishlistPair.score, 50);
+assert.equal(LC.diff.wishlistComparisonDirection(
+  { stats: { HP: { num: 150 } } },
+  [{ stats: { HP: { num: 100 } } }, { stats: { HP: { num: 125 } } }],
+  formula,
+), 1);
+assert.equal(LC.diff.wishlistComparisonDirection(
+  { stats: { HP: { num: 100 } } },
+  [{ stats: { HP: { num: 150 } } }],
+  formula,
+), -1);
+assert.equal(LC.diff.wishlistComparisonDirection(
+  { stats: { HP: { num: 125 } } },
+  [{ stats: { HP: { num: 100 } } }, { stats: { HP: { num: 150 } } }],
+  formula,
+), 0);
 const mixedStats = LC.diff.diffItems(
   { stats: { HP: { num: 100 } } },
   { stats: { HP: { num: 50 }, AC: { num: 10 } } },
@@ -564,6 +606,38 @@ oversizedJsonXhr.send();
 assert.equal(bridgeEvents.length, 1);
 const oversizedFetch = bridgeContext.fetch('https://guild.opendkp.com/api/items/45');
 const validFetch = bridgeContext.fetch('https://guild.opendkp.com/api/items/46');
+
+let workerListener;
+const workerStorage = {
+  consentVersion: 1,
+  profiles: { p: { id: 'p', name: 'Worker Profile', items: [], wishlist: [] } },
+};
+const workerContext = {
+  console,
+  URL,
+  fetch,
+  importScripts() {},
+  chrome: {
+    runtime: {
+      id: 'test',
+      onMessage: { addListener(listener) { workerListener = listener; } },
+      sendMessage() { return Promise.resolve({ ok: false }); },
+    },
+    storage: { local: {
+      async get(key) {
+        if (typeof key === 'string') return { [key]: workerStorage[key] };
+        return Object.fromEntries((key || []).map((item) => [item, workerStorage[item]]));
+      },
+      async set(values) { Object.assign(workerStorage, JSON.parse(JSON.stringify(values))); },
+    } },
+  },
+};
+vm.runInNewContext(read('background/raidloot-parser.js'), workerContext, { filename: 'background/raidloot-parser.js' });
+vm.runInNewContext(read('background/service-worker.js'), workerContext, { filename: 'background/service-worker.js' });
+const sendWorkerMessage = (message, url = 'https://guild.opendkp.com/#/bids') => new Promise((resolve) => {
+  workerListener(message, { url }, resolve);
+});
+
 assert.match(read('options/options.html'), /id="consent-gate" class="consent-gate hidden"/);
 assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 
@@ -607,10 +681,48 @@ let firstResolve;
 let secondResolve;
 let requests = 0;
 let unexpectedCalls = 0;
+let mockMutationQueue = Promise.resolve();
 const stateContext = {
   window: {},
   console,
-  chrome: { runtime: { sendMessage: () => {
+  chrome: { runtime: { sendMessage: (message) => {
+    if (message.type === 'MUTATE_WISHLIST') {
+      const mutation = mockMutationQueue.then(() => {
+        const state = stateContext.LootCaptain.state;
+        const profile = profiles[message.profileId];
+        if (!profile) return { ok: false, wanted: false };
+        const item = state.normalizeWishlistEntry(message.item);
+        const wishlist = (profile.wishlist || []).map((entry) => state.normalizeWishlistEntry(entry));
+        const matches = wishlist.map((entry, index) => state.wishlistMatches(entry, item) ? index : -1).filter((index) => index >= 0);
+        let wanted = message.action !== 'remove';
+        if (message.action === 'toggle' && matches.length) wanted = false;
+        let merged = item;
+        for (const index of matches) merged = state.normalizeWishlistEntry(merged, wishlist[index]);
+        const next = wishlist.filter((entry, index) => !matches.includes(index));
+        if (wanted && (message.action !== 'merge' || matches.length)) next.push(merged);
+        profiles[message.profileId] = { ...profile, wishlist: next };
+        saves++;
+        return { ok: true, wanted, entry: wanted ? merged : null, profiles: JSON.parse(JSON.stringify(profiles)) };
+      });
+      mockMutationQueue = mutation.catch(() => {});
+      return mutation;
+    }
+    if (message.type === 'SAVE_PROFILES') {
+      const mutation = mockMutationQueue.then(() => {
+        for (const [id, profile] of Object.entries(message.profiles || {})) {
+          const expected = message.expectedProfiles && message.expectedProfiles[id];
+          const comparable = (value) => { const copy = { ...(value || {}) }; delete copy.wishlist; return copy; };
+          if (expected && JSON.stringify(comparable(profiles[id])) !== JSON.stringify(comparable(expected))) continue;
+          profiles[id] = { ...(profiles[id] || {}), ...profile,
+            wishlist: profiles[id] && profiles[id].wishlist || profile.wishlist || [] };
+        }
+        for (const id of message.deletedIds || []) delete profiles[id];
+        saves++;
+        return { ok: true, profiles: JSON.parse(JSON.stringify(profiles)) };
+      });
+      mockMutationQueue = mutation.catch(() => {});
+      return mutation;
+    }
     if (mode === 'edit') {
       profiles.p.name = 'Edited';
       return Promise.resolve({ ok: true, items: [{ id: '1', name: 'Sword', slot: 'Head', stats: { HP: 100 }, icon: 'data:image/png;base64,AA==' }] });
@@ -642,6 +754,34 @@ stateContext.LootCaptain = {
 loadCore(stateContext);
 vm.runInNewContext(read('content/shared/state.js'), stateContext, { filename: 'content/shared/state.js' });
 const state = stateContext.LootCaptain.state;
+const raidlootWish = state.normalizeWishlistEntry({
+  raidlootId: '101', name: '  Crown   of Testing ', slot: 'Head', stats: { HP: { num: 100 } }, addedAt: 1,
+});
+assert.equal(state.wishlistMatches(raidlootWish, { raidlootId: '101' }), true);
+assert.equal(state.wishlistMatches(raidlootWish, { raidlootId: '999', name: 'Crown of Testing', slot: 'Head' }), false);
+assert.equal(state.wishlistMatches(
+  { opendkpHost: 'one.opendkp.com', opendkpId: '22' },
+  { opendkpHost: 'two.opendkp.com', opendkpId: '22' },
+), false);
+assert.equal(state.wishlistMatches(raidlootWish, { name: 'crown of testing', slot: 'head' }), true);
+const mergedWish = state.normalizeWishlistEntry({
+  opendkpHost: 'Guild.OpenDKP.com', opendkpId: '22', name: 'Crown of Testing', slot: 'Head', stats: { AC: 10 },
+}, raidlootWish);
+assert.equal(mergedWish.raidlootId, '101');
+assert.equal(mergedWish.opendkpHost, 'guild.opendkp.com');
+assert.equal(mergedWish.stats.HP, 100);
+assert.equal(mergedWish.stats.AC, 10);
+const targetProfile = { wishlist: [
+  mergedWish,
+  state.normalizeWishlistEntry({ raidlootId: '102', name: 'Second Crown', slot: 'Head', stats: { HP: 120 }, addedAt: 2 }),
+  state.normalizeWishlistEntry({ raidlootId: '103', name: 'Two Hander', slot: 'Primary', stats: { Damage: 20, Delay: 30 }, addedAt: 3 }),
+] };
+assert.equal(state.wishlistTargets(targetProfile, { raidlootId: '101', name: 'Crown of Testing', slot: 'Head', stats: { HP: 130 } }).length, 1);
+assert.equal(state.wishlistTargets(targetProfile, { name: 'One Hander', slot: 'Primary, Secondary', stats: { Damage: 10, Delay: 20 } }).length, 0);
+assert.equal(state.compatibleWishlistItem(
+  { isAugment: true, augmentTypes: [7] },
+  { isAugment: true, augmentTypes: ['7', '8'] },
+), true);
 
 (async () => {
   await Promise.all([oversizedFetch, validFetch]);
@@ -650,6 +790,30 @@ const state = stateContext.LootCaptain.state;
   assert.equal(oversizedFetchCanceled, true);
   assert.equal(bridgeEvents.length, 2);
   assert.equal(JSON.parse(bridgeEvents[1].detail).data.ItemID, 46);
+  await Promise.all([
+    sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'toggle',
+      item: { raidlootId: '501', name: 'Queued One', slot: 'Head', stats: { HP: 10 } } }),
+    sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'toggle',
+      item: { raidlootId: '502', name: 'Queued Two', slot: 'Face', stats: { HP: 20 } } }, 'https://www.raidloot.com/items/502'),
+  ]);
+  assert.equal(workerStorage.profiles.p.wishlist.length, 2);
+  workerStorage.profiles.p.wishlist.push({
+    raidlootId: '', opendkpHost: 'guild.opendkp.com', opendkpId: '601', name: 'Queued One', slot: 'Head',
+    isAugment: false, augmentTypes: [], stats: {}, effects: [], addedAt: 2,
+  });
+  await sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'merge', item: {
+    raidlootId: '501', opendkpHost: 'guild.opendkp.com', opendkpId: '601', name: 'Queued One', slot: 'Head', stats: { AC: 5 },
+  } });
+  assert.equal(workerStorage.profiles.p.wishlist.length, 2);
+  assert.equal(workerStorage.profiles.p.wishlist.find((item) => item.raidlootId === '501').opendkpId, '601');
+  await Promise.all([
+    sendWorkerMessage({ type: 'SAVE_PROFILES', profiles: { p: { id: 'p', name: 'Saved Profile', items: [] } }, deletedIds: [] },
+      'chrome-extension://test/options/options.html'),
+    sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'toggle',
+      item: { raidlootId: '503', name: 'Queued Three', slot: 'Neck' } }),
+  ]);
+  assert.equal(workerStorage.profiles.p.name, 'Saved Profile');
+  assert.equal(workerStorage.profiles.p.wishlist.some((item) => item.raidlootId === '503'), true);
   await state.getSelectedProfile();
   assert.equal(profiles.p.name, 'Edited');
   assert.equal(saves, 0);
@@ -682,6 +846,34 @@ const state = stateContext.LootCaptain.state;
   const procProfile = await state.getSelectedProfile();
   assert.equal(procProfile.items[0].effects[0].type, 'proc');
   assert.equal(profiles.p.statsVersion, 4);
+
+  mode = 'no-call';
+  const untouchedProfile = { id: 'q', name: 'Other', items: [], wishlist: [{ raidlootId: '900', name: 'Other Wish', slot: 'Face', addedAt: 1 }] };
+  profiles = { p: { id: 'p', name: 'Wishlist', items: [], wishlist: [] }, q: untouchedProfile };
+  await Promise.all([
+    state.toggleWishlist({ raidlootId: '201', name: 'First Wish', slot: 'Head', stats: { HP: 10 } }),
+    state.toggleWishlist({ raidlootId: '202', name: 'Second Wish', slot: 'Face', stats: { HP: 20 } }),
+  ]);
+  assert.equal(profiles.p.wishlist.length, 2);
+  assert.deepEqual(profiles.q, untouchedProfile);
+  await state.mergeWishlistCandidate({
+    raidlootId: '201', opendkpHost: 'guild.opendkp.com', opendkpId: '301', name: 'First Wish', slot: 'Head', stats: { AC: 5 },
+  });
+  const firstWish = profiles.p.wishlist.find((item) => item.raidlootId === '201');
+  assert.equal(firstWish.opendkpId, '301');
+  assert.equal(firstWish.stats.HP, 10);
+  assert.equal(firstWish.stats.AC, 5);
+  profiles.p.wishlist = [
+    state.normalizeWishlistEntry({ raidlootId: '401', name: 'Bridged Wish', slot: 'Head', addedAt: 1 }),
+    state.normalizeWishlistEntry({ opendkpHost: 'guild.opendkp.com', opendkpId: '402', name: 'Bridged Wish', slot: 'Head', addedAt: 2 }),
+  ];
+  const bridgeWish = { raidlootId: '401', opendkpHost: 'guild.opendkp.com', opendkpId: '402', name: 'Bridged Wish', slot: 'Head' };
+  await state.mergeWishlistCandidate(bridgeWish);
+  assert.equal(profiles.p.wishlist.length, 1);
+  assert.equal(profiles.p.wishlist[0].raidlootId, '401');
+  assert.equal(profiles.p.wishlist[0].opendkpId, '402');
+  await state.toggleWishlist(bridgeWish);
+  assert.equal(profiles.p.wishlist.length, 0);
 
   mode = 'race';
   profiles = { p: { id: 'p', name: 'Race', items: [{ id: '1', name: 'Sword', slot: 'Head', stats: {} }] } };

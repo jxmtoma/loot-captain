@@ -23,6 +23,19 @@
     '.lc-badge[data-state="sidegrade"]{background:#655735;color:#fff1c8;}',
     '.lc-badge[data-state="empty"]{background:#315369;color:#e0f2f0;}',
     '.lc-badge[data-state="nomatch"]{background:#30393a;color:#d4cfbb;}',
+    '.lc-wishlist-toggle,.lc-wishlist-compare{display:inline-block;padding:2px 6px;margin:0 4px;border:1px solid #9d8248;border-radius:3px;background:#252d2e;color:#ead69c;font:10px/1.2 Tahoma,sans-serif;font-weight:bold;cursor:pointer;vertical-align:middle;user-select:none;box-shadow:inset 0 1px rgba(255,255,255,.12),0 1px 2px rgba(0,0,0,.25);}',
+    '.lc-wishlist-toggle{display:inline-block !important;width:auto !important;min-width:0 !important;max-width:none !important;height:auto !important;min-height:0 !important;padding:0 !important;margin:0 4px !important;border:0 !important;border-radius:0 !important;background:transparent !important;color:#b7974f !important;box-shadow:none !important;text-shadow:none !important;font:16px/1 sans-serif !important;appearance:none !important;}',
+    '.lc-wishlist-toggle[aria-pressed="true"]{background:transparent !important;color:#e0b95f !important;border:0 !important;}',
+    '.lc-wishlist-toggle:focus-visible{outline:1px solid #e0b95f !important;outline-offset:2px;}',
+    '.lc-wishlist-compare[data-state="upgrade"]{background:linear-gradient(#3f765d,#244d3d);color:#d9f4d6;border-color:#c8a85a;}',
+    '.lc-wishlist-compare[data-state="downgrade"]{background:linear-gradient(#804942,#4e2d2b);color:#ffe0d6;border-color:#b78162;}',
+    '.lc-wishlist-toggle:disabled{cursor:wait;opacity:.65;}',
+    '.lc-wanted:not(tr){outline:2px solid rgba(224,188,104,.8) !important;outline-offset:1px;background-color:rgba(132,101,35,.12) !important;}',
+    'tr.lc-wanted > td{background-image:linear-gradient(rgba(132,101,35,.22),rgba(132,101,35,.22)) !important;}',
+    '.lc-wishlist-compare-panel > .lc-compare-panel{margin:6px 0 0;box-shadow:none;}',
+    '.lc-wishlist-picker{display:flex;align-items:center;gap:8px;color:#e0b96b;font-weight:bold;}',
+    '.lc-wishlist-picker select{max-width:360px;background:#101d2e;color:#f0d18a;border:1px solid #8b7547;font:inherit;padding:2px 4px;}',
+    '.lc-wishlist-message{padding:6px 0;color:#d4cfbb;}',
     '.lc-compare-panel{background:#151d1e;color:#e9e1ca;border:1px solid #8b7547;border-radius:4px;padding:8px 10px;margin:6px 0;font:11px/1.35 monospace;max-width:720px;box-shadow:0 3px 12px rgba(0,0,0,.25);}',
     '.lc-compare-panel table{border-collapse:collapse;table-layout:fixed !important;width:100%;background:#202a2b !important;color:#dbe3dc !important;}',
     '.lc-compare-panel tr{background:#202a2b !important;}',
@@ -149,7 +162,7 @@
     return details;
   }
 
-  function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0, view = 'stats') {
+  function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0, view = 'stats', baselineLabel = 'worn') {
     const div = document.createElement('div');
     div.className = 'lc-compare-panel';
     div.dataset.lcView = view;
@@ -168,7 +181,7 @@
     const table = document.createElement('table');
     const thead = document.createElement('thead');
     const header = document.createElement('tr');
-    for (const label of ['stat', 'worn', 'candidate', 'delta']) {
+    for (const label of ['stat', baselineLabel, 'candidate', 'delta']) {
       const cell = document.createElement('th');
       cell.textContent = label;
       header.appendChild(cell);
@@ -219,7 +232,7 @@
         const index = (selectedIndex + offset + alternatives.length) % alternatives.length;
         const row = alternatives[index];
         div.replaceWith(buildComparePanel(cand, row.target, row.diff,
-          row.slotKey && row.slotKey.key, alternatives, index, view));
+          row.slotKey && row.slotKey.key, alternatives, index, view, baselineLabel));
       };
       for (const [label, title, offset] of [['‹', 'Previous worn augment', -1], ['›', 'Next worn augment', 1]]) {
         const button = document.createElement('button');
@@ -249,7 +262,107 @@
       procDetails.open = true;
       div.appendChild(procDetails);
     }
+    if (view === 'stats' && baselineLabel === 'wishlist') {
+      if (focusDetails) div.appendChild(focusDetails);
+      if (procDetails) div.appendChild(procDetails);
+    }
     return div;
+  }
+
+  function setWishlistToggleState(button, wanted) {
+    button.setAttribute('aria-pressed', String(wanted));
+    button.setAttribute('aria-label', wanted ? 'Remove from wishlist' : 'Add to wishlist');
+    button.textContent = wanted ? '★' : '☆';
+    button.title = 'Wishlist';
+  }
+
+  function buildWishlistToggle(cand, wanted, profileId) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lc-wishlist-toggle';
+    setWishlistToggleState(button, wanted);
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        const result = await LC.state.toggleWishlist(cand, profileId);
+        if (result.ok) setWishlistToggleState(button, result.wanted);
+        else button.title = 'Could not update the active character wishlist';
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return button;
+  }
+
+  function buildWishlistCompareButton(cand, targets, formula, level) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lc-wishlist-compare';
+    const direction = LC.diff.wishlistComparisonDirection(cand, targets, formula, level);
+    const arrow = direction > 0 ? ' ↑' : direction < 0 ? ' ↓' : '';
+    button.dataset.state = direction > 0 ? 'upgrade' : direction < 0 ? 'downgrade' : 'sidegrade';
+    button.textContent = 'vs wishlist' + arrow + (targets.length > 1 ? ' (' + targets.length + ')' : '');
+    button.title = (direction > 0 ? 'Upgrade' : direction < 0 ? 'Downgrade' : 'Compare') + ' versus wishlist';
+    return button;
+  }
+
+  function buildWishlistComparePanel(cand, targets, profile, formula) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'lc-compare-panel lc-wishlist-compare-panel';
+    wrapper.dataset.lcView = 'wishlist';
+    const body = document.createElement('div');
+    let renderGeneration = 0;
+    const render = async (target) => {
+      const generation = ++renderGeneration;
+      body.replaceChildren();
+      const loading = document.createElement('div');
+      loading.className = 'lc-wishlist-message';
+      loading.textContent = 'Loading wishlist item…';
+      body.appendChild(loading);
+      const resolved = await LC.state.enrichWishlistEntry(target, profile && profile.id);
+      if (generation !== renderGeneration || !wrapper.isConnected) return;
+      if (!LC.state.compatibleWishlistItem(cand, resolved)) {
+        loading.textContent = 'Wishlist item uses an incompatible slot or weapon layout.';
+        return;
+      }
+      const diff = LC.diff.compareItemPair(cand, resolved, formula, profile && profile.level);
+      if (!diff.comparable && !diff.effectsComparable) {
+        loading.textContent = 'Wishlist item stats unavailable.';
+        return;
+      }
+      body.replaceChildren(buildComparePanel(cand, resolved, diff,
+        (resolved.slotKey && resolved.slotKey.key) || resolved.slot, null, 0, 'stats', 'wishlist'));
+    };
+    if (targets.length > 1) {
+      const picker = document.createElement('label');
+      picker.className = 'lc-wishlist-picker';
+      picker.appendChild(document.createTextNode('Compare against'));
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', 'Wishlist comparison item');
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Choose a wishlist item';
+      select.appendChild(placeholder);
+      targets.forEach((target, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = target.name || ('Wishlist item ' + (index + 1));
+        select.appendChild(option);
+      });
+      select.addEventListener('change', () => {
+        if (select.value !== '') render(targets[Number(select.value)]);
+        else { renderGeneration++; body.replaceChildren(); }
+      });
+      picker.appendChild(select);
+      wrapper.appendChild(picker);
+    } else if (targets[0]) {
+      render(targets[0]);
+    }
+    wrapper.appendChild(body);
+    return wrapper;
   }
 
   function slotShort(slotKey) {
@@ -441,6 +554,9 @@
     fmtDelta,
     buildBadge,
     buildComparePanel,
+    buildWishlistToggle,
+    buildWishlistCompareButton,
+    buildWishlistComparePanel,
     comparisonBadgeText,
     comparisonBadgeTitle,
     buildComparisonBadge,

@@ -13,11 +13,15 @@
   const CONSENT_VERSION = 1;
   const MAX_ITEM_EVENT_LENGTH = 512 * 1024;
   const MAX_CAPTURE_ITEMS = 64;
+  const LIVE_AUCTION_TIMER = '.p-progressbar-value.p-progressbar-value-animate';
+  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare';
+  const OPENDKP_HOST = location.hostname.toLowerCase();
   let consented = false;
   let started = false;
   let itemCache = new Map(); // OpenDKP item id -> parsed item
   let lookupCache = new Map(); // OpenDKP item id/name -> Promise<parsed item>
   let lastAnnotate = 0;
+  let annotationGeneration = 0;
 
   const consentFrame = document.createElement('iframe');
   consentFrame.id = CONSENT_FRAME_ID;
@@ -59,6 +63,12 @@
   const initialConsent = enableAfterConsent();
 
   // Capture item data from API responses (handles single item or list).
+  function openDkpCandidate(item, itemId) {
+    if (!item) return item;
+    const opendkpId = String(itemId || item.opendkpId || item.id || '');
+    return { ...item, id: opendkpId || item.id || '', opendkpHost: OPENDKP_HOST, opendkpId };
+  }
+
   function captureItemData(data) {
     if (!data) return;
     const items = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items :
@@ -68,7 +78,7 @@
     for (const it of items) {
       if (it && typeof it === 'object') {
         const parsed = LC.parser.parseOpenDkpJson(it);
-        if (parsed && parsed.id) itemCache.set(parsed.id, parsed);
+        if (parsed && parsed.id) itemCache.set(parsed.id, openDkpCandidate(parsed, parsed.id));
       }
     }
     scheduleAnnotate();
@@ -81,8 +91,9 @@
 
   async function resolveItem(itemId, fallback) {
     const cached = itemCache.get(itemId);
-    if (cached && cached.slotKey && Object.keys(cached.stats || {}).length) return cached;
-    const key = (fallback && fallback.name) || itemId || '';
+    if (cached && cached.slotKey && Object.keys(cached.stats || {}).length) return openDkpCandidate(cached, itemId);
+    fallback = openDkpCandidate(fallback, itemId);
+    const key = itemId || (fallback && fallback.name) || '';
     if (!fallback || !fallback.name) return fallback;
     if (!lookupCache.has(key)) {
       lookupCache.set(key, chrome.runtime.sendMessage({
@@ -91,9 +102,13 @@
         name: fallback && fallback.name,
       }).then((response) => {
         if (!response || !response.ok || !response.item) return fallback;
+        const raidlootId = response.item.id || '';
         const item = {
           ...response.item,
           id: itemId || response.item.id,
+          raidlootId,
+          opendkpHost: OPENDKP_HOST,
+          opendkpId: itemId || '',
           stats: LC.parser.normalizeStats(response.item.stats || {}),
         };
         if (itemId) itemCache.set(itemId, item);
@@ -103,8 +118,34 @@
     return lookupCache.get(key);
   }
 
+  function decorateWishlist(host, cand) {
+    if (!LC.currentProfile || !host || !cand) return;
+    const wantedEntry = LC.state.findWishlistEntry(LC.currentProfile, cand);
+    const highlightHost = host.closest('tr, li, .p-listbox-item') || host;
+    const liveAuction = !!(highlightHost.matches && highlightHost.matches('tr') && highlightHost.querySelector(LIVE_AUCTION_TIMER));
+    highlightHost.classList.toggle('lc-wanted', !!wantedEntry && liveAuction);
+    if (wantedEntry && LC.state.wishlistNeedsMerge(wantedEntry, cand, LC.currentProfile)) {
+      LC.state.mergeWishlistCandidate(cand, LC.currentProfile.id).catch(() => {});
+    }
+    if (host.querySelector(':scope > .lc-wishlist-toggle')) return;
+    const toggle = LC.ui.buildWishlistToggle(cand, !!wantedEntry, LC.currentProfile.id);
+    const targets = LC.state.wishlistTargets(LC.currentProfile, cand);
+    const compare = targets.length ? LC.ui.buildWishlistCompareButton(cand, targets, LC.currentFormula, LC.currentProfile.level) : null;
+    if (compare) compare.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const existing = host.querySelector(':scope > .lc-wishlist-compare-panel');
+      if (existing) { existing.remove(); return; }
+      host.appendChild(LC.ui.buildWishlistComparePanel(cand, targets, LC.currentProfile, LC.currentFormula));
+    });
+    host.prepend(...[toggle, compare].filter(Boolean));
+  }
+
   function annotateCandidate(host, cand, prepend) {
-    if (!host || !cand || !cand.slotKey || host.querySelector(':scope > .lc-badge')) return;
+    cand = openDkpCandidate(cand, cand && (cand.opendkpId || cand.id));
+    if (!host || !cand) return;
+    decorateWishlist(host, cand);
+    if (!cand.slotKey || host.querySelector(':scope > .lc-badge')) return;
     const badge = LC.ui.buildBadge('nomatch', 'no char', 'Pick a character in the popup');
     if (!LC.currentProfile) {
       if (prepend) host.prepend(badge); else host.appendChild(badge);
@@ -162,15 +203,19 @@
     const now = Date.now();
     if (!force && now - lastAnnotate < 300) return;
     lastAnnotate = now;
-    await annotateItemDetailPage();
-    await annotateItemTooltips();
-    await annotateItemTables();
+    const generation = ++annotationGeneration;
+    await annotateItemDetailPage(generation);
+    if (generation !== annotationGeneration) return;
+    await annotateItemTooltips(generation);
+    if (generation !== annotationGeneration) return;
+    await annotateItemTables(generation);
   }
 
   // Item detail page: #/items/{id}
-  async function annotateItemDetailPage() {
+  async function annotateItemDetailPage(generation) {
     const itemId = openDkpItemId();
     if (!itemId) return;
+    const route = location.hash;
     // Try cache first
     let cand = itemCache.get(itemId);
     if (!cand) {
@@ -180,7 +225,7 @@
       if (cand) cand.id = itemId;
     }
     cand = await resolveItem(itemId, cand);
-    if (!cand || !cand.slotKey) return;
+    if (!cand || generation !== annotationGeneration || location.hash !== route || openDkpItemId() !== itemId) return;
     // Find a good host element: the item name heading or the main content area
     const host = findItemDetailHost();
     annotateCandidate(host, cand, true);
@@ -198,17 +243,15 @@
 
   // Auction lists + raid result pages: items appear inline in tables.
   // We look for table cells containing links to /items/{id}.
-  async function annotateItemTables() {
+  async function annotateItemTables(generation) {
     const links = document.querySelectorAll('a[href*="/items/"]');
     for (const link of links) {
       const href = link.getAttribute('href') || '';
       const m = href.match(/\/items\/([^/?#]+)/);
       if (!m) continue;
       const itemId = m[1];
-      // Skip if already annotated
       const cell = link.closest('td, .p-cell, .item-cell, li, .p-listbox-item');
       if (!cell) continue;
-      if (cell.querySelector(':scope > .lc-badge')) continue;
       // Get candidate from cache or parse the cell
       let cand = itemCache.get(itemId);
       if (!cand) {
@@ -216,12 +259,15 @@
         if (cand) cand.id = itemId;
       }
       cand = await resolveItem(itemId, cand);
-      if (!cand || !cand.slotKey) continue;
+      if (generation !== annotationGeneration) return;
+      if (!cand || !document.documentElement.contains(link) ||
+          link.closest('td, .p-cell, .item-cell, li, .p-listbox-item') !== cell ||
+          (link.getAttribute('href') || '') !== href) continue;
       annotateCandidate(cell, cand, false);
     }
   }
 
-  async function annotateItemTooltips() {
+  async function annotateItemTooltips(generation) {
     const knownSelector = '[role="tooltip"], [class*="tooltip" i], [class*="popover" i], [class*="item-detail" i], .cdk-overlay-pane';
     const selector = knownSelector + ', body > div, body > div > div, body > div > div > div';
     const hosts = Array.from(document.querySelectorAll(selector)).filter((host) => {
@@ -231,6 +277,7 @@
     });
     for (const host of hosts) {
       if (!document.documentElement.contains(host)) continue;
+      if (host.querySelector(':scope > .lc-wishlist-toggle')) continue;
       const text = host.textContent || '';
       if (text.length > 2500) continue;
       let cand = LC.parser.parseOpenDkpTooltip(host);
@@ -245,8 +292,21 @@
       const rel = trigger && (trigger.getAttribute('rel') || '').match(/^eq:item:([^\s]+)$/);
       const href = trigger && (trigger.getAttribute('href') || '').match(/\/items\/([^/?#]+)/);
       const itemId = rel ? rel[1] : (href ? href[1] : '');
+      const expectedName = cand.name.trim().toLowerCase().replace(/\s+/g, ' ');
       const resolved = await resolveItem(itemId, cand);
-      if (resolved && resolved.slotKey && document.documentElement.contains(host)) {
+      if (generation !== annotationGeneration) return;
+      const currentCandidate = LC.parser.parseOpenDkpTooltip(host);
+      const currentHeading = host.querySelector('h1, h2, h3, h4, h5, h6, strong, b, .item-name, .itemname');
+      const currentName = String(currentCandidate && currentCandidate.name || currentHeading && currentHeading.textContent || '')
+        .trim().toLowerCase().replace(/\s+/g, ' ');
+      const currentTrigger = Array.from(document.querySelectorAll('a[rel^="eq:item:"], a[href*="/items/"]'))
+        .find((link) => link.textContent.trim().toLowerCase().replace(/\s+/g, ' ') === currentName);
+      const currentRel = currentTrigger && (currentTrigger.getAttribute('rel') || '').match(/^eq:item:([^\s]+)$/);
+      const currentHref = currentTrigger && (currentTrigger.getAttribute('href') || '').match(/\/items\/([^/?#]+)/);
+      const currentItemId = currentRel ? currentRel[1] : (currentHref ? currentHref[1] : '');
+      const stillSameItem = currentName === expectedName && (!itemId || !currentItemId || currentItemId === itemId);
+      if (resolved && document.documentElement.contains(host) &&
+          stillSameItem) {
         annotateCandidate(host, resolved, false);
       }
     }
@@ -261,7 +321,13 @@
     LC.ui.injectCSS();
     await LC.state.loadAndCacheProfile();
     annotatePage();
-    const mo = new MutationObserver(() => {
+    const mo = new MutationObserver((records) => {
+      const onlyExtensionChanges = records.every((record) => {
+        if (record.target.nodeType === 1 && record.target.closest(LC_UI_SELECTOR)) return true;
+        return [...record.addedNodes, ...record.removedNodes].every((node) =>
+          node.nodeType !== 1 || node.matches(LC_UI_SELECTOR) || node.querySelector(LC_UI_SELECTOR));
+      });
+      if (onlyExtensionChanges) return;
       clearTimeout(init._t);
       init._t = setTimeout(annotatePage, 300);
     });
@@ -270,8 +336,10 @@
       if (event.target.closest && event.target.closest('a[href*="/items/"]')) scheduleAnnotate(true);
     }, true);
     window.addEventListener('hashchange', () => {
-      document.querySelectorAll('.lc-badge, .lc-compare-panel').forEach((el) => el.remove());
-      scheduleAnnotate();
+      annotationGeneration++;
+      document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare').forEach((el) => el.remove());
+      document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));
+      scheduleAnnotate(true);
     });
   }
 
@@ -287,8 +355,9 @@
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     // Clear badges and re-annotate
-    document.querySelectorAll('.lc-badge, .lc-compare-panel').forEach((el) => el.remove());
-    annotatePage();
+    document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare').forEach((el) => el.remove());
+    document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));
+    annotatePage(true);
   });
 
   if (document.readyState === 'loading') {

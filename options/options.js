@@ -53,8 +53,14 @@ async function loadAll() {
   selectedId = res[SELECTED_KEY] || '';
   scoreFormula = SCORE_FORMULAS.some((formula) => formula.key === res[SCORE_KEY]) ? res[SCORE_KEY] : DEFAULT_FORMULA_KEY;
 }
-async function saveAll() {
-  await chrome.storage.local.set({ [PROFILES_KEY]: profiles, [SELECTED_KEY]: selectedId, [SCORE_KEY]: scoreFormula });
+async function saveAll(changedIds = [], deletedIds = []) {
+  if (changedIds.length || deletedIds.length) {
+    const records = Object.fromEntries(changedIds.filter((id) => profiles[id]).map((id) => [id, profiles[id]]));
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_PROFILES', profiles: records, deletedIds });
+    if (!response || !response.ok) throw new Error(response && response.error || 'Could not save profiles');
+    profiles = response.profiles || profiles;
+  }
+  await chrome.storage.local.set({ [SELECTED_KEY]: selectedId, [SCORE_KEY]: scoreFormula });
 }
 
 function appendDebugLog(entries) {
@@ -190,7 +196,7 @@ async function deleteProfileById(id) {
   if (!profiles[id] || !confirm('Delete ' + (profiles[id].name || 'this character') + '?')) return false;
   delete profiles[id];
   if (selectedId === id) selectedId = Object.keys(profiles)[0] || '';
-  await saveAll();
+  await saveAll([], [id]);
   return true;
 }
 
@@ -202,7 +208,7 @@ async function openEditor(id) {
   selectedFocusIndex = 0;
   activeInventoryTab = 'equipment';
   if (id === 'new') {
-    editingProfile = { id: '', name: '', cls: '', level: '', items: [] };
+    editingProfile = { id: '', name: '', cls: '', level: '', items: [], wishlist: [] };
     $('#editor-title').textContent = 'New Character';
     $('#btn-delete-profile').classList.add('hidden');
   } else {
@@ -213,6 +219,7 @@ async function openEditor(id) {
       cls: normalizeClassName(p.cls),
       level: p.level || '',
       statsVersion: p.statsVersion || 0,
+      wishlist: Array.isArray(p.wishlist) ? p.wishlist.map((item) => ({ ...item })) : [],
       items: (p.items || []).map((it) => ({
         id: it.id || '',
         name: it.name || '',
@@ -254,7 +261,60 @@ function renderEditor() {
   $('#profile-name').oninput = renderInventoryPreview;
   $('#profile-class').onchange = renderInventoryPreview;
   $('#profile-level').oninput = renderInventoryPreview;
+  renderWishlist();
   renderItemList();
+}
+
+async function removeWishlistItem(item) {
+  if (!editingId || editingId === 'new') return;
+  const response = await chrome.runtime.sendMessage({
+    type: 'MUTATE_WISHLIST', profileId: editingId, action: 'remove', item,
+  });
+  if (!response || !response.ok) throw new Error(response && response.error || 'Could not update wishlist');
+  profiles = response.profiles || profiles;
+  editingProfile.wishlist = (profiles[editingId] && profiles[editingId].wishlist || []).map((entry) => ({ ...entry }));
+  renderWishlist();
+}
+
+function renderWishlist() {
+  const list = $('#wishlist-list');
+  if (!list || !editingProfile) return;
+  const wishlist = Array.isArray(editingProfile.wishlist) ? editingProfile.wishlist : [];
+  $('#wishlist-count').textContent = wishlist.length + ' item' + (wishlist.length === 1 ? '' : 's');
+  if (!wishlist.length) {
+    list.replaceChildren(el('div', 'wishlist-empty', 'No wishlist items yet.'));
+    return;
+  }
+  list.replaceChildren(...wishlist.map((item) => {
+    const row = el('div', 'wishlist-row');
+    const info = el('div', 'wishlist-item');
+    info.appendChild(el('span', 'wishlist-name', item.name || 'Unnamed item'));
+    info.appendChild(el('span', 'wishlist-slot', item.slot || 'Unknown slot'));
+    const actions = el('div', 'wishlist-actions');
+    const details = el('a', 'btn-remove wishlist-details', 'Details');
+    details.href = item.raidlootId
+      ? 'https://www.raidloot.com/items/' + encodeURIComponent(item.raidlootId)
+      : 'https://www.raidloot.com/items?name=' + encodeURIComponent(item.name || '');
+    details.target = '_blank';
+    details.rel = 'noopener';
+    details.setAttribute('aria-label', 'View ' + (item.name || 'item') + ' details on RaidLoot');
+    const remove = el('button', 'btn-remove wishlist-remove', 'Remove');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', 'Remove ' + (item.name || 'item') + ' from wishlist');
+    remove.addEventListener('click', async () => {
+      remove.disabled = true;
+      try {
+        await removeWishlistItem(item);
+      } catch (e) {
+        remove.title = 'Could not update wishlist';
+      } finally {
+        remove.disabled = false;
+      }
+    });
+    actions.append(details, remove);
+    row.append(info, actions);
+    return row;
+  }));
 }
 
 const INVENTORY_SLOT_LAYOUT = [
@@ -458,7 +518,7 @@ async function loadEditorStats(profile) {
   if (!pending.length) {
     if (editingId !== 'new' && refreshAll) {
       profiles[editingId] = { ...profiles[editingId], statsVersion: PROFILE_STATS_VERSION };
-      await saveAll();
+      await saveAll([editingId]);
     }
     $('#editor-status').textContent = '';
     return;
@@ -494,7 +554,7 @@ async function loadEditorStats(profile) {
     renderItemList();
     if (editingId !== 'new' && enrichedCount) {
       profiles[editingId] = { ...profiles[editingId], statsVersion: PROFILE_STATS_VERSION, items: profile.items };
-      await saveAll();
+      await saveAll([editingId]);
     }
     $('#editor-status').textContent = loadedCount ? 'Loaded stats for ' + loadedCount + ' item' + (loadedCount === 1 ? '' : 's') : 'No matching RaidLoot stats found';
   } catch (e) {
@@ -725,15 +785,17 @@ async function saveProfile() {
         augSlot: it.augSlot || '', parentId: it.parentId || '', enriched: !!it.enriched, stats, effects: it.effects || [],
       };
     });
+  let savedId = editingId;
   if (editingId === 'new') {
     const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     editingProfile.id = id;
-    profiles[id] = editingProfile;
+    profiles[id] = { ...editingProfile, wishlist: [] };
+    savedId = id;
     if (!selectedId) selectedId = id;
   } else {
     profiles[editingId] = editingProfile;
   }
-  await saveAll();
+  await saveAll([savedId]);
   closeEditor();
 }
 
@@ -891,6 +953,7 @@ function addImportedProfile({ name, cls, level, server, items, statsVersion, imp
     statsVersion: statsVersion || 0,
     items,
     importedFrom: importedFrom || '',
+    wishlist: [],
   };
   if (!selectedId) selectedId = id;
   return id;
@@ -921,7 +984,7 @@ async function importRaidlootProfile() {
       effects: Array.isArray(item.effects) ? item.effects : [],
     })).filter((item) => item.name && item.slot);
     if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
-    addImportedProfile({
+    const id = addImportedProfile({
       name: profile.name || 'RaidLoot ' + profileId,
       cls: profile.cls,
       level: profile.level,
@@ -929,7 +992,7 @@ async function importRaidlootProfile() {
       statsVersion: PROFILE_STATS_VERSION,
       importedFrom: 'raidloot.com/profile/' + profileId,
     });
-    await saveAll();
+    await saveAll([id]);
     const loadedCount = items.filter((item) => Object.keys(item.stats).length).length;
     status.textContent = 'Imported ' + items.length + ' items (' + loadedCount + ' with stats) from RaidLoot.';
     status.className = 'import-status success';
@@ -964,7 +1027,7 @@ async function handleInventoryFile(file) {
     const filenameMetadata = nameFromFilename(file.name);
     const inventoryMetadata = parseInventoryMetadata(text);
     const profileName = inventoryMetadata.name || filenameMetadata.name || 'Imported Character';
-    addImportedProfile({
+    const id = addImportedProfile({
       name: profileName,
       cls: inventoryMetadata.cls,
       level: inventoryMetadata.level,
@@ -973,7 +1036,7 @@ async function handleInventoryFile(file) {
       statsVersion: fetchStats ? PROFILE_STATS_VERSION : 0,
       importedFrom: file.name,
     });
-    await saveAll();
+    await saveAll([id]);
     const loadedCount = items.filter((item) => Object.keys(item.stats || {}).length).length;
     const profileMeta = [inventoryMetadata.cls, inventoryMetadata.level && 'level ' + inventoryMetadata.level].filter(Boolean).join(' · ');
     status.textContent = 'Imported ' + items.length + ' items' + (fetchStats ? ' (' + loadedCount + ' with stats)' : ' (stats load when comparing)') + ' for ' + profileName + (profileMeta ? ' (' + profileMeta + ')' : '') + '.';
@@ -1037,6 +1100,17 @@ async function init() {
     e.target.value = ''; // allow re-selecting the same file
   });
   renderProfileList();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[PROFILES_KEY]) return;
+    profiles = changes[PROFILES_KEY].newValue || {};
+    if (editingId && editingId !== 'new' && editingProfile && profiles[editingId]) {
+      editingProfile.wishlist = Array.isArray(profiles[editingId].wishlist)
+        ? profiles[editingId].wishlist.map((item) => ({ ...item })) : [];
+      renderWishlist();
+    } else if (!editingId) {
+      renderProfileList();
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

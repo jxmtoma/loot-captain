@@ -7,12 +7,14 @@ Loot Captain is a Manifest V3 Chrome/Edge extension for comparing EverQuest gear
 - Store multiple character profiles locally.
 - Import worn gear from a RaidLoot profile or an EverQuest `/output inventory` file.
 - Compare item stats with slot-aware scoring, including paired ears, wrists, and fingers.
+- Keep a per-character local wishlist, with direct comparison against equipped gear or a selected wishlist item.
+- Highlight wanted items in RaidLoot and live OpenDKP auctions, and manage the list in the character editor.
 - Enrich missing item stats from public RaidLoot item pages.
 - Annotate OpenDKP item pages, tables, and tooltips.
 
 ## Data and privacy
 
-Profiles, settings, and fetched public item stats are stored in `chrome.storage.local`. The extension has no account, analytics, tracking, advertising, or remote code. It requests public RaidLoot pages only when importing profiles or looking up item stats; it does not send browser cookies or authenticated credentials. OpenDKP page data is used to annotate the current page, and an item name may be sent to RaidLoot when missing stats are needed.
+Profiles, settings, fetched public item stats, and per-character wishlist entries are stored in `chrome.storage.local`. Wishlist entries cache canonical numeric stats and effects for comparison, never scores; scores are recalculated from the active formula. The extension has no account, analytics, tracking, advertising, or remote code. It requests public RaidLoot pages only when importing profiles or looking up item stats; it does not send browser cookies or authenticated credentials. OpenDKP page data is used to annotate the current page, and an item name may be sent to RaidLoot when missing stats are needed.
 
 See [the privacy policy](docs/privacy-policy.md) or visit the public [extension details](https://jxmtoma.github.io/loot-captain/), [privacy](https://jxmtoma.github.io/loot-captain/privacy-policy.html), and [support](https://jxmtoma.github.io/loot-captain/support.html) pages.
 

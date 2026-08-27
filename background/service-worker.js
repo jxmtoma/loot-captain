@@ -6,6 +6,9 @@ const CONSENT_VERSION = 1;
 const MAX_ID_LENGTH = 12;
 const MAX_NAME_LENGTH = 200;
 const MAX_ITEM_COUNT = 128;
+const MAX_WISHLIST_ITEM_BYTES = 128 * 1024;
+const MAX_PROFILE_MUTATION_BYTES = 4 * 1024 * 1024;
+let profileMutationQueue = Promise.resolve();
 
 importScripts('raidloot-parser.js');
 
@@ -122,6 +125,8 @@ function allowedSender(type, sender) {
   if (type === 'SCRAPE_PROFILE') return isExtensionPage(sender);
   if (type === 'ENRICH_PROFILE_ITEMS') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'LOOKUP_ITEM_STATS') return isOpenDkpPage(sender);
+  if (type === 'MUTATE_WISHLIST') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (type === 'SAVE_PROFILES') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   return false;
 }
 
@@ -149,6 +154,147 @@ function sanitizeEnrichmentItems(value) {
     if (slot.length > 40) throw new Error('Item slot is too long');
     if (!id && !name) throw new Error('Equipment item needs an ID or name');
     return { id, name, slot };
+  });
+}
+
+function cleanWishlistId(value, maxLength) {
+  const id = String(value || '').trim();
+  if (id.length > maxLength || /[\u0000-\u001f]/.test(id)) throw new Error('Invalid wishlist item ID');
+  return id;
+}
+
+function wishlistSlotKey(item) {
+  const slot = parserCanonicalSlot(item && item.slot);
+  return slot && slot.key || '';
+}
+
+function wishlistName(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function sanitizeWishlistItem(value) {
+  if (!value || typeof value !== 'object' || JSON.stringify(value).length > MAX_WISHLIST_ITEM_BYTES) {
+    throw new Error('Invalid wishlist item');
+  }
+  const raidlootId = value.raidlootId ? numericId(value.raidlootId, 'RaidLoot item ID') : '';
+  const opendkpId = cleanWishlistId(value.opendkpId, 100);
+  const opendkpHost = String(value.opendkpHost || '').trim().toLowerCase();
+  if (opendkpHost && !/^(?:[a-z0-9-]+\.)+opendkp\.com$/.test(opendkpHost)) throw new Error('Invalid OpenDKP host');
+  const name = value.name == null ? '' : boundedName(value.name, false);
+  const slot = value.slot == null ? '' : boundedName(value.slot, false);
+  if (slot.length > 80) throw new Error('Wishlist slot is too long');
+  if (!raidlootId && !(opendkpHost && opendkpId) && !(name && parserCanonicalSlot(slot))) {
+    throw new Error('Wishlist item needs a source ID or a name and slot');
+  }
+  const stats = {};
+  const entries = Object.entries(value.stats || {});
+  if (entries.length > 128) throw new Error('Too many wishlist stats');
+  for (const [key, raw] of entries) {
+    const cleanKey = String(key || '').trim();
+    const value = raw && typeof raw === 'object' && 'num' in raw ? raw.num : raw;
+    const num = parseFloat(value);
+    if (cleanKey && cleanKey.length <= 80 && Number.isFinite(num)) stats[cleanKey] = num;
+  }
+  const augmentTypes = [...new Set((Array.isArray(value.augmentTypes) ? value.augmentTypes : [])
+    .slice(0, 32).map((type) => cleanWishlistId(type, 10)).filter(Boolean))];
+  const effects = parserNormalizeEffects(Array.isArray(value.effects) ? value.effects.slice(0, 64) : []);
+  return {
+    raidlootId,
+    opendkpHost,
+    opendkpId,
+    name,
+    slot,
+    isAugment: !!value.isAugment,
+    augmentTypes,
+    stats,
+    effects,
+    addedAt: Number(value.addedAt) > 0 ? Number(value.addedAt) : Date.now(),
+  };
+}
+
+function wishlistMatches(entry, item) {
+  if (entry.raidlootId && item.raidlootId) return entry.raidlootId === item.raidlootId;
+  if (entry.opendkpId && item.opendkpId && entry.opendkpHost && entry.opendkpHost === item.opendkpHost) {
+    return entry.opendkpId === item.opendkpId;
+  }
+  return !!wishlistName(entry.name) && wishlistName(entry.name) === wishlistName(item.name) &&
+    !!wishlistSlotKey(entry) && wishlistSlotKey(entry) === wishlistSlotKey(item);
+}
+
+function mergeWishlistItem(item, current) {
+  const itemEffects = parserNormalizeEffects(item.effects || []);
+  const currentEffects = parserNormalizeEffects(current.effects || []);
+  return {
+    raidlootId: item.raidlootId || current.raidlootId || '',
+    opendkpHost: item.opendkpHost || current.opendkpHost || '',
+    opendkpId: item.opendkpId || current.opendkpId || '',
+    name: item.name || current.name || '',
+    slot: item.slot || current.slot || '',
+    isAugment: !!item.isAugment || !!current.isAugment,
+    augmentTypes: [...new Set([...(current.augmentTypes || []), ...(item.augmentTypes || [])])],
+    stats: { ...(current.stats || {}), ...(item.stats || {}) },
+    effects: itemEffects.length >= currentEffects.length ? itemEffects : currentEffects,
+    addedAt: Math.min(Number(item.addedAt) || Date.now(), Number(current.addedAt) || Date.now()),
+  };
+}
+
+function queueProfileMutation(callback) {
+  const mutation = profileMutationQueue.then(callback, callback);
+  profileMutationQueue = mutation.catch(() => {});
+  return mutation;
+}
+
+function mutateWishlist(profileId, action, value) {
+  return queueProfileMutation(async () => {
+    const item = sanitizeWishlistItem(value);
+    const profiles = await storageGet('profiles', {});
+    const profile = profiles[profileId];
+    if (!profile) throw new Error('Character profile not found');
+    const wishlist = (Array.isArray(profile.wishlist) ? profile.wishlist : []).map(sanitizeWishlistItem);
+    const matches = wishlist.map((entry, index) => wishlistMatches(entry, item) ? index : -1).filter((index) => index >= 0);
+    let wanted = action !== 'remove';
+    if (action === 'toggle' && matches.length) wanted = false;
+    if (!['toggle', 'merge', 'remove'].includes(action)) throw new Error('Invalid wishlist mutation');
+    if (action === 'merge' && !matches.length) return { wanted: false, entry: null, profiles };
+    let next = wishlist.filter((entry, index) => !matches.includes(index));
+    let merged = item;
+    for (const index of matches) merged = mergeWishlistItem(merged, wishlist[index]);
+    if (action === 'merge' && matches.length === 1 && JSON.stringify(merged) === JSON.stringify(wishlist[matches[0]])) {
+      return { wanted: true, entry: merged, profiles };
+    }
+    if (wanted) next.splice(matches[0] == null ? next.length : Math.min(matches[0], next.length), 0, merged);
+    profiles[profileId] = { ...profile, wishlist: next };
+    await chrome.storage.local.set({ profiles });
+    return { wanted, entry: wanted ? merged : null, profiles };
+  });
+}
+
+function comparableProfile(profile) {
+  if (!profile || typeof profile !== 'object') return profile;
+  const { wishlist, ...rest } = profile;
+  return rest;
+}
+
+function saveProfiles(records, deletedIds, expectedRecords) {
+  return queueProfileMutation(async () => {
+    if (!records || typeof records !== 'object' || JSON.stringify(records).length > MAX_PROFILE_MUTATION_BYTES) {
+      throw new Error('Invalid profile update');
+    }
+    const profiles = await storageGet('profiles', {});
+    for (const [id, profile] of Object.entries(records)) {
+      if (!id || id.length > 100 || !profile || typeof profile !== 'object') throw new Error('Invalid profile');
+      if (expectedRecords && expectedRecords[id] &&
+          JSON.stringify(comparableProfile(profiles[id])) !== JSON.stringify(comparableProfile(expectedRecords[id]))) continue;
+      profiles[id] = {
+        ...(profiles[id] || {}),
+        ...profile,
+        wishlist: Array.isArray(profiles[id] && profiles[id].wishlist)
+          ? profiles[id].wishlist : (Array.isArray(profile.wishlist) ? profile.wishlist : []),
+      };
+    }
+    for (const id of deletedIds || []) delete profiles[String(id)];
+    await chrome.storage.local.set({ profiles });
+    return profiles;
   });
 }
 
@@ -240,6 +386,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (msg.itemId !== undefined && msg.itemId !== '') numericId(msg.itemId, 'item ID');
         const item = await lookupItemStats(name);
         sendResponse({ ok: true, item });
+        break;
+      }
+      case 'MUTATE_WISHLIST': {
+        const profileId = cleanWishlistId(msg.profileId, 100);
+        if (!profileId) throw new Error('Character profile is required');
+        const result = await mutateWishlist(profileId, msg.action, msg.item);
+        sendResponse({ ok: true, ...result });
+        break;
+      }
+      case 'SAVE_PROFILES': {
+        const profiles = await saveProfiles(msg.profiles, Array.isArray(msg.deletedIds) ? msg.deletedIds : [], msg.expectedProfiles);
+        sendResponse({ ok: true, profiles });
         break;
       }
       default:

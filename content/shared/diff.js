@@ -422,6 +422,20 @@
     return { eligible: true, rows };
   }
 
+  function compareItemPair(cand, target, formula, level) {
+    const effects = compareEffects({ level, items: target ? [target] : [] }, cand, target);
+    return { ...diffItems(cand, target, formula), effects, effectsComparable: effects.comparable };
+  }
+
+  function wishlistComparisonDirection(cand, targets, formula, level) {
+    const directions = (targets || []).map((target) => compareItemPair(cand, target, formula, level))
+      .filter((diff) => diff.comparable)
+      .map((diff) => Math.sign(diff.score));
+    if (directions.length && directions.every((direction) => direction > 0)) return 1;
+    if (directions.length && directions.every((direction) => direction < 0)) return -1;
+    return 0;
+  }
+
   function summarizeComparisons(comparison) {
     const rows = comparison.rows || [];
     const comparable = comparison.eligible && rows.length > 0 && rows.every((row) =>
@@ -446,6 +460,8 @@
     diffItems,
     bestComparisonTarget,
     compareCandidate,
+    compareItemPair,
+    wishlistComparisonDirection,
     summarizeComparisons,
     compareEffects,
     weaponType,
