@@ -170,6 +170,22 @@ function parserCanonicalSlot(raw) {
   return { key: unique[0].key, paired: unique.some((slot) => slot.paired), keys: unique.map((slot) => slot.key) };
 }
 
+function parserInstalledSlot(raw) {
+  const text = String(raw || '').trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/^fingers(?=-|$)/, 'finger');
+  return parserCanonicalSingleSlot(text) ? text : '';
+}
+
+function parserAugmentLocation(raw) {
+  const match = String(raw || '').match(/\(\s*in\s+([^()]+?)\s*\)/i);
+  return match ? parserInstalledSlot(match[1]) : '';
+}
+
+function parserAugmentSlot(node, text) {
+  const classSlot = [...(node.classList || [])].map((value) => String(value).match(/^augment(\d+)$/i)).find(Boolean);
+  const textSlot = String(text || '').match(/\bSlot\s+(\d+)\s*,\s*type\b/i);
+  return classSlot ? Number(classSlot[1]) : textSlot ? Number(textSlot[1]) : '';
+}
+
 function parserNormalizeClass(value) {
   const key = String(value || '').trim().toLowerCase().replace(/[^a-z]/g, '');
   return PARSER_CLASS_ALIASES[key] || '';
@@ -223,9 +239,24 @@ function parseProfileMetadata(title, heading, bodyText) {
 function parseProfileHtml(html, profileId) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const inv = doc.getElementById('inv') || doc;
-  const items = Array.from(inv.querySelectorAll('div.item[id^="item"][data-id]'))
-    .map(parseItemNode)
-    .filter((it) => it && !it.isAugment && !it.isWishlist && !it.isTotalsRow && it.slotKey);
+  const parsedItems = Array.from(inv.querySelectorAll('div.item[id^="item"][data-id]')).map(parseItemNode);
+  const wornEquipment = parsedItems.filter((it) => it && !it.isAugment && !it.isWishlist && !it.isTotalsRow && it.slotKey);
+  const items = parsedItems.filter((it) => it && !it.isWishlist && !it.isTotalsRow && it.slotKey).map((item) => {
+    if (!item.isAugment) return item;
+    const slot = parserInstalledSlot(item.slot) || parserAugmentLocation(item.stats && item.stats.Slot && item.stats.Slot.raw);
+    if (!slot) return { ...item, parentId: item.parentId || '' };
+    const root = parserCanonicalSingleSlot(slot).key;
+    const candidates = wornEquipment.filter((worn) => parserCanonicalSingleSlot(parserInstalledSlot(worn.slot) || worn.slot)?.key === root);
+    const exact = candidates.find((worn) => parserInstalledSlot(worn.slot) === slot);
+    const index = Number(slot.match(/-(\d+)$/)?.[1]) - 1;
+    const parent = exact || (index >= 0 ? candidates[index] : candidates[0]);
+    return {
+      ...item,
+      slot,
+      slotKey: parserCanonicalSlot(slot),
+      parentId: parent ? parent.id || parent.name : '',
+    };
+  });
   const titleEl = doc.querySelector('title');
   const title = titleEl ? titleEl.textContent.trim() : '';
   const headingEl = doc.querySelector('h1') || doc.querySelector('h2');
@@ -312,7 +343,8 @@ function parseItemNode(node) {
   const classes = parserParseClasses((stats.Class && stats.Class.raw) || (classLine && classLine.replace(/^\s*class(?:es)?\s*:\s*/i, '')));
   const isAugment = (node.classList && node.classList.contains('augment')) || /^aug_/i.test((stats.Type && stats.Type.raw) || '');
   const augmentTypes = parserAugmentTypes(node.textContent);
+  if (isAugment) slot = parserAugmentLocation(stats.Slot && stats.Slot.raw) || parserAugmentLocation(node.textContent) || slot;
   const isWishlist = !!node.querySelector('.wish-remove');
   const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects), isAugment, augmentTypes, isWishlist, isTotalsRow };
+  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects), isAugment, augmentTypes, augSlot: isAugment ? parserAugmentSlot(node, node.textContent) : '', isWishlist, isTotalsRow };
 }

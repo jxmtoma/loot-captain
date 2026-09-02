@@ -45,6 +45,7 @@ let itemsEditable = false;
 let selectedItemIndex = 0;
 let selectedFocusIndex = 0;
 let activeInventoryTab = 'equipment';
+let refreshingProfileId = '';
 
 // ---------- Storage ----------
 async function loadAll() {
@@ -219,6 +220,7 @@ async function openEditor(id) {
       cls: normalizeClassName(p.cls),
       level: p.level || '',
       statsVersion: p.statsVersion || 0,
+      importedFrom: p.importedFrom || '',
       wishlist: Array.isArray(p.wishlist) ? p.wishlist.map((item) => ({ ...item })) : [],
       items: (p.items || []).map((it) => ({
         id: it.id || '',
@@ -255,6 +257,7 @@ function closeEditor() {
 }
 
 function renderEditor() {
+  updateRaidlootRefreshButton();
   $('#profile-name').value = editingProfile.name;
   $('#profile-class').value = editingProfile.cls;
   $('#profile-level').value = editingProfile.level;
@@ -360,7 +363,7 @@ function isPowerSourceItem(item) {
 }
 
 function hasSpellFocus(item) {
-  return !item?.isAugment && !isPowerSourceItem(item) && Array.isArray(item.effects) &&
+  return !isPowerSourceItem(item) && Array.isArray(item.effects) &&
     item.effects.some((effect) => effect && effect.type === 'focus');
 }
 
@@ -429,17 +432,20 @@ function renderInventoryPreview() {
     const root = slotRoot(slot);
     const pairedIndex = /-[12]$/.test(slot) ? Number(slot.slice(-1)) - 1 : -1;
     const equipmentEntries = equipmentGrouped[root] || [];
+    const exactEquipmentEntries = equipmentGrouped[slot] || [];
     let entries;
     if (showAugments) {
-      const parent = pairedIndex >= 0 ? equipmentEntries[pairedIndex] : equipmentEntries[0];
-      const augments = augmentGrouped[root] || [];
+      const parent = pairedIndex >= 0
+        ? (exactEquipmentEntries[0] || equipmentEntries[pairedIndex])
+        : equipmentEntries[0];
+      const augments = augmentGrouped[root]?.length ? augmentGrouped[root] : (augmentGrouped[slot] || []);
       entries = parent
         ? augments.filter((entry) => entry.item.parentId && entry.item.parentId === (parent.item.id || parent.item.name))
         : [];
       if (!entries.length && (pairedIndex < 0 || pairedIndex === 0)) entries = augments.filter((entry) => !entry.item.parentId);
     } else {
       entries = pairedIndex >= 0
-        ? equipmentGrouped[slot]?.length ? [equipmentGrouped[slot][0]] : (equipmentGrouped[root]?.[pairedIndex] ? [equipmentGrouped[root][pairedIndex]] : [])
+        ? exactEquipmentEntries.length ? [exactEquipmentEntries[0]] : (equipmentEntries[pairedIndex] ? [equipmentEntries[pairedIndex]] : [])
         : equipmentGrouped[slot] || [];
     }
     const box = el('div', 'gear-slot' + (entries.length ? ' filled' : ''));
@@ -909,10 +915,73 @@ function statsToPlain(stats) {
   return out;
 }
 
+function mapRaidlootItem(item) {
+  return {
+    id: item.id || '',
+    name: item.name || '',
+    icon: item.icon || '',
+    slot: item.slot || '',
+    isAugment: !!item.isAugment,
+    augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
+    augSlot: item.augSlot || '',
+    parentId: item.parentId || '',
+    enriched: true,
+    stats: statsToPlain(item.stats),
+    effects: Array.isArray(item.effects) ? item.effects.map((effect) => ({ ...effect })) : [],
+  };
+}
+
 function raidlootProfileId(value) {
   const input = String(value || '').trim();
   const urlMatch = input.match(/\/profile\/(\d+)(?:[/?#]|$)/i);
   return urlMatch ? urlMatch[1] : (/^\d+$/.test(input) ? input : '');
+}
+
+function raidlootImportedProfileId(value) {
+  const input = String(value || '').trim();
+  return /^raidloot\.com\/profile\/\d+$/i.test(input) ? raidlootProfileId(input) : '';
+}
+
+function updateRaidlootRefreshButton() {
+  const button = $('#btn-refresh-raidloot');
+  if (!button) return;
+  button.hidden = !raidlootImportedProfileId(editingProfile && editingProfile.importedFrom);
+  button.disabled = !!editingProfile && editingId === refreshingProfileId;
+}
+
+async function refreshRaidlootProfile() {
+  const profile = editingProfile;
+  const profileId = raidlootImportedProfileId(profile && profile.importedFrom);
+  if (!profile || editingId === 'new' || !profileId || refreshingProfileId) return;
+  const requestProfileId = editingId;
+  const savedProfile = profiles[editingId];
+  if (!savedProfile) return;
+  refreshingProfileId = requestProfileId;
+  updateRaidlootRefreshButton();
+  $('#editor-status').textContent = 'Refreshing from RaidLoot…';
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'SCRAPE_PROFILE', profileId });
+    if (!response || !response.ok || !response.profile) throw new Error(response && response.error || 'No profile returned');
+    const items = (response.profile.items || []).map(mapRaidlootItem).filter((item) => item.name && item.slot);
+    if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
+    if (editingProfile !== profile || editingId !== requestProfileId) return;
+    profiles[requestProfileId] = { ...savedProfile, items, statsVersion: PROFILE_STATS_VERSION };
+    try {
+      await saveAll([requestProfileId]);
+    } catch (e) {
+      profiles[requestProfileId] = savedProfile;
+      throw e;
+    }
+    profile.items = items;
+    profile.statsVersion = PROFILE_STATS_VERSION;
+    renderEditor();
+    $('#editor-status').textContent = 'Refreshed ' + items.length + ' items from RaidLoot.';
+  } catch (e) {
+    $('#editor-status').textContent = 'RaidLoot refresh failed: ' + e.message;
+  } finally {
+    if (refreshingProfileId === requestProfileId) refreshingProfileId = '';
+    updateRaidlootRefreshButton();
+  }
 }
 
 // Extract a profile name from the filename "Ereebus_oakwynd-Inventory.txt".
@@ -976,16 +1045,7 @@ async function importRaidlootProfile() {
     const response = await chrome.runtime.sendMessage({ type: 'SCRAPE_PROFILE', profileId });
     if (!response || !response.ok || !response.profile) throw new Error(response && response.error || 'No profile returned');
     const profile = response.profile;
-    const items = (profile.items || []).map((item) => ({
-      id: item.id || '',
-      name: item.name || '',
-      icon: item.icon || '',
-      slot: item.slot || '',
-      augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
-      enriched: true,
-      stats: statsToPlain(item.stats),
-      effects: Array.isArray(item.effects) ? item.effects : [],
-    })).filter((item) => item.name && item.slot);
+    const items = (profile.items || []).map(mapRaidlootItem).filter((item) => item.name && item.slot);
     if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
     const id = addImportedProfile({
       name: profile.name || 'RaidLoot ' + profileId,
@@ -1079,6 +1139,7 @@ async function init() {
   $('#btn-back').addEventListener('click', closeEditor);
   $('#btn-save-profile').addEventListener('click', saveProfile);
   $('#btn-delete-profile').addEventListener('click', deleteProfile);
+  $('#btn-refresh-raidloot').addEventListener('click', refreshRaidlootProfile);
   $('#btn-import-raidloot').addEventListener('click', importRaidlootProfile);
   document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
     tab.addEventListener('click', () => {

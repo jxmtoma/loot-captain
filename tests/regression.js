@@ -24,6 +24,9 @@ assert.match(siteHtml, /mouseenter/);
 assert.match(siteHtml, /focusin/);
 assert.match(optionsHtml, /<select id="profile-class"><\/select>/);
 assert.match(optionsHtml, /id="btn-edit-items"/);
+assert.match(optionsHtml, /id="btn-refresh-raidloot"/);
+assert.match(optionsHtml, /id="btn-refresh-raidloot"[^>]*hidden/);
+assert.match(optionsHtml, /aria-label="Refresh worn equipment and augment data from RaidLoot"/);
 assert.match(optionsHtml, /data-inventory-tab="augments"/);
 assert.match(optionsHtml, /data-inventory-tab="focus"/);
 assert.match(optionsHtml, /id="wishlist-list"/);
@@ -40,7 +43,18 @@ assert.match(optionsSource, /if \(itemsEditable\) statRow\.appendChild\(rmBtn\)/
 assert.match(optionsSource, /item-detail-icon/);
 assert.match(optionsSource, /hasSpellFocus/);
 assert.match(optionsSource, /isPowerSourceItem/);
+assert.match(optionsSource, /isAugment: !!item\.isAugment/);
+assert.match(optionsSource, /augSlot: item\.augSlot/);
+assert.match(optionsSource, /parentId: item\.parentId/);
 assert.match(optionsSource, /PROFILE_STATS_VERSION = 4/);
+assert.match(optionsSource, /importedFrom: p\.importedFrom \|\| ''/);
+assert.match(optionsSource, /type: 'SCRAPE_PROFILE', profileId/);
+assert.match(optionsSource, /map\(mapRaidlootItem\)/);
+assert.match(optionsSource, /btn-refresh-raidloot/);
+assert.match(optionsSource, /button\.disabled = !!editingProfile && editingId === refreshingProfileId/);
+assert.match(optionsSource, /items, statsVersion: PROFILE_STATS_VERSION/);
+assert.match(optionsSource, /exactEquipmentEntries\[0\] \|\| equipmentEntries\[pairedIndex\]/);
+assert.match(optionsSource, /augmentGrouped\[root\]\?\.length \? augmentGrouped\[root\] : \(augmentGrouped\[slot\] \|\| \[\]\)/);
 assert.match(optionsSource, /renderFocusDetails/);
 assert.match(optionsSource, /focus-list-entry/);
 assert.match(optionsSource, /hasWeaponProc/);
@@ -284,7 +298,7 @@ assert.equal(LC.diff.findWornInSlot({ items: [
 ] }, LC.slots.canonicalSlot('Ear')).length, 2);
 
 const raidlootParser = {};
-vm.runInNewContext(read('background/raidloot-parser.js') + '\nglobalThis.parseProfileMetadataForTest = parseProfileMetadata; globalThis.parseItemNodeForTest = parseItemNode;', raidlootParser, { filename: 'background/raidloot-parser.js' });
+vm.runInNewContext(read('background/raidloot-parser.js') + '\nglobalThis.parseProfileMetadataForTest = parseProfileMetadata; globalThis.parseItemNodeForTest = parseItemNode; globalThis.parseProfileHtmlForTest = parseProfileHtml;', raidlootParser, { filename: 'background/raidloot-parser.js' });
 assert.deepEqual(JSON.parse(JSON.stringify(raidlootParser.parseProfileMetadataForTest('Freebus (120 Ranger) - RaidLoot', '', ''))), {
   name: 'Freebus', level: '120', cls: 'Ranger',
 });
@@ -304,6 +318,47 @@ const effectLabel = (name, value) => ({
   textContent: name,
   nextSibling: { nodeType: 3, textContent: value, nextSibling: null },
 });
+const raidlootNode = ({ id, name, classes, text, labels = [] }) => {
+  const classList = [...classes];
+  classList.contains = (value) => classList.includes(value);
+  return {
+    id: 'item' + id,
+    dataset: { id: String(id) },
+    classList,
+    innerText: text,
+    textContent: text,
+    querySelector(selector) {
+      if (selector === '.itemname') return { textContent: name };
+      return null;
+    },
+    querySelectorAll(selector) { return selector === 'label' ? labels : []; },
+  };
+};
+const profileNodes = [
+  raidlootNode({ id: 101, name: 'Left Ear', classes: ['item', 'Ear-1'], text: 'Left Ear\nSlot: Ear' }),
+  raidlootNode({ id: 102, name: 'Right Ear', classes: ['item', 'Ear-2'], text: 'Right Ear\nSlot: Ear' }),
+  raidlootNode({ id: 103, name: 'Focused Head', classes: ['item', 'Head'], text: 'Focused Head\nSlot: Head\nFocus Effect: Casting Haste 20%' }),
+  raidlootNode({ id: 201, name: 'Ear Augment', classes: ['item', 'augment', 'augment1'], text: 'Ear Augment\nSlot: All except Ammo (in Ear-2)\nAug: 5 7 8', labels: [effectLabel('Slot:', 'All except Ammo (in Ear-2)')] }),
+  raidlootNode({ id: 202, name: 'Type 3 Focus Augment', classes: ['item', 'augment', 'augment2'], text: "Type 3 Focus Augment\nSlot: All except Ammo (in Head)\nAug: 3\nFocus Effect: Restless Focus IV", labels: [effectLabel('Slot:', 'All except Ammo (in Head)')] }),
+  raidlootNode({ id: 203, name: 'Type 13/14 Augment', classes: ['item', 'augment', 'augment3'], text: 'Type 13/14 Augment\nSlot: All except Ammo (in Ear-1)\nAug: 13 14', labels: [effectLabel('Slot:', 'All except Ammo (in Ear-1)')] }),
+];
+raidlootParser.DOMParser = class {
+  parseFromString() {
+    return {
+      getElementById: (id) => id === 'inv' ? { querySelectorAll: () => profileNodes } : null,
+      querySelector: (selector) => selector === 'title' ? { textContent: 'Test (125 Warrior)' } : null,
+      body: { textContent: '' },
+    };
+  }
+};
+const parsedProfile = raidlootParser.parseProfileHtmlForTest('<html></html>', 'profile-1');
+assert.equal(parsedProfile.items.length, 6);
+assert.deepEqual(JSON.parse(JSON.stringify(parsedProfile.items.filter((item) => item.isAugment).map(({ name, slot, augmentTypes, augSlot, parentId }) => ({ name, slot, augmentTypes, augSlot, parentId })))), [
+  { name: 'Ear Augment', slot: 'ear-2', augmentTypes: [5, 7, 8], augSlot: 1, parentId: '102' },
+  { name: 'Type 3 Focus Augment', slot: 'head', augmentTypes: [3], augSlot: 2, parentId: '103' },
+  { name: 'Type 13/14 Augment', slot: 'ear-1', augmentTypes: [13, 14], augSlot: 3, parentId: '101' },
+]);
+assert.equal(parsedProfile.items.find((item) => item.name === 'Type 3 Focus Augment').effects[0].type, 'focus');
 const parsedBackgroundEffects = raidlootParser.parseItemNodeForTest({
   dataset: { id: '2' }, classList: iconClasses,
   innerText: 'Background Effect Test\nFocus Effect: Casting Haste 20%\nProc Effect: Flame Damage 25% Proc Rate: +100\n1: Decrease Current HP by 2500',
@@ -678,7 +733,21 @@ assert.match(read('options/options.html'), /id="consent-gate" class="consent-gat
 assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 
 const options = { document: { addEventListener() {} } };
-vm.runInNewContext(read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText; globalThis.parseInventoryMetadata = parseInventoryMetadata;', options, { filename: 'options/options.js' });
+vm.runInNewContext(read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText; globalThis.parseInventoryMetadata = parseInventoryMetadata; globalThis.hasSpellFocusForTest = hasSpellFocus; globalThis.mapRaidlootItemForTest = mapRaidlootItem; globalThis.raidlootImportedProfileIdForTest = raidlootImportedProfileId;', options, { filename: 'options/options.js' });
+assert.equal(options.raidlootImportedProfileIdForTest('raidloot.com/profile/12345'), '12345');
+assert.equal(options.raidlootImportedProfileIdForTest('character-Inventory.txt'), '');
+assert.deepEqual(JSON.parse(JSON.stringify(options.mapRaidlootItemForTest({
+  id: 7, name: 'Refresh Helm', icon: 'data:image/png;base64,AA==', slot: 'Head', isAugment: true,
+  augmentTypes: [3], augSlot: 2, parentId: '6', stats: { HP: { num: 125 } },
+  effects: [{ type: 'focus', name: 'Focus', raw: 'Focus' }],
+}))), {
+  id: 7, name: 'Refresh Helm', icon: 'data:image/png;base64,AA==', slot: 'Head', isAugment: true,
+  augmentTypes: [3], augSlot: 2, parentId: '6', enriched: true, stats: { HP: 125 },
+  effects: [{ type: 'focus', name: 'Focus', raw: 'Focus' }],
+});
+assert.equal(options.hasSpellFocusForTest({ isAugment: true, slot: 'Head', effects: [{ type: 'focus' }] }), true);
+assert.equal(options.hasSpellFocusForTest({ slot: 'Head', effects: [{ type: 'focus' }] }), true);
+assert.equal(options.hasSpellFocusForTest({ slot: 'powersource', effects: [{ type: 'focus' }] }), false);
 const inventory = options.parseInventoryText([
   'Character: Aurelia',
   'Class: Warrior',
