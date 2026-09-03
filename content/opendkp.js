@@ -14,12 +14,16 @@
   const MAX_ITEM_EVENT_LENGTH = 512 * 1024;
   const MAX_CAPTURE_ITEMS = 64;
   const LIVE_AUCTION_TIMER = '.p-progressbar-value.p-progressbar-value-animate';
-  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare';
+  // OpenDKP links item names to its own #/items/{id} route on tables, but the
+  // live auction panel links them to Magelo instead, tagged with the EQ item id.
+  const ITEM_LINK_SELECTOR = 'a[href*="/items/"], a[data-lucy^="item="], a[rel^="eq:item:"]';
+  const ITEM_HOST_SELECTOR = 'td, .p-cell, .item-cell, li, .p-listbox-item';
+  const LC_UI_SELECTOR = '.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare, .lc-armor-variant-picker, .lc-armor-variant-select';
   const OPENDKP_HOST = location.hostname.toLowerCase();
   let consented = false;
   let started = false;
   let itemCache = new Map(); // OpenDKP item id -> parsed item
-  let lookupCache = new Map(); // OpenDKP item id/name -> Promise<parsed item>
+  let lookupCache = new Map(); // OpenDKP item id/name + class -> Promise<parsed item>
   let lastAnnotate = 0;
   let annotationGeneration = 0;
 
@@ -66,7 +70,14 @@
   function openDkpCandidate(item, itemId) {
     if (!item) return item;
     const opendkpId = String(itemId || item.opendkpId || item.id || '');
-    return { ...item, id: opendkpId || item.id || '', opendkpHost: OPENDKP_HOST, opendkpId };
+    const sourceName = String(item.opendkpSourceName || item.sourceName || item.name || '');
+    return {
+      ...item,
+      id: opendkpId || item.id || '',
+      opendkpHost: OPENDKP_HOST,
+      opendkpId,
+      opendkpSourceName: sourceName,
+    };
   }
 
   function captureItemData(data) {
@@ -84,52 +95,147 @@
     scheduleAnnotate();
   }
 
+  function itemLinkId(link) {
+    const href = (link.getAttribute('href') || '').match(/\/items\/([^/?#]+)/);
+    if (href) return href[1];
+    const lucy = (link.getAttribute('data-lucy') || '').match(/^item=(\d+)$/);
+    if (lucy) return lucy[1];
+    const rel = (link.getAttribute('rel') || '').match(/^eq:item:(\S+)$/);
+    return rel ? rel[1] : '';
+  }
+
+  function itemLinkHost(link) {
+    return link.closest(ITEM_HOST_SELECTOR) || link.parentElement;
+  }
+
   function openDkpItemId() {
     const match = location.hash.match(/^#\/items\/([^/?#]+)/);
     return match ? match[1] : '';
   }
 
+  function normalizedName(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function profileClass() {
+    return LC.parser && LC.parser.normalizeClass(LC.currentProfile && LC.currentProfile.cls) || '';
+  }
+
+  function normalizeResolvedStats(stats) {
+    const out = {};
+    for (const [key, value] of Object.entries(LC.parser.normalizeStats(stats || {}))) {
+      if (value && typeof value === 'object' && 'num' in value) {
+        out[key] = value;
+        continue;
+      }
+      const num = parseFloat(value);
+      out[key] = { raw: String(value), num: Number.isNaN(num) ? null : num };
+    }
+    return out;
+  }
+
+  function candidateHasData(item) {
+    return Object.values(item && item.stats || {}).some((value) => {
+      const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
+      return num != null && !Number.isNaN(num);
+    }) || !!(item && Array.isArray(item.effects) && item.effects.length);
+  }
+
+  function sourceCandidate(item, itemId) {
+    if (item && item.opendkpSourceName && item.raidlootId) return item;
+    return openDkpCandidate(item, itemId);
+  }
+
+  function resolvedCandidate(source, resolved) {
+    const raidlootId = String(resolved && (resolved.raidlootId || resolved.id) || '');
+    const candidate = {
+      ...source,
+      ...resolved,
+      id: raidlootId || source.id || '',
+      raidlootId,
+      opendkpHost: OPENDKP_HOST,
+      opendkpId: source.opendkpId || '',
+      opendkpSourceName: source.opendkpSourceName || source.name || '',
+      stats: normalizeResolvedStats(resolved && resolved.stats),
+      effects: LC.parser.normalizeEffects(resolved && resolved.effects || []),
+    };
+    candidate.slotKey = candidate.slotKey || LC.slots.canonicalSlot(candidate.slot);
+    return candidate;
+  }
+
   async function resolveItem(itemId, fallback) {
     const cached = itemCache.get(itemId);
-    if (cached && cached.slotKey && Object.keys(cached.stats || {}).length) return openDkpCandidate(cached, itemId);
-    fallback = openDkpCandidate(fallback, itemId);
-    const key = itemId || (fallback && fallback.name) || '';
+    if (cached && !cached.raidlootId && cached.slotKey && candidateHasData(cached)) return sourceCandidate(cached, itemId);
+    fallback = sourceCandidate(fallback, itemId);
+    const key = String(itemId || normalizedName(fallback && fallback.name) || '');
     if (!fallback || !fallback.name) return fallback;
-    if (!lookupCache.has(key)) {
-      lookupCache.set(key, chrome.runtime.sendMessage({
+    const cls = profileClass();
+    const cacheKey = key + '|' + (cls || 'none');
+    if (!lookupCache.has(cacheKey)) {
+      lookupCache.set(cacheKey, chrome.runtime.sendMessage({
         type: 'LOOKUP_ITEM_STATS',
         itemId,
-        name: fallback && fallback.name,
+        name: fallback.name,
+        characterClass: cls,
       }).then((response) => {
-        if (!response || !response.ok || !response.item) return fallback;
-        const raidlootId = response.item.id || '';
-        const item = {
-          ...response.item,
-          id: itemId || response.item.id,
-          raidlootId,
-          opendkpHost: OPENDKP_HOST,
-          opendkpId: itemId || '',
-          stats: LC.parser.normalizeStats(response.item.stats || {}),
-        };
-        if (itemId) itemCache.set(itemId, item);
+        if (!response || !response.item) {
+          if (response && response.error) fallback.lookupError = String(response.error);
+          return fallback;
+        }
+        const items = [response.item, ...(Array.isArray(response.alternatives) ? response.alternatives : [])]
+          .map((item) => resolvedCandidate(fallback, item))
+          .filter((item) => item.raidlootId && item.slotKey && candidateHasData(item))
+          .filter((item) => !fallback.slotKey || item.slotKey.key === fallback.slotKey.key);
+        if (!items.length) {
+          fallback.lookupError = response.error || 'Resolved item data is invalid';
+          return fallback;
+        }
+        const alternatives = [...new Map(items.map((item) => [item.raidlootId || item.name, item])).values()]
+          .sort((a, b) => normalizedName(a.name).localeCompare(normalizedName(b.name)));
+        const item = alternatives[0];
+        item.alternatives = alternatives;
         return item;
-      }).catch(() => fallback));
+      }).catch(() => {
+        fallback.lookupError = fallback.lookupError || 'Could not resolve item stats';
+        return fallback;
+      }));
     }
-    return lookupCache.get(key);
+    return lookupCache.get(cacheKey);
+  }
+
+  // A class-specific armor result may have a different RaidLoot name. Keep
+  // the source token name in the wishlist record while comparison uses cand.
+  function wishlistCandidate(cand) {
+    const isResolvedToken = cand.opendkpSourceName &&
+      (normalizedName(cand.opendkpSourceName) !== normalizedName(cand.name) ||
+        (Array.isArray(cand.alternatives) && cand.alternatives.length > 1));
+    return isResolvedToken ? {
+      ...cand,
+      name: cand.opendkpSourceName,
+      // Variant IDs are comparison data; wishlist identity is the source token.
+      raidlootId: '',
+    } : cand;
+  }
+
+  function highlightWanted(host, wishlistCand, target) {
+    const wantedEntry = LC.state.findWishlistEntry(LC.currentProfile, wishlistCand);
+    const highlightHost = target || host.closest('tr, li, .p-listbox-item') || host;
+    const liveAuction = !!(highlightHost.matches && highlightHost.matches('tr') && highlightHost.querySelector(LIVE_AUCTION_TIMER)) ||
+      !!host.closest('app-auctions');
+    highlightHost.classList.toggle('lc-wanted', !!wantedEntry && liveAuction);
+    return wantedEntry;
   }
 
   function decorateWishlist(host, cand) {
     if (!LC.currentProfile || !host || !cand) return;
-    const wantedEntry = LC.state.findWishlistEntry(LC.currentProfile, cand);
-    const highlightHost = host.closest('tr, li, .p-listbox-item') || host;
-    const liveAuction = !!(highlightHost.matches && highlightHost.matches('tr') && highlightHost.querySelector(LIVE_AUCTION_TIMER));
-    highlightHost.classList.toggle('lc-wanted', !!wantedEntry && liveAuction);
-    if (wantedEntry && LC.state.wishlistNeedsMerge(wantedEntry, cand, LC.currentProfile)) {
-      LC.state.mergeWishlistCandidate(cand, LC.currentProfile.id).catch(() => {});
+    const wishlistCand = wishlistCandidate(cand);
+    const wantedEntry = highlightWanted(host, wishlistCand);
+    if (wantedEntry && LC.state.wishlistNeedsMerge(wantedEntry, wishlistCand, LC.currentProfile)) {
+      LC.state.mergeWishlistCandidate(wishlistCand, LC.currentProfile.id).catch(() => {});
     }
     if (host.querySelector(':scope > .lc-wishlist-toggle')) return;
-    const toggle = LC.ui.buildWishlistToggle(cand, !!wantedEntry, LC.currentProfile.id);
-    const targets = LC.state.wishlistTargets(LC.currentProfile, cand);
+    const toggle = LC.ui.buildWishlistToggle(wishlistCand, !!wantedEntry, LC.currentProfile.id);
+    const targets = LC.state.wishlistTargets(LC.currentProfile, wishlistCand);
     const compare = targets.length ? LC.ui.buildWishlistCompareButton(cand, targets, LC.currentFormula, LC.currentProfile.level) : null;
     if (compare) compare.addEventListener('click', (event) => {
       event.preventDefault();
@@ -141,55 +247,95 @@
     host.prepend(...[toggle, compare].filter(Boolean));
   }
 
-  function annotateCandidate(host, cand, prepend) {
-    cand = openDkpCandidate(cand, cand && (cand.opendkpId || cand.id));
-    if (!host || !cand) return;
-    decorateWishlist(host, cand);
-    if (!cand.slotKey || host.querySelector(':scope > .lc-badge')) return;
+  function removeComparisonUI(host) {
+    host.querySelectorAll(':scope > .lc-badge, :scope > .lc-compare-panel:not(.lc-wishlist-compare-panel)').forEach((el) => el.remove());
+  }
+
+  function addArmorVariantPicker(host, candidates, render) {
+    if (!candidates || candidates.length < 2 || host.querySelector(':scope > .lc-armor-variant-picker')) return;
+    const picker = document.createElement('label');
+    picker.className = 'lc-armor-variant-picker';
+    picker.appendChild(document.createTextNode('Armor variant'));
+    const select = document.createElement('select');
+    select.className = 'lc-armor-variant-select';
+    select.setAttribute('aria-label', 'Armor variant');
+    candidates.forEach((candidate, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = [candidate.name, candidate.armorSetLabel ? '(' + candidate.armorSetLabel + ')' : '']
+        .filter(Boolean).join(' ') || ('Armor variant ' + (index + 1));
+      select.appendChild(option);
+    });
+    select.addEventListener('change', () => render(candidates[Number(select.value)]));
+    picker.appendChild(select);
+    host.prepend(picker);
+  }
+
+  // Builds the verdict badges for one candidate. onBadge wires up the expandable
+  // compare panel; callers without room for a panel (tab headers) leave it out.
+  function comparisonBadges(selected, onBadge) {
     const badge = LC.ui.buildBadge('nomatch', 'no char', 'Pick a character in the popup');
-    if (!LC.currentProfile) {
-      if (prepend) host.prepend(badge); else host.appendChild(badge);
-      return;
+    if (!LC.currentProfile) return [badge];
+    if (selected.lookupError) {
+      badge.textContent = '?';
+      badge.title = selected.lookupError;
+      return [badge];
     }
+    if (!selected.slotKey) return [];
     const f = LC.currentFormula;
-    const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
-    if (!comparison.eligible) return;
+    const comparison = LC.diff.compareCandidate(LC.currentProfile, selected, f);
+    if (!comparison.eligible) return [];
     const summary = LC.diff.summarizeComparisons(comparison);
     if (!summary.hasWorn && !summary.hasEffects) {
       badge.dataset.state = 'empty';
       badge.textContent = 'empty slot';
-      badge.title = 'No worn item in slot ' + cand.slotKey.key;
-      if (prepend) host.prepend(badge); else host.appendChild(badge);
-      return;
+      badge.title = 'No worn item in slot ' + selected.slotKey.key;
+      return [badge];
     }
     if (!summary.comparable) {
       badge.textContent = '?';
       badge.title = 'Item stats are unresolved; no comparison is available';
-      if (prepend) host.prepend(badge); else host.appendChild(badge);
-      return;
+      return [badge];
     }
-    const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
+    const compact = (!selected.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(selected) != null;
     const badges = [];
     for (const [index, row] of comparison.rows.entries()) {
-      if (cand.isAugment && index) break;
+      if (selected.isAugment && index) break;
       if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
       for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact)) {
+        if (onBadge) onBadge(rowBadge, row, index, comparison);
+        badges.push(rowBadge);
+      }
+    }
+    return badges;
+  }
+
+  function annotateCandidate(host, cand, prepend) {
+    if (!host || !cand) return;
+    cand = sourceCandidate(cand, cand.opendkpId || cand.id);
+    decorateWishlist(host, cand);
+    const candidates = Array.isArray(cand.alternatives) && cand.alternatives.length > 1 ? cand.alternatives : [cand];
+    const render = (selected) => {
+      removeComparisonUI(host);
+      const badges = comparisonBadges(selected, (rowBadge, row, index, comparison) => {
         rowBadge.addEventListener('click', (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
-          const existing = host.querySelector(':scope > .lc-compare-panel');
+          const existing = host.querySelector(':scope > .lc-compare-panel:not(.lc-wishlist-compare-panel)');
           if (existing) {
             const same = existing.dataset.lcView === rowBadge.dataset.lcView && existing.dataset.lcRow === String(index);
             existing.remove();
             if (same) return;
           }
-          host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+          host.appendChild(LC.ui.buildComparePanel(selected, row.target, row.diff, row.slotKey && row.slotKey.key,
             row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView));
         });
-        badges.push(rowBadge);
-      }
-    }
-    if (prepend) host.prepend(...badges); else host.append(...badges);
+      });
+      if (prepend) host.prepend(...badges); else host.append(...badges);
+    };
+    addArmorVariantPicker(host, candidates, render);
+    if (host.querySelector(':scope > .lc-badge')) return;
+    render(candidates[0]);
   }
 
   // ---------- Annotation ----------
@@ -209,6 +355,8 @@
     await annotateItemTooltips(generation);
     if (generation !== annotationGeneration) return;
     await annotateItemTables(generation);
+    if (generation !== annotationGeneration) return;
+    await annotateAuctionTabs(generation);
   }
 
   // Item detail page: #/items/{id}
@@ -241,29 +389,64 @@
     return document.querySelector('app-root') || document.body;
   }
 
-  // Auction lists + raid result pages: items appear inline in tables.
-  // We look for table cells containing links to /items/{id}.
+  // Auction lists + raid result pages: items appear inline in tables, and on
+  // the live auction panel as a heading link next to the bid timer.
   async function annotateItemTables(generation) {
-    const links = document.querySelectorAll('a[href*="/items/"]');
+    const links = document.querySelectorAll(ITEM_LINK_SELECTOR);
     for (const link of links) {
-      const href = link.getAttribute('href') || '';
-      const m = href.match(/\/items\/([^/?#]+)/);
-      if (!m) continue;
-      const itemId = m[1];
-      const cell = link.closest('td, .p-cell, .item-cell, li, .p-listbox-item');
+      const itemId = itemLinkId(link);
+      if (!itemId) continue;
+      const cell = itemLinkHost(link);
       if (!cell) continue;
-      // Get candidate from cache or parse the cell
+      // Get candidate from cache or parse the link. Only the name is reliable
+      // here: the auction heading wraps it in bid prose, so parse just the link.
       let cand = itemCache.get(itemId);
       if (!cand) {
-        cand = LC.parser.parseOpenDkpDom(cell);
+        cand = LC.parser.parseOpenDkpDom(link);
         if (cand) cand.id = itemId;
       }
       cand = await resolveItem(itemId, cand);
       if (generation !== annotationGeneration) return;
       if (!cand || !document.documentElement.contains(link) ||
-          link.closest('td, .p-cell, .item-cell, li, .p-listbox-item') !== cell ||
-          (link.getAttribute('href') || '') !== href) continue;
+          itemLinkHost(link) !== cell || itemLinkId(link) !== itemId) continue;
       annotateCandidate(cell, cand, false);
+    }
+  }
+
+  // Live auction tab headers carry the timer and the item name, but PrimeNG
+  // only renders a tab's body once it is opened, so the wanted highlight has to
+  // come from the header itself -- resolved by name, since it carries no id.
+  // PrimeNG builds the tab's <li> class from an ngClass binding, so the nav link
+  // is the only stable handle on a tab -- and the only safe thing to class.
+  function auctionTabNameEl(link) {
+    // <div class="flex flex-column"><p-progressBar><div *ngIf>bidder</div>
+    // <div> {name} x {quantity} </div></div>
+    const bar = link.querySelector(LIVE_AUCTION_TIMER);
+    const box = bar && bar.closest('p-progressbar');
+    return box && box.parentElement && box.parentElement.lastElementChild;
+  }
+
+  function auctionTabName(nameEl) {
+    if (!nameEl) return '';
+    // Text nodes only: the badges we append here are not part of the name.
+    return Array.from(nameEl.childNodes)
+      .filter((node) => node.nodeType === 3)
+      .map((node) => node.textContent).join('')
+      .replace(/\s+x\s+\d+\s*$/i, '').trim();
+  }
+
+  async function annotateAuctionTabs(generation) {
+    for (const link of document.querySelectorAll('a.p-tabview-nav-link')) {
+      const nameEl = auctionTabNameEl(link);
+      const name = auctionTabName(nameEl);
+      if (!name) continue;
+      const cand = await resolveItem('', { id: '', name, slot: '', slotKey: null, stats: {} });
+      if (generation !== annotationGeneration) return;
+      if (!cand || !document.documentElement.contains(link)) continue;
+      highlightWanted(link, wishlistCandidate(cand), link);
+      // Badges only: the compare panel needs the room the tab body has.
+      if (nameEl.querySelector(':scope > .lc-badge')) continue;
+      nameEl.append(...comparisonBadges(cand));
     }
   }
 
@@ -277,7 +460,7 @@
     });
     for (const host of hosts) {
       if (!document.documentElement.contains(host)) continue;
-      if (host.querySelector(':scope > .lc-wishlist-toggle')) continue;
+      if (host.querySelector(':scope > .lc-wishlist-toggle, :scope > .lc-armor-variant-picker')) continue;
       const text = host.textContent || '';
       if (text.length > 2500) continue;
       let cand = LC.parser.parseOpenDkpTooltip(host);
@@ -287,11 +470,9 @@
         if (!name) continue;
         cand = { name, slot: '', slotKey: null, stats: {} };
       }
-      const trigger = Array.from(document.querySelectorAll('a[rel^="eq:item:"], a[href*="/items/"]'))
+      const trigger = Array.from(document.querySelectorAll(ITEM_LINK_SELECTOR))
         .find((link) => link.textContent.trim().toLowerCase() === cand.name.trim().toLowerCase());
-      const rel = trigger && (trigger.getAttribute('rel') || '').match(/^eq:item:([^\s]+)$/);
-      const href = trigger && (trigger.getAttribute('href') || '').match(/\/items\/([^/?#]+)/);
-      const itemId = rel ? rel[1] : (href ? href[1] : '');
+      const itemId = trigger ? itemLinkId(trigger) : '';
       const expectedName = cand.name.trim().toLowerCase().replace(/\s+/g, ' ');
       const resolved = await resolveItem(itemId, cand);
       if (generation !== annotationGeneration) return;
@@ -299,11 +480,9 @@
       const currentHeading = host.querySelector('h1, h2, h3, h4, h5, h6, strong, b, .item-name, .itemname');
       const currentName = String(currentCandidate && currentCandidate.name || currentHeading && currentHeading.textContent || '')
         .trim().toLowerCase().replace(/\s+/g, ' ');
-      const currentTrigger = Array.from(document.querySelectorAll('a[rel^="eq:item:"], a[href*="/items/"]'))
+      const currentTrigger = Array.from(document.querySelectorAll(ITEM_LINK_SELECTOR))
         .find((link) => link.textContent.trim().toLowerCase().replace(/\s+/g, ' ') === currentName);
-      const currentRel = currentTrigger && (currentTrigger.getAttribute('rel') || '').match(/^eq:item:([^\s]+)$/);
-      const currentHref = currentTrigger && (currentTrigger.getAttribute('href') || '').match(/\/items\/([^/?#]+)/);
-      const currentItemId = currentRel ? currentRel[1] : (currentHref ? currentHref[1] : '');
+      const currentItemId = currentTrigger ? itemLinkId(currentTrigger) : '';
       const stillSameItem = currentName === expectedName && (!itemId || !currentItemId || currentItemId === itemId);
       if (resolved && document.documentElement.contains(host) &&
           stillSameItem) {
@@ -333,11 +512,11 @@
     });
     mo.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('mouseover', (event) => {
-      if (event.target.closest && event.target.closest('a[href*="/items/"]')) scheduleAnnotate(true);
+      if (event.target.closest && event.target.closest(ITEM_LINK_SELECTOR)) scheduleAnnotate(true);
     }, true);
     window.addEventListener('hashchange', () => {
       annotationGeneration++;
-      document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare').forEach((el) => el.remove());
+      document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare, .lc-armor-variant-picker, .lc-armor-variant-select').forEach((el) => el.remove());
       document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));
       scheduleAnnotate(true);
     });
@@ -355,7 +534,7 @@
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     // Clear badges and re-annotate
-    document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare').forEach((el) => el.remove());
+    document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare, .lc-armor-variant-picker, .lc-armor-variant-select').forEach((el) => el.remove());
     document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));
     annotatePage(true);
   });

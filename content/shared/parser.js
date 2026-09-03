@@ -401,7 +401,8 @@
       const slotNames = ['Charm', 'Ear', 'Head', 'Face', 'Neck', 'Shoulders', 'Shoulder', 'Arms', 'Arm', 'Back', 'Wrist', 'Range', 'Hands', 'Hand', 'Primary', 'Secondary', 'Finger', 'Fingers', 'Chest', 'Legs', 'Leg', 'Feet', 'Foot', 'Waist', 'Power Source'];
       slot = lines.find((line) => slotNames.some((candidate) => line.toLowerCase() === candidate.toLowerCase())) || '';
       if (!slot) {
-        const slotMatch = text.match(/\b(Charm|Ears?|Heads?|Faces?|Necks?|Shoulders?|Arms?|Back|Wrists?|Ranges?|Hands?|Primary|Secondary|Fingers?|Chests?|Legs?|Feet|Waist|Power Source)\b/i);
+        // Skip the item name: "Bracer of the Frigid Hand" is not a hands slot.
+        const slotMatch = text.replace(name, ' ').match(/\b(Charm|Ears?|Heads?|Faces?|Necks?|Shoulders?|Arms?|Back|Wrists?|Ranges?|Hands?|Primary|Secondary|Fingers?|Chests?|Legs?|Feet|Waist|Power Source)\b/i);
         slot = slotMatch ? slotMatch[1] : '';
       }
     }

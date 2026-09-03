@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
@@ -101,12 +102,55 @@ assert.match(read('content/shared/ui.js'), /\.lc-wishlist-toggle\{[^']*width:aut
 assert.match(read('content/shared/ui.js'), /background:transparent !important/);
 assert.match(raidlootSource, /raidlootId: cand\.raidlootId \|\| cand\.id/);
 assert.match(opendkpSource, /\.p-progressbar-value\.p-progressbar-value-animate/);
+// Live auctions link items to Magelo, not to OpenDKP's own #/items/ route.
+assert.match(opendkpSource, /a\[data-lucy\^="item="\]/);
+assert.match(opendkpSource, /host\.closest\('app-auctions'\)/);
+assert.match(opendkpSource, /document\.querySelectorAll\(ITEM_LINK_SELECTOR\)/);
+{
+  const source = opendkpSource.match(/ {2}function itemLinkId\(link\) \{[\s\S]*?\n {2}\}/)[0];
+  const itemLinkId = vm.runInNewContext('(' + source.replace('function itemLinkId', 'function') + ')');
+  const link = (attrs) => ({ getAttribute: (name) => (name in attrs ? attrs[name] : null) });
+  assert.equal(itemLinkId(link({ href: '#/items/2049', rel: 'eq:item:88123' })), '2049');
+  assert.equal(itemLinkId(link({ href: 'https://eq.magelo.com/item/72204', 'data-lucy': 'item=72204' })), '72204');
+  assert.equal(itemLinkId(link({ rel: 'eq:item:88123' })), '88123');
+  assert.equal(itemLinkId(link({ href: 'https://eq.magelo.com/spell/1' })), '');
+}
+// PrimeNG only renders a tab body once opened, so wanted highlighting on live
+// auctions reads the item name out of the tab header instead.
+// PrimeNG builds the tab <li> class from an ngClass binding; only the nav link
+// carries a static class, so it is both the handle and the highlight target.
+assert.match(opendkpSource, /document\.querySelectorAll\('a\.p-tabview-nav-link'\)/);
+assert.doesNotMatch(opendkpSource, /p-tabview-header/);
+assert.match(opendkpSource, /highlightWanted\(link, wishlistCandidate\(cand\), link\)/);
+// The verdict badges render on the tab itself, not only in the opened body.
+assert.match(opendkpSource, /nameEl\.append\(\.\.\.comparisonBadges\(cand\)\)/);
+assert.match(read('content/shared/ui.js'), /\.p-tabview-nav-link\.lc-wanted/);
+{
+  const source = opendkpSource.match(/ {2}function auctionTabName\(nameEl\) \{[\s\S]*?\n {2}\}/)[0];
+  const auctionTabName = vm.runInNewContext('(' + source.replace('function auctionTabName', 'function') + ')');
+  const text = (value) => ({ nodeType: 3, textContent: value });
+  assert.equal(auctionTabName({ childNodes: [text(' Bracer of the Frigid Hand x 1 ')] }), 'Bracer of the Frigid Hand');
+  assert.equal(auctionTabName({ childNodes: [text(' Belt of Testing x 12 ')] }), 'Belt of Testing');
+  // Badges appended into the name must not leak back into the resolved name.
+  assert.equal(auctionTabName({ childNodes: [text(' Belt of Testing x 12 '), { nodeType: 1, textContent: 'up +345' }] }),
+    'Belt of Testing');
+  // The Welcome tab has no running timer, so there is no name element.
+  assert.equal(auctionTabName(null), '');
+}
 assert.match(opendkpSource, /raidlootId,/);
 assert.match(opendkpSource, /opendkpHost: OPENDKP_HOST/);
 assert.match(opendkpSource, /let annotationGeneration = 0/);
 assert.match(read('content/shared/ui.js'), /let renderGeneration = 0/);
 assert.match(read('content/shared/ui.js'), /enrichWishlistEntry\(target, profile && profile\.id\)/);
 assert.match(opendkpSource, /new MutationObserver\(\(records\) =>/);
+assert.match(opendkpSource, /characterClass: cls/);
+assert.match(opendkpSource, /const cacheKey = key \+ '\\|' \+ \(cls \|\| 'none'\)/);
+assert.match(opendkpSource, /lc-armor-variant-select/);
+assert.match(opendkpSource, /const LC_UI_SELECTOR = .*lc-armor-variant-picker/);
+assert.match(opendkpSource, /const onlyExtensionChanges = records\.every/);
+assert.match(opendkpSource, /document\.querySelectorAll\('\.lc-badge, \.lc-compare-panel, \.lc-wishlist-toggle, \.lc-wishlist-compare, \.lc-armor-variant-picker, \.lc-armor-variant-select'\)/);
+assert.match(opendkpSource, /name: cand\.opendkpSourceName/);
+assert.match(opendkpSource, /raidlootId: '',/);
 assert.doesNotMatch(read('content/shared/ui.js'), /return arrow \+ ' ' \+ fmtDelta\(diff\.score\) \+ ' ' \+ formula\.label/);
 assert.match(read('content/shared/ui.js'), /\.lc-compare-panel \.lc-head\{display:flex/);
 assert.match(raidlootSource, /existing\.dataset\.lcView/);
@@ -288,6 +332,14 @@ const parsedOpenDkpAugDom = LC.parser.parseOpenDkpDom({
 });
 assert.equal(parsedOpenDkpAugDom.isAugment, true);
 assert.equal(parsedOpenDkpAugDom.augmentTypes.join(','), '7,8');
+// A slot word inside the item name must not be read as the slot: auction rows
+// carry no stats, so a wrong slot silently filters out the resolved item.
+const parsedAuctionLink = LC.parser.parseOpenDkpDom({
+  textContent: 'Bracer of the Frigid Hand',
+  querySelector: () => null,
+});
+assert.equal(parsedAuctionLink.name, 'Bracer of the Frigid Hand');
+assert.equal(parsedAuctionLink.slotKey, null);
 assert.equal(LC.diff.bestComparisonTarget(
   { stats: { HP: { num: 100 } } },
   [{ stats: { HP: { num: 50 } } }, { stats: {} }],
@@ -707,8 +759,130 @@ const workerContext = {
     } },
   },
 };
-vm.runInNewContext(read('background/raidloot-parser.js'), workerContext, { filename: 'background/raidloot-parser.js' });
-vm.runInNewContext(read('background/service-worker.js'), workerContext, { filename: 'background/service-worker.js' });
+vm.runInNewContext(read('background/raidloot-parser.js') +
+  '\nglobalThis.parseItemSetForTest = parseItemSet;', workerContext, { filename: 'background/raidloot-parser.js' });
+vm.runInNewContext(read('background/armor-token-catalog.js'), workerContext, { filename: 'background/armor-token-catalog.js' });
+vm.runInNewContext(read('background/service-worker.js') +
+  '\nglobalThis.validArmorTokenRecordForTest = validArmorTokenRecord;', workerContext, { filename: 'background/service-worker.js' });
+assert.doesNotThrow(() => execFileSync('python3', ['tools/generate_armor_token_catalog.py', '--check'], { encoding: 'utf8' }));
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.catalogVersion, 'rof-tob-2');
+assert.equal(Object.keys(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items).length, 357);
+assert.deepEqual([...new Set(Object.values(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items).map((item) => item.expansion))].sort(), [
+  'Rain of Fear', 'Call of the Forsaken', 'The Darkened Sea', 'The Broken Mirror',
+  'Empires of Kunark', 'Ring of Scale', 'The Burning Lands', 'Torment of Velious',
+  'Claws of Veeshan', 'Terror of Luclin', 'Night of Shadows', "Laurion's Song", 'The Outer Brood',
+].sort());
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['81201'])), {
+  id: 81201, name: 'Dread Infused Helm', expansion: 'Rain of Fear', track: 'raid', tier: 4,
+  setQuery: 'Raid Tier 4 (Dreadweave)', slot: 'head',
+});
+for (const [id, expansion] of Object.entries({
+  85288: 'Call of the Forsaken', 94249: 'The Darkened Sea', 147660: 'The Broken Mirror',
+  148854: 'Empires of Kunark', 151854: 'Ring of Scale', 161404: 'The Burning Lands',
+  164404: 'Torment of Velious', 164904: 'Claws of Veeshan', 168004: 'Terror of Luclin',
+  168104: 'Night of Shadows', 171774: "Laurion's Song", 174004: 'The Outer Brood',
+})) assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items[id].expansion, expansion);
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['147660'].name, "Raw Crypt-Hunter's Cap");
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['148854'].name, "Amorphous Cohort's Helm");
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['124656'], undefined);
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['127491'], undefined);
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['166239'])), {
+  id: 166239, name: 'Faded Bloodied Luclinite Head Armor', expansion: 'Terror of Luclin', track: 'group', tier: 3,
+  setQuery: 'Group Tier 3 (Luclinite Ensanguined)', slot: 'head', alternativeSets: [
+    { track: 'raid', tier: 2, setQuery: 'Raid Tier 2 (Luclinite Coagulated)' },
+  ],
+});
+assert.equal(workerContext.validArmorTokenRecordForTest({
+  ...workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['166239'],
+  alternativeSets: [{ track: 'raid', tier: '2', setQuery: 'Raid Tier 2 (Luclinite Coagulated)' }],
+}), null);
+
+function armorFixtureHtml(items) {
+  return items.map((item) => {
+    if (!item.classes) throw new Error('armor fixture item must have a class');
+    return '<div class="item ' + item.slot + '" data-id="' + item.id + '">' +
+      '<span class="itemname">' + item.name + '</span><label>HP:</label> ' + item.hp +
+      '<label>Class:</label> ' + item.classes + '<span class="itemdrop">Quest: ' + (item.quest || '') +
+      ' in Fixture Armor Sets</span></div>';
+  }).join('');
+}
+
+class ArmorFixtureDOMParser {
+  parseFromString(html) {
+    const nodes = [];
+    const pattern = /<div class="item ([^"]+)" data-id="(\d+)"><span class="itemname">([^<]+)<\/span><label>HP:<\/label>\s*([^<]+)<label>Class:<\/label>\s*([^<]+)<span class="itemdrop">Quest:\s*([^<]+)<\/span><\/div>/g;
+    for (const match of String(html || '').matchAll(pattern)) {
+      const [, slot, id, name, hp, classes, quest] = match;
+      const classList = ['item', slot];
+      classList.contains = (value) => classList.includes(value);
+      const text = name + '\nHP: ' + hp.trim() + '\nQuest: ' + quest.trim() + '\nClass: ' + classes.trim();
+      nodes.push({
+        dataset: { id }, classList, textContent: text, innerText: text,
+        querySelector(selector) {
+          if (selector === '.itemname') return { textContent: name };
+          if (selector === '.itemdrop') return { textContent: 'Quest: ' + quest };
+          return null;
+        },
+        querySelectorAll(selector) {
+          if (selector !== 'label') return [];
+          const hpNode = { nodeType: 3, textContent: hp, nextSibling: null };
+          const classNode = { nodeType: 3, textContent: classes, nextSibling: null };
+          return [
+            { textContent: 'HP:', nextSibling: hpNode },
+            { textContent: 'Class:', nextSibling: classNode },
+          ];
+        },
+      });
+    }
+    return { querySelectorAll: () => nodes };
+  }
+}
+
+function armorFixtureItems(setQuery, characterClass) {
+  if (setQuery === 'Group Tier 3 (Luclinite Ensanguined)' || setQuery === 'Raid Tier 2 (Luclinite Coagulated)') {
+    const raid = setQuery.startsWith('Raid');
+    const setName = raid ? 'Luclinite Coagulated' : 'Luclinite Ensanguined';
+    const baseId = raid ? 230236 : 220236;
+    const pieces = [
+      ['Wrist', 'wrist'], ['Hands', 'hands'], ['Feet', 'feet'], ['Head', 'head'],
+      ['Arms', 'arms'], ['Legs', 'legs'], ['Chest', 'chest'],
+    ];
+    return pieces.map(([piece, slot], index) => ({
+      id: baseId + index, name: setName + ' ' + (characterClass === 'WAR' ? 'Warrior ' : 'Beastlord ') + piece,
+      slot, hp: (raid ? 900 : 800) + index, classes: characterClass, quest: setQuery,
+    }));
+  }
+  if (setQuery === 'Raid Tier 4 (Dreadweave)') {
+    const items = characterClass === 'BST' ? [
+      { id: 117561, name: 'Dreadweave Dragonbrood Cowl', slot: 'head', hp: 1000, classes: 'BST' },
+      { id: 117558, name: 'Dreadweave Dragonbrood Wristguard', slot: 'wrist', hp: 900, classes: 'BST' },
+      { id: 117575, name: 'Dreadweave Dragonbrood Wristband', slot: 'wrist', hp: 910, classes: 'BST' },
+      { id: 117559, name: 'Dreadweave Dragonbrood Gloves', slot: 'hands', hp: 980, classes: 'BST' },
+      { id: 117560, name: 'Dreadweave Dragonbrood Boots', slot: 'feet', hp: 970, classes: 'BST' },
+      { id: 117562, name: 'Dreadweave Dragonbrood Armwraps', slot: 'arms', hp: 990, classes: 'BST' },
+      { id: 117563, name: 'Dreadweave Dragonbrood Leggings', slot: 'legs', hp: 995, classes: 'BST' },
+      { id: 117564, name: 'Dreadweave Dragonbrood Tunic', slot: 'chest', hp: 1000, classes: 'BST' },
+    ] : [
+      { id: 117463, name: 'Dreadweave Legionnaire Helm', slot: 'head', hp: 1000, classes: 'WAR' },
+      { id: 117460, name: 'Dreadweave Legionnaire Bracer', slot: 'wrist', hp: 900, classes: 'WAR' },
+      { id: 117461, name: 'Dreadweave Legionnaire Gauntlets', slot: 'hands', hp: 980, classes: 'WAR' },
+      { id: 117462, name: 'Dreadweave Legionnaire Boots', slot: 'feet', hp: 970, classes: 'WAR' },
+      { id: 117464, name: 'Dreadweave Legionnaire Vambraces', slot: 'arms', hp: 990, classes: 'WAR' },
+      { id: 117465, name: 'Dreadweave Legionnaire Greaves', slot: 'legs', hp: 995, classes: 'WAR' },
+      { id: 117466, name: 'Dreadweave Legionnaire Breastplate', slot: 'chest', hp: 1000, classes: 'WAR' },
+    ];
+    return items.map((item) => ({ ...item, quest: setQuery }));
+  }
+  if (setQuery === 'Group Tier 4 (Frightweave)') return [
+    ['Wristguard', 'wrist'], ['Gloves', 'hands'], ['Boots', 'feet'], ['Helm', 'head'],
+    ['Armguards', 'arms'], ['Leggings', 'legs'], ['Tunic', 'chest'],
+  ].map(([piece, slot], index) => ({
+    id: slot === 'head' ? 130001 : 130002 + (index > 3 ? index - 1 : index),
+    name: 'Frightweave Dragonbrood ' + piece, slot, hp: 700 + index,
+    classes: characterClass, quest: setQuery,
+  }));
+  return [];
+}
 const oversizedItemCache = Object.fromEntries(Array.from({ length: 300 }, (_, index) => [
   'id:' + index, { id: String(index), name: 'Item ' + index, stats: { HP: index } },
 ]));
@@ -908,6 +1082,210 @@ assert.equal(state.compatibleWishlistItem(
   workerContext.clients = { async matchAll() { return [{ url: 'chrome-extension://test/background/offscreen.html' }]; } };
   await workerContext.ensureOffscreenDocument();
   assert.equal(offscreenCreates, 2);
+
+  const previousArmorCache = workerStorage.raidlootItemCache;
+  const previousFetch = workerContext.fetch;
+  const previousOffscreenMessage = workerContext.chrome.runtime.sendMessage;
+  const previousDOMParser = workerContext.DOMParser;
+  const armorFetches = [];
+  let armorFetchMode = 'normal';
+  let armorFixtureMode = 'normal';
+  workerContext.DOMParser = ArmorFixtureDOMParser;
+  const dreadweaveCacheKey = 'armor-set:rof-tob-2:raid tier 4 dreadweave:BST';
+  const truncatedDreadweave = workerContext.parseItemSetForTest(
+    armorFixtureHtml(armorFixtureItems('Raid Tier 4 (Dreadweave)', 'BST'))).slice(0, 1);
+  workerStorage.raidlootItemCache = { [dreadweaveCacheKey]: truncatedDreadweave };
+  workerContext.fetch = async (url) => {
+    const requestUrl = new URL(url);
+    armorFetches.push(String(url));
+    if (armorFetchMode === 'fail') throw new Error('fixture armor fetch failed');
+    let items = [];
+    if (requestUrl.pathname === '/items' && requestUrl.searchParams.get('name') === 'Cache Blade') {
+      items = [{ id: 90001, name: 'Cache Blade', slot: 'head', hp: 400, classes: 'ALL' }];
+    } else if (requestUrl.pathname === '/items/90001') {
+      items = [{ id: 90001, name: 'Cache Blade', slot: 'head', hp: 400, classes: 'ALL' }];
+    } else {
+      const setQuery = requestUrl.searchParams.get('name');
+      const characterClass = requestUrl.searchParams.get('class') === 'Warrior' ? 'WAR' : 'BST';
+      if (armorFixtureMode === 'tol-partial-fail' && setQuery === 'Raid Tier 2 (Luclinite Coagulated)') {
+        throw new Error('fixture Luclinite raid set failed');
+      } else if (armorFixtureMode === 'wrong-filter' && setQuery === 'Group Tier 1 (Boreal)') {
+        items = [
+          ['Bracer', 'wrist'], ['Gloves', 'hands'], ['Boots', 'feet'], ['Helm', 'head'],
+          ['Armguards', 'arms'], ['Leggings', 'legs'], ['Tunic', 'chest'],
+        ].map(([piece, slot], index) => ({
+          id: 140001 + index, name: 'Boreal Fear Touched ' + piece, slot, hp: 500 + index,
+          classes: 'BST', quest: setQuery,
+        }));
+        items.push(
+          { id: 140008, name: 'Wrong Quest Bracer', slot: 'wrist', hp: 500,
+            classes: 'BST', quest: 'Raid Tier 1 (Gelid)' },
+          { id: 140009, name: 'Wrong Class Bracer', slot: 'wrist', hp: 500,
+            classes: 'WAR', quest: setQuery },
+        );
+      } else {
+        items = armorFixtureItems(setQuery, characterClass);
+      }
+    }
+    return { ok: true, status: 200, text: async () => armorFixtureHtml(items) };
+  };
+  workerContext.chrome.runtime.sendMessage = (message) => {
+    if (!message || message.target !== 'loot-captain-offscreen') return previousOffscreenMessage(message);
+    const parsed = workerContext.parseItemSetForTest(message.html);
+    if (message.type === 'PARSE_ITEM_SET') return Promise.resolve({ ok: true, value: parsed });
+    if (message.type === 'PARSE_SEARCH_ITEM') {
+      const name = String(message.name || '').trim().toLowerCase();
+      return Promise.resolve({ ok: true, value: parsed.find((item) => item.name.toLowerCase() === name) || null });
+    }
+    if (message.type === 'PARSE_ITEM') {
+      return Promise.resolve({ ok: true, value: parsed.find((item) => item.id === String(message.expectedId)) || null });
+    }
+    return Promise.resolve({ ok: true, value: null });
+  };
+  try {
+    const beastlordHead = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201',
+      name: 'Dread Infused Helm', characterClass: 'Beastlord' }, 'https://guild.opendkp.com/#/items/81201');
+    assert.equal(beastlordHead.ok, true);
+    assert.equal(beastlordHead.item.id, '117561');
+    assert.equal(armorFetches.length, 1);
+    assert.match(armorFetches[0], /name=Raid%20Tier%204%20\(Dreadweave\)/);
+    assert.match(armorFetches[0], /class=Beastlord/);
+    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:raid tier 4 dreadweave:BST'].length, 8);
+    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:raid tier 4 dreadweave:BST'][0].setQuery,
+      'Raid Tier 4 (Dreadweave)');
+
+    const beastlordWrist = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81198',
+      name: 'Dread Infused Bracer', characterClass: 'Beastlord' });
+    const wristItems = [beastlordWrist.item, ...(beastlordWrist.alternatives || [])];
+    assert.deepEqual(JSON.parse(JSON.stringify(wristItems.map((item) => item.id).sort())), ['117558', '117575']);
+    assert.deepEqual(JSON.parse(JSON.stringify(wristItems.map((item) => item.name))), [
+      'Dreadweave Dragonbrood Wristband', 'Dreadweave Dragonbrood Wristguard',
+    ]);
+    assert.equal(armorFetches.length, 1);
+
+    const warriorHead = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201',
+      name: 'Dread Infused Helm', characterClass: 'Warrior' });
+    assert.equal(warriorHead.item.id, '117463');
+    assert.equal(armorFetches.length, 2);
+    const beastlordHeadCached = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201',
+      name: 'Dread Infused Helm', characterClass: 'Beastlord' });
+    assert.equal(beastlordHeadCached.item.id, '117561');
+    assert.equal(armorFetches.length, 2);
+
+    const groupHead = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81194',
+      name: 'Fear Infused Helm', characterClass: 'Beastlord' });
+    assert.equal(groupHead.item.id, '130001');
+    assert.equal(armorFetches.length, 3);
+    const missingClass = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201',
+      name: 'Dread Infused Helm' });
+    assert.equal(missingClass.ok, false);
+    assert.equal(missingClass.error, 'Set a class on the selected character to resolve this armor token');
+    assert.equal(armorFetches.length, 3);
+
+    const exactIdWins = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201',
+      name: 'Fear Infused Helm', characterClass: 'Beastlord' });
+    assert.equal(exactIdWins.item.id, '117561');
+    assert.equal(armorFetches.length, 3);
+
+    workerStorage.raidlootItemCache = {};
+    armorFixtureMode = 'normal';
+    const tolColdStart = armorFetches.length;
+    const tolHead = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166239',
+      name: 'Faded Bloodied Luclinite Head Armor', characterClass: 'Beastlord' });
+    assert.equal(tolHead.ok, true);
+    assert.equal(armorFetches.length, tolColdStart + 2);
+    const tolHeadItems = [tolHead.item, ...(tolHead.alternatives || [])];
+    assert.equal(tolHeadItems.length, 2);
+    assert.deepEqual(JSON.parse(JSON.stringify(tolHeadItems.map((item) => item.armorSetLabel).sort())), [
+      'Group Tier 3 (Luclinite Ensanguined)', 'Raid Tier 2 (Luclinite Coagulated)',
+    ]);
+    assert.deepEqual(JSON.parse(JSON.stringify(tolHeadItems.map((item) => item.id).sort())), ['220239', '230239']);
+    assert.equal(tolHeadItems.every((item) => item.slotKey.key === 'head'), true);
+    assert.equal(tolHeadItems.every((item) => item.opendkpSourceName === undefined), true);
+    assert.equal(workerStorage.raidlootItemCache[
+      'armor-set:rof-tob-2:group tier 3 luclinite ensanguined:BST'].length, 7);
+    assert.equal(workerStorage.raidlootItemCache[
+      'armor-set:rof-tob-2:raid tier 2 luclinite coagulated:BST'].length, 7);
+
+    const tolWrist = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166236',
+      name: 'Faded Bloodied Luclinite Wrist Armor', characterClass: 'Beastlord' });
+    assert.equal(tolWrist.ok, true);
+    assert.equal(armorFetches.length, tolColdStart + 2);
+    assert.equal([tolWrist.item, ...(tolWrist.alternatives || [])].length, 2);
+
+    const tolWarrior = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166239',
+      name: 'Faded Bloodied Luclinite Head Armor', characterClass: 'Warrior' });
+    assert.equal(tolWarrior.ok, true);
+    assert.equal(armorFetches.length, tolColdStart + 4);
+    assert.equal(tolWarrior.item.name.includes('Warrior'), true);
+    const tolWarriorWrist = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166236',
+      name: 'Faded Bloodied Luclinite Wrist Armor', characterClass: 'Warrior' });
+    assert.equal(tolWarriorWrist.ok, true);
+    assert.equal(armorFetches.length, tolColdStart + 4);
+
+    workerStorage.raidlootItemCache = {};
+    armorFixtureMode = 'tol-partial-fail';
+    const tolPartialStart = armorFetches.length;
+    const tolPartial = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166239',
+      name: 'Faded Bloodied Luclinite Head Armor', characterClass: 'Beastlord' });
+    assert.equal(tolPartial.ok, false);
+    assert.equal(armorFetches.length, tolPartialStart + 2);
+    armorFixtureMode = 'normal';
+    const tolRetry = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166239',
+      name: 'Faded Bloodied Luclinite Head Armor', characterClass: 'Beastlord' });
+    assert.equal(tolRetry.ok, true);
+    assert.equal(armorFetches.length, tolPartialStart + 3);
+    assert.equal([tolRetry.item, ...(tolRetry.alternatives || [])].length, 2);
+    const tolRetryWrist = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166236',
+      name: 'Faded Bloodied Luclinite Wrist Armor', characterClass: 'Beastlord' });
+    assert.equal(tolRetryWrist.ok, true);
+    assert.equal(armorFetches.length, tolPartialStart + 3);
+
+    armorFixtureMode = 'wrong-filter';
+    const filteredArmor = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '72204',
+      name: 'Fear Touched Bracer', characterClass: 'Beastlord' });
+    assert.equal(filteredArmor.item.id, '140001');
+    assert.deepEqual(JSON.parse(JSON.stringify(workerStorage.raidlootItemCache[
+      'armor-set:rof-tob-2:group tier 1 boreal:BST'].map((item) => item.id))), [
+      '140001', '140002', '140003', '140004', '140005', '140006', '140007',
+    ]);
+    armorFixtureMode = 'normal';
+
+    workerStorage.raidlootItemCache = {};
+    const concurrent = await Promise.all([
+      sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201', name: 'Dread Infused Helm', characterClass: 'Beastlord' }),
+      sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81194', name: 'Fear Infused Helm', characterClass: 'Warrior' }),
+    ]);
+    assert.deepEqual(JSON.parse(JSON.stringify(concurrent.map((response) => response.item.id))), ['117561', '130001']);
+    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:raid tier 4 dreadweave:BST'].length, 8);
+    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:group tier 4 frightweave:WAR'].length, 7);
+
+    const ordinaryStart = armorFetches.length;
+    const ordinaryFirst = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '90001', name: 'Cache Blade' });
+    assert.equal(ordinaryFirst.item.id, '90001');
+    assert.equal(armorFetches.length, ordinaryStart + 2);
+    const ordinarySecond = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '90001', name: 'Cache Blade' });
+    assert.equal(ordinarySecond.item.id, '90001');
+    assert.equal(armorFetches.length, ordinaryStart + 2);
+
+    armorFetchMode = 'fail';
+    const failedArmorStart = armorFetches.length;
+    const failedArmorFirst = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '72204',
+      name: 'Fear Touched Bracer', characterClass: 'Beastlord' });
+    const failedArmorSecond = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '72204',
+      name: 'Fear Touched Bracer', characterClass: 'Beastlord' });
+    assert.equal(failedArmorFirst.ok, false);
+    assert.equal(failedArmorSecond.ok, false);
+    assert.equal(armorFetches.length, failedArmorStart + 2);
+    assert.equal(Object.keys(workerStorage.raidlootItemCache).some((key) => key.includes('group tier 1 boreal')), false);
+  } finally {
+    workerContext.fetch = previousFetch;
+    workerContext.chrome.runtime.sendMessage = previousOffscreenMessage;
+    if (previousDOMParser === undefined) delete workerContext.DOMParser;
+    else workerContext.DOMParser = previousDOMParser;
+    if (previousArmorCache === undefined) delete workerStorage.raidlootItemCache;
+    else workerStorage.raidlootItemCache = previousArmorCache;
+  }
   workerStorage.raidlootItemCache = oversizedItemCache;
   const migratedItemCache = await workerContext.getRaidlootItemCache();
   assert.equal(Object.keys(migratedItemCache).length, 256);

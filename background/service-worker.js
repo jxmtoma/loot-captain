@@ -13,7 +13,76 @@ const MAX_WISHLIST_ITEM_BYTES = 128 * 1024;
 const MAX_PROFILE_MUTATION_BYTES = 4 * 1024 * 1024;
 let profileMutationQueue = Promise.resolve();
 
-importScripts('raidloot-parser.js');
+importScripts('raidloot-parser.js', 'armor-token-catalog.js');
+
+const ARMOR_CLASS_NAMES = {
+  WAR: 'Warrior', CLR: 'Cleric', PAL: 'Paladin', RNG: 'Ranger', SHD: 'ShadowKnight',
+  DRU: 'Druid', MNK: 'Monk', BRD: 'Bard', ROG: 'Rogue', SHM: 'Shaman', NEC: 'Necro',
+  WIZ: 'Wizard', MAG: 'Mage', ENC: 'Enchanter', BST: 'Beastlord', BER: 'Berserker',
+};
+const ARMOR_SET_SLOTS = new Set(['head', 'arms', 'wrist', 'hands', 'chest', 'legs', 'feet']);
+const ARMOR_VISIBLE_SLOTS = new Set(['head', 'face', 'shoulders', 'arms', 'back', 'wrist', 'hands', 'chest', 'legs', 'feet', 'waist', 'ear', 'neck']);
+const armorTokenCatalog = globalThis.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG || { catalogVersion: 'missing', items: [] };
+const armorCatalogVersion = String(armorTokenCatalog.catalogVersion || armorTokenCatalog.version || 'missing');
+const armorTokenById = new Map();
+const armorTokenByName = new Map();
+const armorTokenAmbiguousNames = new Set();
+const armorSetRequests = new Map();
+let raidlootCacheMutationQueue = Promise.resolve();
+
+function normalizedLookupName(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function validArmorTokenRecord(value) {
+  if (!value || typeof value !== 'object' || !/^\d{1,12}$/.test(String(value.id || '').trim())) return null;
+  const name = boundedName(String(value.name || ''), true);
+  const slot = parserCanonicalSlot(value.slot);
+  if (!slot || !slot.key || !ARMOR_VISIBLE_SLOTS.has(slot.key)) return null;
+  const setQuery = boundedName(String(value.setQuery || ''), true);
+  if (!setQuery || armorCatalogVersion.length > 80) return null;
+  const expansion = boundedName(String(value.expansion || ''), false);
+  const track = boundedName(String(value.track || ''), false).toLowerCase();
+  const tier = Number.isInteger(value.tier) ? value.tier : String(value.tier || '').trim();
+  if (!expansion || !['group', 'raid'].includes(track) || !Number.isInteger(tier) || tier < 1) return null;
+  const alternatives = value.alternativeSets === undefined ? [] : value.alternativeSets;
+  if (!Array.isArray(alternatives)) return null;
+  const normalizedAlternatives = [];
+  const seenSets = new Set([normalizedLookupName(setQuery)]);
+  for (const alternative of alternatives) {
+    if (!alternative || typeof alternative !== 'object' || typeof alternative.track !== 'string' ||
+        typeof alternative.setQuery !== 'string') return null;
+    const alternativeTrack = boundedName(alternative.track, true).toLowerCase();
+    const alternativeTier = alternative.tier;
+    if (!['group', 'raid'].includes(alternativeTrack) || !Number.isInteger(alternativeTier) || alternativeTier < 1) return null;
+    const alternativeSetQuery = boundedName(alternative.setQuery, true);
+    const setKey = normalizedLookupName(alternativeSetQuery);
+    if (!setKey || seenSets.has(setKey)) return null;
+    seenSets.add(setKey);
+    normalizedAlternatives.push({ track: alternativeTrack, tier: alternativeTier, setQuery: alternativeSetQuery });
+  }
+  return { id: String(value.id).trim(), name, expansion, track, tier, setQuery, slot: slot.key, alternativeSets: normalizedAlternatives };
+}
+
+function buildArmorTokenIndexes() {
+  const values = Array.isArray(armorTokenCatalog.items)
+    ? armorTokenCatalog.items
+    : armorTokenCatalog.items && typeof armorTokenCatalog.items === 'object'
+      ? Object.values(armorTokenCatalog.items) : [];
+  for (const value of values) {
+    let record;
+    try { record = validArmorTokenRecord(value); } catch (e) { continue; }
+    if (!record || armorTokenById.has(record.id)) continue;
+    armorTokenById.set(record.id, record);
+    const key = normalizedLookupName(record.name);
+    if (!key) continue;
+    const matches = armorTokenByName.get(key) || [];
+    matches.push(record);
+    armorTokenByName.set(key, matches);
+    if (matches.length > 1) armorTokenAmbiguousNames.add(key);
+  }
+}
+buildArmorTokenIndexes();
 
 // ---------- Storage helpers ----------
 async function storageGet(key, def) {
@@ -91,7 +160,7 @@ async function getRaidlootItemCache() {
     const cache = await storageGet(RAIDLOOT_ITEM_CACHE_KEY, {});
     const validCache = cache && typeof cache === 'object' ? cache : {};
     const trimmedCache = trimRaidlootItemCache(validCache);
-    if (Object.keys(trimmedCache).length !== Object.keys(validCache).length) await saveRaidlootItemCache(trimmedCache);
+    if (Object.keys(trimmedCache).length !== Object.keys(validCache).length) return updateRaidlootItemCache(() => {});
     return trimmedCache;
   } catch (e) {
     return {};
@@ -115,6 +184,136 @@ async function saveRaidlootItemCache(cache) {
   try {
     await chrome.storage.local.set({ [RAIDLOOT_ITEM_CACHE_KEY]: trimRaidlootItemCache(cache) });
   } catch (e) {}
+}
+
+function updateRaidlootItemCache(updater) {
+  const mutation = raidlootCacheMutationQueue.then(async () => {
+    let cache = {};
+    try {
+      const stored = await storageGet(RAIDLOOT_ITEM_CACHE_KEY, {});
+      cache = trimRaidlootItemCache(stored && typeof stored === 'object' ? stored : {});
+    } catch (e) {}
+    await updater(cache);
+    await saveRaidlootItemCache(cache);
+    return cache;
+  });
+  raidlootCacheMutationQueue = mutation.catch(() => {});
+  return mutation;
+}
+
+function normalizeArmorClass(value) {
+  return typeof parserNormalizeClass === 'function' ? parserNormalizeClass(value) : '';
+}
+
+function armorTokenRecord(itemId, name) {
+  if (itemId !== undefined && itemId !== '') {
+    const exact = armorTokenById.get(String(itemId).trim());
+    if (exact) return exact;
+  }
+  const matches = armorTokenByName.get(normalizedLookupName(name)) || [];
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function armorTokenNameIsAmbiguous(name) {
+  return armorTokenAmbiguousNames.has(normalizedLookupName(name));
+}
+
+function armorSetCacheKey(set, characterClass) {
+  return 'armor-set:' + armorCatalogVersion + ':' + normalizedLookupName(set.setQuery) + ':' + characterClass;
+}
+
+function armorSetUrl(set, characterClass) {
+  return 'https://www.raidloot.com/items?name=' + encodeURIComponent(set.setQuery) +
+    '&class=' + encodeURIComponent(ARMOR_CLASS_NAMES[characterClass] || characterClass) + '&view=Table';
+}
+
+function armorSetItemInSet(item, record, characterClass) {
+  if (!item || !/^\d{1,12}$/.test(String(item.id || '')) || !item.name || String(item.name).length > MAX_NAME_LENGTH) return false;
+  const slot = parserCanonicalSlot(item.slot);
+  if (!slot || !slot.key || !ARMOR_VISIBLE_SLOTS.has(slot.key) || !item.slotKey || slot.key !== item.slotKey.key) return false;
+  if (!hasItemData(item)) return false;
+  if (!Array.isArray(item.classes) || !item.classes.length || (!item.classes.includes('ALL') && !item.classes.includes(characterClass))) return false;
+  const metadata = [item.setQuery, ...Object.entries(item.stats || {}).filter(([key]) => /^(?:quest|set|setname)$/i.test(key))
+    .map(([, value]) => value && typeof value === 'object' ? (value.raw || value.text || value.name || '') : value)]
+    .filter(Boolean).join(' ');
+  return !!metadata && normalizedLookupName(metadata).includes(normalizedLookupName(record.setQuery));
+}
+
+function armorSetItemMatches(item, record, set, characterClass) {
+  return !!item && item.slotKey && item.slotKey.key === record.slot && armorSetItemInSet(item, set, characterClass);
+}
+
+function completeArmorSet(items, set, characterClass) {
+  if (!Array.isArray(items) || !items.length) return false;
+  const slots = new Set();
+  for (const item of items) {
+    if (!armorSetItemInSet(item, set, characterClass)) return false;
+    slots.add(item.slotKey.key);
+  }
+  return [...ARMOR_SET_SLOTS].every((slot) => slots.has(slot));
+}
+
+async function fetchArmorSet(set, characterClass, cacheKey) {
+  if (armorSetRequests.has(cacheKey)) return armorSetRequests.get(cacheKey);
+  const request = (async () => {
+    const html = await fetchText(armorSetUrl(set, characterClass));
+    const items = await parseHtmlInOffscreen({ type: 'PARSE_ITEM_SET', html });
+    if (!Array.isArray(items)) throw new Error('RaidLoot armor set response was invalid');
+    const validItems = items.filter((item) => armorSetItemInSet(item, set, characterClass));
+    if (!completeArmorSet(validItems, set, characterClass)) throw new Error('RaidLoot armor set response was incomplete');
+    return validItems;
+  })().finally(() => armorSetRequests.delete(cacheKey));
+  armorSetRequests.set(cacheKey, request);
+  return request;
+}
+
+async function resolveArmorToken(record, characterClass, itemCache) {
+  const sets = [{ track: record.track, tier: record.tier, setQuery: record.setQuery }, ...(record.alternativeSets || [])];
+  const uniqueSets = [...new Map(sets.map((set) => [normalizedLookupName(set.setQuery), set])).values()];
+  const settledSets = await Promise.allSettled(uniqueSets.map(async (set) => {
+    const cacheKey = armorSetCacheKey(set, characterClass);
+    let setItems = itemCache[cacheKey];
+    if (!completeArmorSet(setItems, set, characterClass)) {
+      setItems = await fetchArmorSet(set, characterClass, cacheKey);
+      if (!setItems.length) throw new Error('RaidLoot armor set item not found: ' + record.name + ' (' + set.setQuery + ')');
+      await updateRaidlootItemCache((cache) => {
+        if (!completeArmorSet(cache[cacheKey], set, characterClass)) cache[cacheKey] = setItems;
+      });
+      itemCache[cacheKey] = setItems;
+    }
+    const matches = setItems.filter((item) => armorSetItemMatches(item, record, set, characterClass));
+    if (!matches.length) throw new Error('RaidLoot armor set item not found: ' + record.name + ' (' + set.setQuery + ')');
+    return { set, matches };
+  }));
+  const failedSet = settledSets.find((result) => result.status === 'rejected');
+  if (failedSet) throw failedSet.reason;
+  const loadedSets = settledSets.map((result) => result.value);
+  const matches = [...new Map(loadedSets.flatMap(({ set, matches: setMatches }) => setMatches.map((item) => [String(item.id), {
+    ...item,
+    armorSetLabel: set.setQuery,
+  }]))).values()]
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)) || String(a.armorSetLabel).localeCompare(String(b.armorSetLabel)) || String(a.id).localeCompare(String(b.id)));
+  if (!matches.length) throw new Error('RaidLoot armor set item not found: ' + record.name);
+  return { item: matches[0], alternatives: matches.slice(1) };
+}
+
+async function lookupOrdinaryItem(name, sourceId) {
+  const itemCache = await getRaidlootItemCache();
+  const cachedById = sourceId && itemCache[raidlootCacheKey({ id: sourceId })];
+  if (cachedById && sameItemName(cachedById.name, name)) return cachedById;
+  const key = raidlootCacheKey({ name });
+  const cached = key && itemCache[key];
+  if (cached && sameItemName(cached.name, name)) return cached;
+  const item = await lookupItemStats(name);
+  if (item && (hasItemData(item) || item.icon)) {
+    await updateRaidlootItemCache((cache) => {
+      const idKey = raidlootCacheKey({ id: item.id });
+      const nameKey = raidlootCacheKey({ name: item.name });
+      if (idKey) cache[idKey] = item;
+      if (nameKey) cache[nameKey] = item;
+    });
+  }
+  return item;
 }
 
 async function lookupItemStats(name) {
@@ -441,22 +640,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }));
         const cacheUpdates = results.filter((result) => result.cacheItem);
         if (cacheUpdates.length) {
-          for (const result of cacheUpdates) {
-            const item = result.cacheItem;
-            const idKey = raidlootCacheKey({ id: item.id });
-            const nameKey = raidlootCacheKey({ name: item.name });
-            if (idKey) itemCache[idKey] = item;
-            if (nameKey) itemCache[nameKey] = item;
-          }
-          await saveRaidlootItemCache(itemCache);
+          await updateRaidlootItemCache((cache) => {
+            for (const result of cacheUpdates) {
+              const item = result.cacheItem;
+              const idKey = raidlootCacheKey({ id: item.id });
+              const nameKey = raidlootCacheKey({ name: item.name });
+              if (idKey) cache[idKey] = item;
+              if (nameKey) cache[nameKey] = item;
+            }
+          });
         }
         sendResponse({ ok: true, items: results.map((result) => result.item), debug: results.map((result) => result.debug) });
         break;
       }
       case 'LOOKUP_ITEM_STATS': {
         const name = boundedName(msg.name, true);
-        if (msg.itemId !== undefined && msg.itemId !== '') numericId(msg.itemId, 'item ID');
-        const item = await lookupItemStats(name);
+        const itemId = msg.itemId !== undefined && msg.itemId !== '' ? numericId(msg.itemId, 'item ID') : '';
+        const token = armorTokenRecord(itemId, name);
+        if (!token && armorTokenNameIsAmbiguous(name)) {
+          sendResponse({ ok: false, error: 'Armor token name is ambiguous; use its item ID to resolve it' });
+          break;
+        }
+        if (token) {
+          const characterClass = normalizeArmorClass(msg.characterClass);
+          if (!characterClass) {
+            sendResponse({ ok: false, error: 'Set a class on the selected character to resolve this armor token' });
+            break;
+          }
+          const itemCache = await getRaidlootItemCache();
+          const resolved = await resolveArmorToken(token, characterClass, itemCache);
+          sendResponse({ ok: true, item: resolved.item, alternatives: resolved.alternatives });
+          break;
+        }
+        const item = await lookupOrdinaryItem(name, itemId);
         sendResponse({ ok: true, item });
         break;
       }

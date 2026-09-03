@@ -18,6 +18,7 @@ Profiles do not require a RaidLoot account. A profile can be created manually or
 - Show OpenDKP item differences in item detail pages, tables, and hover popups.
 - Normalize common EverQuest stat and slot names before comparison, including heroic stats and regen values.
 - Reuse fetched RaidLoot stats in the local profile and current page session.
+- Resolve statless armor tokens by selected character class and cache each public RaidLoot armor-set result locally.
 - Keep the profile data local; RaidLoot is used only as the public source for item stats.
 - Use an original dark-fantasy RPG visual language: slate/stone surfaces, bronze-gold accents, and restrained teal highlights.
 
@@ -26,6 +27,7 @@ Profiles do not require a RaidLoot account. A profile can be created manually or
 - `storage` for local profiles and fetched item data.
 - `offscreen` for DOMParser-based RaidLoot HTML parsing from the MV3 service worker.
 - `www.raidloot.com` host access for public profile/item reads.
+- Allakhazam and EQResource are developer-time catalog sources only; the extension never contacts them.
 - OpenDKP content-script matches for page annotations; no OpenDKP host permission is requested.
 - A page-world request bridge for OpenDKP sites that load item data through their app API.
 

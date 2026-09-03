@@ -288,6 +288,14 @@ function parseSearchItem(html, name) {
   return node ? parseItemNode(node) : null;
 }
 
+function parseItemSet(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return Array.from(doc.querySelectorAll('div.item[data-id]')).map((node) => {
+    const item = parseItemNode(node);
+    return item;
+  }).filter(Boolean);
+}
+
 function parseItemNode(node) {
   if (!node) return null;
   const id = node.dataset && node.dataset.id ? node.dataset.id : (node.id || '').replace(/^item/, '');
@@ -344,7 +352,10 @@ function parseItemNode(node) {
   const isAugment = (node.classList && node.classList.contains('augment')) || /^aug_/i.test((stats.Type && stats.Type.raw) || '');
   const augmentTypes = parserAugmentTypes(node.textContent);
   if (isAugment) slot = parserAugmentLocation(stats.Slot && stats.Slot.raw) || parserAugmentLocation(node.textContent) || slot;
+  const sourceText = String(node.querySelector('.itemdrop')?.textContent || '');
+  const setMatch = sourceText.match(/\bQuest:\s*(.+?)\s+in\s+.+?\s+Armor Sets\b/i);
+  const setQuery = setMatch ? setMatch[1].trim() : '';
   const isWishlist = !!node.querySelector('.wish-remove');
   const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects), isAugment, augmentTypes, augSlot: isAugment ? parserAugmentSlot(node, node.textContent) : '', isWishlist, isTotalsRow };
+  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects), setQuery, isAugment, augmentTypes, augSlot: isAugment ? parserAugmentSlot(node, node.textContent) : '', isWishlist, isTotalsRow };
 }

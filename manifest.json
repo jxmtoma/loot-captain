@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Loot Captain",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Compare EverQuest gear on RaidLoot and OpenDKP against local character profiles.",
   "homepage_url": "https://jxmtoma.github.io/loot-captain/",
   "minimum_chrome_version": "109",

@@ -32,6 +32,8 @@
     '.lc-wishlist-toggle:disabled{cursor:wait;opacity:.65;}',
     '.lc-wanted:not(tr){outline:2px solid rgba(224,188,104,.8) !important;outline-offset:1px;background-color:rgba(132,101,35,.12) !important;}',
     'tr.lc-wanted > td{background-image:linear-gradient(rgba(132,101,35,.22),rgba(132,101,35,.22)) !important;}',
+    // The auction tab's nav link paints its own theme background over ours.
+    '.p-tabview-nav-link.lc-wanted{background-image:linear-gradient(rgba(132,101,35,.3),rgba(132,101,35,.3)) !important;}',
     '.lc-wishlist-compare-panel > .lc-compare-panel{margin:6px 0 0;box-shadow:none;}',
     '.lc-wishlist-picker{display:flex;align-items:center;gap:8px;color:#e0b96b;font-weight:bold;}',
     '.lc-wishlist-picker select{max-width:360px;background:#101d2e;color:#f0d18a;border:1px solid #8b7547;font:inherit;padding:2px 4px;}',

@@ -19,10 +19,19 @@ Loot Captain helps you:
 - Handle paired ear, wrist, and finger slots automatically.
 - Save a local wishlist and highlight wanted items in RaidLoot and OpenDKP auctions.
 - Fill in missing item stats from public RaidLoot pages.
+- Resolve statless armor tokens through 357 offline, source-reviewed mappings covering RoF plus CoTF through ToB.
 
 Profiles and settings stay in browser-local storage. Loot Captain has no account, analytics, tracking, advertising, or remote code.
 
 Support ongoing development: https://github.com/sponsors/jxmtoma
+
+### What's new in 0.2.0
+
+- Added 357 statless armor-token mappings covering RoF plus CoTF through ToB.
+- Added class-specific RaidLoot caching and native variants, plus ordinary lookup caching.
+- Added OpenDKP live-auction tab badges and wanted-item highlights, with name-slot parsing fixes.
+
+The armor catalog uses offline, source-reviewed definitions; it does not use a live crawler or request new permissions. Incomplete or unavailable RaidLoot sets remain unresolved.
 
 ### Category and language
 
@@ -45,7 +54,7 @@ Support ongoing development: https://github.com/sponsors/jxmtoma
 Use these values in the Developer Dashboard and keep them consistent with [the privacy policy](privacy-policy.md):
 
 - Single purpose: the description above.
-- Data collected: no developer-side collection, sale, advertising, analytics, or tracking. The extension handles character/profile names, user-entered/imported gear profiles, per-character wishlist item identities and cached stats/effects, selected-character settings, and public RaidLoot results in browser-local storage. Current-page item names and stats are read locally; item names may be sent automatically to RaidLoot when an import, profile open, wishlist enrichment, or comparison needs missing stats.
+- Data collected: no developer-side collection, sale, advertising, analytics, or tracking. The extension handles character/profile names, user-entered/imported gear profiles, per-character wishlist item identities and cached stats/effects, selected-character settings, and public RaidLoot results in browser-local storage. Current-page item names and stats are read locally; item names may be sent automatically to RaidLoot when an import, profile open, wishlist enrichment, or comparison needs missing stats. On a class-specific statless armor-token cache miss, the selected character class and public armor-set query may also be sent to RaidLoot; the result is cached locally.
 - Personally identifiable information: `Yes` — character/profile names are handled locally in extension storage and are not sent to the developer.
 - Health or financial information: `No`.
 - Authentication information: `No`.
@@ -71,3 +80,11 @@ The repository includes current, correctly sized PNGs in `store-assets/`:
 | `promo-marquee-1400x560.png` | 1400 × 560 | Marquee promo tile |
 
 The store icon is `icons/icon128.png`. A YouTube promotional video link remains a manual listing step because no video is included in this repository.
+
+## Release submission checklist for 0.2.0
+
+- Run `node tests/regression.js`.
+- Run `python3 tools/generate_armor_token_catalog.py --check`.
+- Run `./tools/package-extension.sh` and confirm `dist/loot-captain-v0.2.0.zip`.
+- Load unpacked for a smoke test, profile switch, and variant check before manually uploading to the Chrome Web Store / Edge.
+- Verify the hosted privacy policy before submission.
