@@ -256,7 +256,7 @@
   }
 
   function removeComparisonUI(host) {
-    host.querySelectorAll(':scope > .lc-badge, :scope > .lc-compare-panel:not(.lc-wishlist-compare-panel)').forEach((el) => el.remove());
+    host.querySelectorAll(':scope > .lc-badge, :scope > .lc-compare-panel:not(.lc-wishlist-compare-panel):not(.lc-character-picker-panel)').forEach((el) => el.remove());
   }
 
   function addArmorVariantPicker(host, candidates, render) {
@@ -364,7 +364,7 @@
         rowBadge.addEventListener('click', (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
-          const existing = host.querySelector(':scope > .lc-compare-panel:not(.lc-wishlist-compare-panel)');
+          const existing = host.querySelector(':scope > .lc-compare-panel:not(.lc-wishlist-compare-panel):not(.lc-character-picker-panel)');
           if (existing) {
             const same = rowBadge.dataset.lcProfile
               ? (existing.dataset.lcView === rowBadge.dataset.lcView &&
@@ -562,6 +562,7 @@
     if (started) return;
     started = true;
     LC.ui.injectCSS();
+    LC.ui.registerOutsideClose();
     await LC.state.loadAndCacheProfile();
     annotatePage();
     const mo = new MutationObserver((records) => {
@@ -580,7 +581,7 @@
     }, true);
     window.addEventListener('hashchange', () => {
       annotationGeneration++;
-      document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare, .lc-armor-variant-picker, .lc-armor-variant-select').forEach((el) => el.remove());
+      document.querySelectorAll('.lc-badge, .lc-compare-panel:not(.lc-character-picker-panel), .lc-wishlist-toggle, .lc-wishlist-compare, .lc-armor-variant-picker, .lc-armor-variant-select').forEach((el) => el.remove());
       document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));
       scheduleAnnotate(true);
     });
@@ -597,8 +598,8 @@
     const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula'].some((k) => changes[k]);
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
-    // Clear badges and re-annotate
-    document.querySelectorAll('.lc-badge, .lc-compare-panel, .lc-wishlist-toggle, .lc-wishlist-compare, .lc-armor-variant-picker, .lc-armor-variant-select').forEach((el) => el.remove());
+    // Clear badges and re-annotate (keep any open character picker alive)
+    document.querySelectorAll('.lc-badge, .lc-compare-panel:not(.lc-character-picker-panel), .lc-wishlist-toggle, .lc-wishlist-compare, .lc-armor-variant-picker, .lc-armor-variant-select').forEach((el) => el.remove());
     document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));
     annotatePage(true);
   });

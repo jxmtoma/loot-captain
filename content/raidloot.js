@@ -19,6 +19,7 @@
     if (started || !(await hasConsent())) return;
     started = true;
     LC.ui.injectCSS();
+    LC.ui.registerOutsideClose();
     await LC.state.loadAndCacheProfile();
     rerunPageAnnotations();
     const mo = new MutationObserver((records) => {
@@ -103,7 +104,7 @@
       if (attachPanel) rowBadge.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        const existing = host.querySelector(':scope > .lc-compare-panel');
+        const existing = host.querySelector(':scope > .lc-compare-panel:not(.lc-character-picker-panel)');
         if (existing) {
           const same = existing.dataset.lcView === rowBadge.dataset.lcView &&
             (expanded
@@ -184,7 +185,7 @@
         if (attachPanel) rowBadge.addEventListener('click', (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
-          const existing = host.querySelector(':scope > .lc-compare-panel');
+          const existing = host.querySelector(':scope > .lc-compare-panel:not(.lc-character-picker-panel)');
           if (existing) {
             const same = existing.dataset.lcView === rowBadge.dataset.lcView && existing.dataset.lcRow === String(index);
             existing.remove();
@@ -358,10 +359,12 @@
         icon.appendChild(meta);
       }
       if (LC.currentProfiles.length) {
+        // Anchor the picker to the icon (not the meta row): re-annotation
+        // rebuilds the meta, and the picker must survive selecting a character.
         meta.appendChild(LC.ui.buildWishlistToggle(localCandidate, LC.currentProfiles.map((profile) => ({
           profile,
           wanted: wantedProfiles.includes(profile),
-        }))));
+        })), icon));
       }
       const badge = document.createElement('span');
       badge.className = 'lc-badge';
@@ -459,7 +462,7 @@
   // ---------- Rerun ----------
   function rerunPageAnnotations(clearPanels) {
     const selectors = ['.lc-badge', '.lc-compare-row', '.lc-wishlist-toggle', '.lc-wishlist-compare', '.lc-wish-meta', '.lc-stat-indicator'];
-    if (clearPanels) selectors.push('.lc-compare-panel');
+    if (clearPanels) selectors.push('.lc-compare-panel:not(.lc-character-picker-panel)');
     document.querySelectorAll(selectors.join(', '))
       .forEach((el) => el.remove());
     document.querySelectorAll('.lc-wanted').forEach((el) => el.classList.remove('lc-wanted'));

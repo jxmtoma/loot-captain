@@ -290,13 +290,32 @@
     button.title = button.dataset.lcMulti ? 'Wishlist (pick a character)' : 'Wishlist';
   }
 
+  // ---------- Outside-click panel dismissal ----------
+  // Closes any open Loot Captain panel (compare panel, wishlist panel,
+  // character picker, compare row) when clicking somewhere else on the page.
+  // Clicks inside a panel or on the badge/toggle that can open one are
+  // ignored, so the toggles keep their own open/close behavior.
+  let outsideCloseInstalled = false;
+  function registerOutsideClose() {
+    if (outsideCloseInstalled) return;
+    outsideCloseInstalled = true;
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!target || typeof target.closest !== 'function') return;
+      if (target.closest('.lc-compare-panel, .lc-compare-row, .lc-badge, .lc-wishlist-toggle, .lc-wishlist-compare')) return;
+      document.querySelectorAll('.lc-compare-panel, .lc-compare-row').forEach((el) => el.remove());
+    }, true);
+  }
+
   // One wishlist star per item. profiles: [{ profile, wanted }]. Characters
   // that cannot wear the item (class or required level) are excluded, and if
   // none can wear it the star renders disabled. With a single eligible
   // character the star toggles directly; with several, clicking opens a
   // picker so the user can choose which character's wishlist to update. The
-  // picker also closes when clicking anywhere outside it.
-  function buildWishlistToggle(cand, profiles) {
+  // picker closes when clicking anywhere outside it (registerOutsideClose)
+  // and stays open while toggling characters inside it. pickerHost anchors
+  // the picker when the toggle's own parent is rebuilt on re-annotation.
+  function buildWishlistToggle(cand, profiles, pickerHost) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-toggle';
@@ -316,22 +335,11 @@
       event.stopPropagation();
       if (button.disabled) return;
       if (multi) {
-        const host = button.parentNode;
+        const host = pickerHost || button.parentNode;
         const existing = host && host.querySelector(':scope > .lc-character-picker-panel');
         if (existing) { existing.remove(); return; }
         if (!host) return;
-        const picker = buildWishlistCharacterPicker(cand, eligible, button);
-        host.appendChild(picker);
-        const onDocClick = (event) => {
-          if (!picker.isConnected) {
-            document.removeEventListener('click', onDocClick, true);
-            return;
-          }
-          if (picker.contains(event.target) || button.contains(event.target)) return;
-          picker.remove();
-          document.removeEventListener('click', onDocClick, true);
-        };
-        document.addEventListener('click', onDocClick, true);
+        host.appendChild(buildWishlistCharacterPicker(cand, eligible, button));
         return;
       }
       button.disabled = true;
@@ -880,6 +888,7 @@
     buildPerCharacterBadges,
     buildMultiComparePanel,
     multiComparisonSummary,
+    registerOutsideClose,
     addStatIndicators,
     statifyItemDetail,
   };

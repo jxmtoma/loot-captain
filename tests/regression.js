@@ -148,7 +148,7 @@ assert.match(opendkpSource, /const cacheKey = key \+ '\\|' \+ \(cls \|\| 'none'\
 assert.match(opendkpSource, /lc-armor-variant-select/);
 assert.match(opendkpSource, /const LC_UI_SELECTOR = .*lc-armor-variant-picker/);
 assert.match(opendkpSource, /const onlyExtensionChanges = records\.every/);
-assert.match(opendkpSource, /document\.querySelectorAll\('\.lc-badge, \.lc-compare-panel, \.lc-wishlist-toggle, \.lc-wishlist-compare, \.lc-armor-variant-picker, \.lc-armor-variant-select'\)/);
+assert.match(opendkpSource, /document\.querySelectorAll\('\.lc-badge, \.lc-compare-panel:not\(\.lc-character-picker-panel\), \.lc-wishlist-toggle, \.lc-wishlist-compare, \.lc-armor-variant-picker, \.lc-armor-variant-select'\)/);
 assert.match(opendkpSource, /name: cand\.opendkpSourceName/);
 assert.match(opendkpSource, /raidlootId: '',/);
 assert.doesNotMatch(read('content/shared/ui.js'), /return arrow \+ ' ' \+ fmtDelta\(diff\.score\) \+ ' ' \+ formula\.label/);
@@ -180,7 +180,13 @@ assert.match(read('content/shared/ui.js'), /buildMultiFocusBadge/);
 assert.match(read('content/shared/ui.js'), /buildMultiProcBadge/);
 assert.match(read('content/shared/ui.js'), /lc-compare-chips/);
 assert.match(read('content/shared/ui.js'), /lc-character-picker-panel/);
-assert.match(read('content/shared/ui.js'), /onDocClick/);
+assert.match(read('content/shared/ui.js'), /registerOutsideClose/);
+assert.match(raidlootSource, /registerOutsideClose/);
+assert.match(opendkpSource, /registerOutsideClose/);
+// The character picker survives re-annotation so it stays open while the
+// user selects characters; outside clicks still close every panel.
+assert.match(raidlootSource, /\.lc-compare-panel:not\(\.lc-character-picker-panel\)/);
+assert.match(opendkpSource, /\.lc-compare-panel:not\(\.lc-character-picker-panel\)/);
 assert.match(read('content/shared/ui.js'), /No selected character can wear this item/);
 assert.match(read('content/shared/parser.js'), /canWear/);
 assert.match(read('content/shared/state.js'), /canWear\(candidate, profile\)/);
