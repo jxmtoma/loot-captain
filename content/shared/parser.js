@@ -206,6 +206,35 @@
     return !normalized || allowedClasses.includes(normalized);
   }
 
+  // The item's required level, when the source states one. RaidLoot labels
+  // "Required Level" as non-numeric (num is null), so fall back to the raw
+  // text; OpenDKP tooltips parse the number directly.
+  function itemRequiredLevel(item) {
+    const stats = item && item.stats || {};
+    for (const key of Object.keys(stats)) {
+      if (!/^(?:required|req\.?|min\.?)\s*level$|^level\s*(?:required|req)/i.test(key)) continue;
+      const entry = stats[key];
+      const num = entry && typeof entry === 'object' && 'num' in entry ? entry.num : parseFloat(entry);
+      if (num != null && !isNaN(num)) return num;
+      const raw = entry && entry.raw != null ? String(entry.raw) : String(entry || '');
+      const parsed = parseFloat((raw.match(/\d+/) || [])[0]);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return null;
+  }
+
+  // Whether a character can wear an item: the item's class list (empty = all
+  // classes) must include the character's class, and the character must meet
+  // the item's required level when both are known.
+  function canWear(item, profile) {
+    if (!item || !profile) return false;
+    if (!classMatches(profile.cls, item.classes)) return false;
+    const level = itemRequiredLevel(item);
+    const characterLevel = Number(profile.level);
+    if (level != null && !isNaN(characterLevel) && characterLevel > 0 && characterLevel < level) return false;
+    return true;
+  }
+
   function getField(obj, name) {
     if (!obj || typeof obj !== 'object') return undefined;
     if (name in obj) return obj[name];
@@ -442,6 +471,8 @@
     normalizeClass,
     parseClasses,
     classMatches,
+    itemRequiredLevel,
+    canWear,
     canonicalEffectType,
     normalizeEffects,
     parseStructuredEffects,

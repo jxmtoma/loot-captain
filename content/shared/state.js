@@ -240,9 +240,12 @@
 
   // Wishlist comparison targets across every selected character, paired with
   // the character that wants them (for level-aware diffing and enrichment).
+  // Characters that cannot wear the candidate item are skipped, since the
+  // comparison would be meaningless for them.
   function wishlistTargetPairs(profiles, candidate) {
     const pairs = [];
     for (const profile of profiles || []) {
+      if (!LC.parser.canWear(candidate, profile)) continue;
       for (const target of wishlistTargets(profile, candidate)) {
         pairs.push({ target, profile });
       }

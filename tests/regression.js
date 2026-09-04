@@ -180,6 +180,10 @@ assert.match(read('content/shared/ui.js'), /buildMultiFocusBadge/);
 assert.match(read('content/shared/ui.js'), /buildMultiProcBadge/);
 assert.match(read('content/shared/ui.js'), /lc-compare-chips/);
 assert.match(read('content/shared/ui.js'), /lc-character-picker-panel/);
+assert.match(read('content/shared/ui.js'), /onDocClick/);
+assert.match(read('content/shared/ui.js'), /No selected character can wear this item/);
+assert.match(read('content/shared/parser.js'), /canWear/);
+assert.match(read('content/shared/state.js'), /canWear\(candidate, profile\)/);
 assert.match(raidlootSource, /compareCandidateMulti/);
 assert.match(raidlootSource, /'compareProfileIds'/);
 assert.match(raidlootSource, /'compareBadgeLayout'/);
@@ -1117,6 +1121,18 @@ const targetPairs = state.wishlistTargetPairs(
 assert.equal(targetPairs.length, 2);
 assert.equal(targetPairs[0].profile.id, 'p');
 assert.equal(targetPairs[1].profile.id, 'q');
+// Wishlist eligibility: class list and required level gate who can wear an
+// item, so the wishlist star only offers characters that can equip it.
+const warItem = { classes: ['WAR'], stats: { 'Required Level': { raw: '100', num: null } } };
+assert.equal(LC.parser.canWear(warItem, { cls: 'Warrior', level: 100 }), true);
+assert.equal(LC.parser.canWear(warItem, { cls: 'Warrior', level: 90 }), false);
+assert.equal(LC.parser.canWear(warItem, { cls: 'Cleric', level: 125 }), false);
+assert.equal(LC.parser.canWear(warItem, { cls: 'Warrior' }), true);
+assert.equal(LC.parser.canWear({ classes: [], stats: {} }, { cls: 'Bard', level: 50 }), true);
+assert.equal(LC.parser.canWear({ classes: ['CLR'], stats: { 'Required Level': { raw: '125', num: 125 } } },
+  { cls: 'Cleric', level: 120 }), false);
+assert.equal(LC.parser.itemRequiredLevel({ stats: { 'Required Level': { raw: '75', num: null } } }), 75);
+assert.equal(LC.parser.itemRequiredLevel({ stats: { HP: { raw: '100', num: 100 } } }), null);
 assert.equal(state.compatibleWishlistItem(
   { isAugment: true, augmentTypes: [7] },
   { isAugment: true, augmentTypes: ['7', '8'] },

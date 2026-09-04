@@ -290,16 +290,27 @@
     button.title = button.dataset.lcMulti ? 'Wishlist (pick a character)' : 'Wishlist';
   }
 
-  // One wishlist star per item. profiles: [{ profile, wanted }]. With a single
-  // character the star toggles directly; with several, clicking opens a picker
-  // so the user can choose which character's wishlist to update.
+  // One wishlist star per item. profiles: [{ profile, wanted }]. Characters
+  // that cannot wear the item (class or required level) are excluded, and if
+  // none can wear it the star renders disabled. With a single eligible
+  // character the star toggles directly; with several, clicking opens a
+  // picker so the user can choose which character's wishlist to update. The
+  // picker also closes when clicking anywhere outside it.
   function buildWishlistToggle(cand, profiles) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-toggle';
-    const multi = profiles.length > 1;
+    const eligible = profiles.filter((entry) => LC.parser.canWear(cand, entry.profile));
+    if (!eligible.length) {
+      button.disabled = true;
+      button.setAttribute('aria-disabled', 'true');
+      button.textContent = '☆';
+      button.title = 'No selected character can wear this item';
+      return button;
+    }
+    const multi = eligible.length > 1;
     if (multi) button.dataset.lcMulti = '1';
-    setWishlistToggleState(button, profiles.some((entry) => entry.wanted));
+    setWishlistToggleState(button, eligible.some((entry) => entry.wanted));
     button.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -308,16 +319,28 @@
         const host = button.parentNode;
         const existing = host && host.querySelector(':scope > .lc-character-picker-panel');
         if (existing) { existing.remove(); return; }
-        if (host) host.appendChild(buildWishlistCharacterPicker(cand, profiles, button));
+        if (!host) return;
+        const picker = buildWishlistCharacterPicker(cand, eligible, button);
+        host.appendChild(picker);
+        const onDocClick = (event) => {
+          if (!picker.isConnected) {
+            document.removeEventListener('click', onDocClick, true);
+            return;
+          }
+          if (picker.contains(event.target) || button.contains(event.target)) return;
+          picker.remove();
+          document.removeEventListener('click', onDocClick, true);
+        };
+        document.addEventListener('click', onDocClick, true);
         return;
       }
       button.disabled = true;
       try {
-        const entry = profiles[0];
+        const entry = eligible[0];
         const result = await LC.state.toggleWishlist(cand, entry && entry.profile.id);
         if (result.ok) {
           if (entry) entry.wanted = result.wanted;
-          setWishlistToggleState(button, profiles.some((item) => item.wanted));
+          setWishlistToggleState(button, eligible.some((item) => item.wanted));
         } else {
           button.title = 'Could not update the wishlist';
         }
