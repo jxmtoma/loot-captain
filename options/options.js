@@ -1,7 +1,7 @@
 // Loot Captain - options page (profile manager)
 
 const PROFILES_KEY = 'profiles';
-const SELECTED_KEY = 'selectedProfileId';
+const COMPARE_KEY = 'compareProfileIds';
 const SCORE_KEY = 'scoreFormula';
 const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
@@ -37,7 +37,7 @@ const EQUIPMENT_SLOTS = [
 
 // ---------- State ----------
 let profiles = {};   // { id: { id, name, cls, level, items: [] } }
-let selectedId = '';
+let compareIds = []; // characters picked for comparison (see popup multi-select)
 let scoreFormula = DEFAULT_FORMULA_KEY;
 let editingId = null; // null = list view, 'new' = creating, else editing that id
 let editingProfile = null; // working copy while editing
@@ -49,9 +49,9 @@ let refreshingProfileId = '';
 
 // ---------- Storage ----------
 async function loadAll() {
-  const res = await chrome.storage.local.get([PROFILES_KEY, SELECTED_KEY, SCORE_KEY]);
+  const res = await chrome.storage.local.get([PROFILES_KEY, COMPARE_KEY, SCORE_KEY]);
   profiles = res[PROFILES_KEY] || {};
-  selectedId = res[SELECTED_KEY] || '';
+  compareIds = Array.isArray(res[COMPARE_KEY]) ? res[COMPARE_KEY] : [];
   scoreFormula = SCORE_FORMULAS.some((formula) => formula.key === res[SCORE_KEY]) ? res[SCORE_KEY] : DEFAULT_FORMULA_KEY;
 }
 async function saveAll(changedIds = [], deletedIds = []) {
@@ -61,7 +61,7 @@ async function saveAll(changedIds = [], deletedIds = []) {
     if (!response || !response.ok) throw new Error(response && response.error || 'Could not save profiles');
     profiles = response.profiles || profiles;
   }
-  await chrome.storage.local.set({ [SELECTED_KEY]: selectedId, [SCORE_KEY]: scoreFormula });
+  await chrome.storage.local.set({ [SCORE_KEY]: scoreFormula });
 }
 
 function appendDebugLog(entries) {
@@ -145,14 +145,33 @@ function renderProfileList() {
       openEditor(id);
     });
     actions.appendChild(manageBtn);
-    const selectBtn = el('button', 'profile-select' + (id === selectedId ? ' selected' : ''), id === selectedId ? '✓ Active' : 'Select');
-    selectBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      selectedId = id;
-      await saveAll();
+    // Fresh from RaidLoot: re-pull worn items for profiles imported from a
+    // RaidLoot profile, without opening the editor.
+    const raidlootId = raidlootImportedProfileId(p.importedFrom);
+    if (raidlootId) {
+      const refreshBtn = el('button', 'btn btn-small profile-refresh-raidloot', 'Fresh from RaidLoot');
+      refreshBtn.setAttribute('aria-label', 'Refresh worn equipment and augment data from RaidLoot for ' + (p.name || 'this character'));
+      refreshBtn.disabled = refreshingProfileId === id;
+      refreshBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await refreshProfileFromList(id, refreshBtn, raidlootId);
+      });
+      actions.appendChild(refreshBtn);
+    }
+    // Compare toggle, mirroring the popup's character selection.
+    const compareLabel = el('label', 'profile-compare');
+    const compareBox = document.createElement('input');
+    compareBox.type = 'checkbox';
+    compareBox.checked = compareIds.includes(id);
+    compareLabel.appendChild(compareBox);
+    compareLabel.appendChild(document.createTextNode('Compare'));
+    compareLabel.addEventListener('click', (e) => e.stopPropagation());
+    compareLabel.addEventListener('change', async () => {
+      compareIds = compareBox.checked ? [...compareIds.filter((cid) => cid !== id), id] : compareIds.filter((cid) => cid !== id);
+      await chrome.storage.local.set({ [COMPARE_KEY]: compareIds });
       renderProfileList();
     });
-    actions.appendChild(selectBtn);
+    actions.appendChild(compareLabel);
     const deleteBtn = el('button', 'btn btn-small btn-danger profile-delete', 'Delete');
     deleteBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -185,8 +204,6 @@ function renderEditorProfileSelector() {
   select.value = editingId === 'new' ? '' : editingId;
   select.onchange = async () => {
     if (!select.value) return;
-    selectedId = select.value;
-    await saveAll();
     await openEditor(select.value);
   };
   const newButton = $('#btn-editor-new-profile');
@@ -196,8 +213,9 @@ function renderEditorProfileSelector() {
 async function deleteProfileById(id) {
   if (!profiles[id] || !confirm('Delete ' + (profiles[id].name || 'this character') + '?')) return false;
   delete profiles[id];
-  if (selectedId === id) selectedId = Object.keys(profiles)[0] || '';
+  compareIds = compareIds.filter((cid) => cid !== id);
   await saveAll([], [id]);
+  await chrome.storage.local.set({ [COMPARE_KEY]: compareIds });
   return true;
 }
 
@@ -797,7 +815,6 @@ async function saveProfile() {
     editingProfile.id = id;
     profiles[id] = { ...editingProfile, wishlist: [] };
     savedId = id;
-    if (!selectedId) selectedId = id;
   } else {
     profiles[editingId] = editingProfile;
   }
@@ -949,6 +966,38 @@ function updateRaidlootRefreshButton() {
   button.disabled = !!editingProfile && editingId === refreshingProfileId;
 }
 
+// List-row variant of the editor's "Refresh from RaidLoot" action: pull the
+// latest worn items for an imported profile without opening the editor.
+async function refreshProfileFromList(id, button, profileId) {
+  const savedProfile = profiles[id];
+  if (!savedProfile || !profileId || refreshingProfileId) return;
+  refreshingProfileId = id;
+  button.disabled = true;
+  button.textContent = 'Refreshing…';
+  let refreshed = false;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'SCRAPE_PROFILE', profileId });
+    if (!response || !response.ok || !response.profile) throw new Error(response && response.error || 'No profile returned');
+    const items = (response.profile.items || []).map(mapRaidlootItem).filter((item) => item.name && item.slot);
+    if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
+    profiles[id] = { ...savedProfile, items, statsVersion: PROFILE_STATS_VERSION };
+    try {
+      await saveAll([id]);
+      refreshed = true;
+    } catch (e) {
+      profiles[id] = savedProfile;
+      throw e;
+    }
+  } catch (e) {
+    appendDebugLog([{ name: savedProfile.name || 'RaidLoot profile ' + profileId, result: 'error', message: e.message }]);
+    button.textContent = 'Refresh failed';
+  } finally {
+    if (refreshingProfileId === id) refreshingProfileId = '';
+    if (refreshed) renderProfileList();
+    else button.disabled = false;
+  }
+}
+
 async function refreshRaidlootProfile() {
   const profile = editingProfile;
   const profileId = raidlootImportedProfileId(profile && profile.importedFrom);
@@ -1027,7 +1076,6 @@ function addImportedProfile({ name, cls, level, server, items, statsVersion, imp
     importedFrom: importedFrom || '',
     wishlist: [],
   };
-  if (!selectedId) selectedId = id;
   return id;
 }
 

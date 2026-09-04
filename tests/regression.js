@@ -62,6 +62,13 @@ assert.match(optionsSource, /hasWeaponProc/);
 assert.match(optionsSource, /renderWishlist/);
 assert.match(optionsSource, /type: 'SAVE_PROFILES'/);
 assert.match(optionsSource, /editingId = savedId/);
+// Character selection lives in compareProfileIds (no separate active
+// character), and imported profiles get a list-row RaidLoot refresh button.
+assert.match(optionsSource, /COMPARE_KEY = 'compareProfileIds'/);
+assert.doesNotMatch(optionsSource, /selectedProfileId/);
+assert.match(optionsSource, /profile-compare/);
+assert.match(optionsSource, /profile-refresh-raidloot/);
+assert.match(optionsSource, /refreshProfileFromList/);
 assert.doesNotMatch(optionsSource, /await saveAll\(\[savedId\]\);\s*closeEditor\(\);/);
 assert.match(optionsSource, /https:\/\/www\.raidloot\.com\/items\?name=/);
 assert.match(optionsSource, /details\.rel = 'noopener'/);
