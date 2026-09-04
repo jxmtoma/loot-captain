@@ -35,6 +35,14 @@
     // The auction tab's nav link paints its own theme background over ours.
     '.p-tabview-nav-link.lc-wanted{background-image:linear-gradient(rgba(132,101,35,.3),rgba(132,101,35,.3)) !important;}',
     '.lc-wishlist-compare-panel > .lc-compare-panel{margin:6px 0 0;box-shadow:none;}',
+    '.lc-multi-compare-panel > .lc-compare-panel{margin:6px 0 0;box-shadow:none;}',
+    '.lc-compare-chips{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 6px;}',
+    '.lc-compare-chip{padding:1px 6px;border:1px solid rgba(224,190,112,.55);border-radius:3px;background:#202a2b;color:#dbe3dc;font:10px/1.5 monospace;cursor:pointer;user-select:none;}',
+    '.lc-compare-chip[data-state="upgrade"]{background:#315c4a;color:#eff8db;}',
+    '.lc-compare-chip[data-state="downgrade"]{background:#673c36;color:#ffe3d0;}',
+    '.lc-compare-chip[data-state="sidegrade"]{background:#655735;color:#fff1c8;}',
+    '.lc-compare-chip[data-state="empty"]{background:#315369;color:#e0f2f0;}',
+    '.lc-compare-chip.lc-active{outline:2px solid #e0b95f;outline-offset:0;}',
     '.lc-wishlist-picker{display:flex;align-items:center;gap:8px;color:#e0b96b;font-weight:bold;}',
     '.lc-wishlist-picker select{max-width:360px;background:#101d2e;color:#f0d18a;border:1px solid #8b7547;font:inherit;padding:2px 4px;}',
     '.lc-wishlist-message{padding:6px 0;color:#d4cfbb;}',
@@ -271,18 +279,19 @@
     return div;
   }
 
-  function setWishlistToggleState(button, wanted) {
+  function setWishlistToggleState(button, wanted, profileName) {
+    const owner = profileName ? profileName + ' ' : '';
     button.setAttribute('aria-pressed', String(wanted));
-    button.setAttribute('aria-label', wanted ? 'Remove from wishlist' : 'Add to wishlist');
+    button.setAttribute('aria-label', owner + (wanted ? 'Remove from wishlist' : 'Add to wishlist'));
     button.textContent = wanted ? '★' : '☆';
-    button.title = 'Wishlist';
+    button.title = owner ? owner.trim() + ' wishlist' : 'Wishlist';
   }
 
-  function buildWishlistToggle(cand, wanted, profileId) {
+  function buildWishlistToggle(cand, wanted, profileId, profileName) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-toggle';
-    setWishlistToggleState(button, wanted);
+    setWishlistToggleState(button, wanted, profileName);
     button.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -290,8 +299,8 @@
       button.disabled = true;
       try {
         const result = await LC.state.toggleWishlist(cand, profileId);
-        if (result.ok) setWishlistToggleState(button, result.wanted);
-        else button.title = 'Could not update the active character wishlist';
+        if (result.ok) setWishlistToggleState(button, result.wanted, profileName);
+        else button.title = 'Could not update the wishlist';
       } finally {
         button.disabled = false;
       }
@@ -299,38 +308,46 @@
     return button;
   }
 
-  function buildWishlistCompareButton(cand, targets, formula, level) {
+  // pairs: [{ target, profile }] -- wishlist entries paired with the character
+  // that wants them, so each comparison uses the owner's level.
+  function buildWishlistCompareButton(cand, pairs, formula) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-compare';
-    const direction = LC.diff.wishlistComparisonDirection(cand, targets, formula, level);
+    const directions = (pairs || []).map((pair) =>
+      LC.diff.compareItemPair(cand, pair.target, formula, pair.profile && pair.profile.level))
+      .filter((diff) => diff.comparable)
+      .map((diff) => Math.sign(diff.score));
+    const direction = directions.length && directions.every((value) => value > 0) ? 1
+      : directions.length && directions.every((value) => value < 0) ? -1 : 0;
     const arrow = direction > 0 ? ' ↑' : direction < 0 ? ' ↓' : '';
     button.dataset.state = direction > 0 ? 'upgrade' : direction < 0 ? 'downgrade' : 'sidegrade';
-    button.textContent = 'vs wishlist' + arrow + (targets.length > 1 ? ' (' + targets.length + ')' : '');
+    button.textContent = 'vs wishlist' + arrow + (pairs.length > 1 ? ' (' + pairs.length + ')' : '');
     button.title = (direction > 0 ? 'Upgrade' : direction < 0 ? 'Downgrade' : 'Compare') + ' versus wishlist';
     return button;
   }
 
-  function buildWishlistComparePanel(cand, targets, profile, formula) {
+  function buildWishlistComparePanel(cand, pairs, formula) {
     const wrapper = document.createElement('div');
     wrapper.className = 'lc-compare-panel lc-wishlist-compare-panel';
     wrapper.dataset.lcView = 'wishlist';
     const body = document.createElement('div');
     let renderGeneration = 0;
-    const render = async (target) => {
+    const render = async (pair) => {
       const generation = ++renderGeneration;
       body.replaceChildren();
       const loading = document.createElement('div');
       loading.className = 'lc-wishlist-message';
       loading.textContent = 'Loading wishlist item…';
       body.appendChild(loading);
-      const resolved = await LC.state.enrichWishlistEntry(target, profile && profile.id);
+      const owner = pair.profile;
+      const resolved = await LC.state.enrichWishlistEntry(pair.target, owner && owner.id);
       if (generation !== renderGeneration || !wrapper.isConnected) return;
       if (!LC.state.compatibleWishlistItem(cand, resolved)) {
         loading.textContent = 'Wishlist item uses an incompatible slot or weapon layout.';
         return;
       }
-      const diff = LC.diff.compareItemPair(cand, resolved, formula, profile && profile.level);
+      const diff = LC.diff.compareItemPair(cand, resolved, formula, owner && owner.level);
       if (!diff.comparable && !diff.effectsComparable) {
         loading.textContent = 'Wishlist item stats unavailable.';
         return;
@@ -338,7 +355,7 @@
       body.replaceChildren(buildComparePanel(cand, resolved, diff,
         (resolved.slotKey && resolved.slotKey.key) || resolved.slot, null, 0, 'stats', 'wishlist'));
     };
-    if (targets.length > 1) {
+    if (pairs.length > 1) {
       const picker = document.createElement('label');
       picker.className = 'lc-wishlist-picker';
       picker.appendChild(document.createTextNode('Compare against'));
@@ -348,20 +365,21 @@
       placeholder.value = '';
       placeholder.textContent = 'Choose a wishlist item';
       select.appendChild(placeholder);
-      targets.forEach((target, index) => {
+      pairs.forEach((pair, index) => {
         const option = document.createElement('option');
         option.value = String(index);
-        option.textContent = target.name || ('Wishlist item ' + (index + 1));
+        option.textContent = [pair.target.name || ('Wishlist item ' + (index + 1)),
+          pair.profile && pair.profile.name ? '(' + pair.profile.name + ')' : ''].join(' ');
         select.appendChild(option);
       });
       select.addEventListener('change', () => {
-        if (select.value !== '') render(targets[Number(select.value)]);
+        if (select.value !== '') render(pairs[Number(select.value)]);
         else { renderGeneration++; body.replaceChildren(); }
       });
       picker.appendChild(select);
       wrapper.appendChild(picker);
-    } else if (targets[0]) {
-      render(targets[0]);
+    } else if (pairs[0]) {
+      render(pairs[0]);
     }
     wrapper.appendChild(body);
     return wrapper;
@@ -418,11 +436,10 @@
       total + (values[char] < (values[chars[index + 1]] || 0) ? -values[char] : values[char]), 0);
   }
 
-  function buildFocusBadge(row) {
-    const rows = row.diff.effects && row.diff.effects.focus && row.diff.effects.focus.rows || [];
+  function focusPositiveNegative(rows) {
     let positive = false;
     let negative = false;
-    for (const effectRow of rows) {
+    for (const effectRow of rows || []) {
       if (effectRow.direction > 0) { positive = true; continue; }
       if (effectRow.direction < 0) { negative = true; continue; }
       if (effectRow.status === 'added') positive = true;
@@ -434,12 +451,40 @@
         else positive = negative = true;
       }
     }
+    return { positive, negative };
+  }
+
+  function focusStateLabel(positive, negative) {
+    return positive && negative ? 'focus change' : positive ? 'focus up' : 'focus dn';
+  }
+
+  function buildFocusBadge(row) {
+    const rows = row.diff.effects && row.diff.effects.focus && row.diff.effects.focus.rows || [];
+    const { positive, negative } = focusPositiveNegative(rows);
     if (!positive && !negative) return null;
     const state = positive && negative ? 'sidegrade' : positive ? 'upgrade' : 'downgrade';
-    const text = state === 'upgrade' ? 'focus up' : state === 'downgrade' ? 'focus dn' : 'focus change';
+    const text = focusStateLabel(positive, negative);
     const badge = buildBadge(state, text, 'Spell focus ' + (state === 'sidegrade' ? 'changed' : state) + '; click for details');
     badge.dataset.lcView = 'focus';
     return badge;
+  }
+
+  function procPositiveNegative(rows) {
+    let positive = false;
+    let negative = false;
+    let unknown = false;
+    for (const effectRow of rows || []) {
+      if (effectRow.status === 'same') continue;
+      if (effectRow.direction > 0 || effectRow.status === 'added') positive = true;
+      else if (effectRow.direction < 0 || effectRow.status === 'removed') negative = true;
+      else unknown = true;
+    }
+    return { positive, negative, unknown };
+  }
+
+  function procStateText(positive, negative, unknown) {
+    return !unknown && positive !== negative
+      ? (positive ? 'proc up' : 'proc dn') : 'proc change';
   }
 
   function buildProcBadge(row) {
@@ -452,17 +497,9 @@
       badge.dataset.lcView = 'proc';
       return badge;
     }
-    let positive = false;
-    let negative = false;
-    let unknown = false;
-    for (const effectRow of changed) {
-      if (effectRow.direction > 0 || effectRow.status === 'added') positive = true;
-      else if (effectRow.direction < 0 || effectRow.status === 'removed') negative = true;
-      else unknown = true;
-    }
+    const { positive, negative, unknown } = procPositiveNegative(changed);
     const state = !unknown && positive !== negative ? (positive ? 'upgrade' : 'downgrade') : 'sidegrade';
-    const text = [slot, state === 'upgrade' ? 'proc up' : state === 'downgrade' ? 'proc dn' : 'proc change']
-      .filter(Boolean).join(' ');
+    const text = [slot, procStateText(positive, negative, unknown)].filter(Boolean).join(' ');
     const badge = buildBadge(state, text, 'Weapon proc ' + (state === 'sidegrade' ? 'changed' : state) + '; click for proc-only details');
     badge.dataset.lcView = 'proc';
     return badge;
@@ -471,6 +508,204 @@
   function buildComparisonBadges(row, formula, compact) {
     const main = row.diff.comparable ? buildComparisonBadge(row, formula, compact) : null;
     return [main, buildFocusBadge(row), buildProcBadge(row)].filter(Boolean);
+  }
+
+  // ---------- Multi-character badges + panel ----------
+  // One-line summary of one profile's comparison, for tooltips and chips.
+  function multiResultSummary(result) {
+    const name = (result.profile && result.profile.name) || 'Unnamed';
+    if (result.empty) return name + ': empty slot';
+    const row = result.summary.rows.find((entry) => entry.diff && entry.diff.comparable) || result.summary.rows[0];
+    const worn = row && row.target;
+    return name + ': ' + fmtDelta(result.summary.score) + (worn ? ' vs ' + (worn.name || ('#' + worn.id)) : '');
+  }
+
+  function multiComparisonSummary(multi) {
+    return multi.results.map(multiResultSummary).join('; ');
+  }
+
+  function resultEffectRows(result, kind) {
+    const rows = [];
+    for (const row of result.comparison.rows) {
+      const group = row.diff && row.diff.effects && row.diff.effects[kind];
+      if (group && group.rows && group.rows.length) rows.push(...group.rows);
+    }
+    return rows;
+  }
+
+  // Aggregate spell-focus badge across every compared character, not just the
+  // best one: focus is character-specific (it depends on each character's worn
+  // item), so one character may gain focus while another loses it.
+  function buildMultiFocusBadge(multi) {
+    let positive = false;
+    let negative = false;
+    const parts = [];
+    for (const result of multi.results) {
+      const { positive: up, negative: down } = focusPositiveNegative(resultEffectRows(result, 'focus'));
+      positive = positive || up;
+      negative = negative || down;
+      parts.push(((result.profile && result.profile.name) || 'Unnamed') + ': ' +
+        (up && down ? 'focus change' : up ? 'focus up' : down ? 'focus dn' : 'focus same'));
+    }
+    if (!positive && !negative) return null;
+    const state = positive && negative ? 'sidegrade' : positive ? 'upgrade' : 'downgrade';
+    const text = focusStateLabel(positive, negative);
+    const badge = buildBadge(state, text,
+      'Spell focus across compared characters (' + parts.join(', ') + '); click for details');
+    badge.dataset.lcView = 'focus';
+    return badge;
+  }
+
+  // Aggregate weapon-proc badge across every compared character.
+  function buildMultiProcBadge(multi) {
+    let hasRows = false;
+    let allSame = true;
+    const parts = [];
+    for (const result of multi.results) {
+      const rows = resultEffectRows(result, 'proc');
+      if (!rows.length) continue;
+      hasRows = true;
+      const changed = rows.some((effectRow) => effectRow.status !== 'same');
+      allSame = allSame && !changed;
+      const { positive, negative, unknown } = procPositiveNegative(rows);
+      parts.push(((result.profile && result.profile.name) || 'Unnamed') + ': ' +
+        (!changed ? 'proc eq' : procStateText(positive, negative, unknown)));
+    }
+    if (!hasRows) return null;
+    let positive = false;
+    let negative = false;
+    let unknown = false;
+    for (const result of multi.results) {
+      const { positive: up, negative: down, unknown: unk } = procPositiveNegative(resultEffectRows(result, 'proc'));
+      positive = positive || up;
+      negative = negative || down;
+      unknown = unknown || unk;
+    }
+    const state = !unknown && positive !== negative ? (positive ? 'upgrade' : 'downgrade') : 'sidegrade';
+    const text = allSame ? 'proc eq' : procStateText(positive, negative, unknown);
+    const badge = buildBadge(state, text, allSame
+      ? 'Weapon proc damage is equal for every compared character; click for proc-only details'
+      : 'Weapon proc across compared characters (' + parts.join(', ') + '); click for proc-only details');
+    badge.dataset.lcView = 'proc';
+    return badge;
+  }
+
+  // Collapsed layout: the best character's badges stand alone so the page
+  // stays uncluttered, with the number of compared characters appended to the
+  // main badge, every character listed in its tooltip, and focus/proc
+  // aggregated across all characters.
+  function buildMultiComparisonBadges(multi, cand, formula, compact) {
+    const best = multi && multi.best;
+    if (!best) return [];
+    const badges = [];
+    for (const [index, row] of best.comparison.rows.entries()) {
+      if (cand.isAugment && index) break;
+      if (!row.diff || !row.diff.comparable) continue;
+      badges.push(buildComparisonBadge(row, formula, compact));
+    }
+    const focusBadge = buildMultiFocusBadge(multi);
+    if (focusBadge) badges.push(focusBadge);
+    const procBadge = buildMultiProcBadge(multi);
+    if (procBadge) badges.push(procBadge);
+    if (multi.results.length > 1 && badges.length) {
+      const main = badges[0];
+      main.textContent += ' · ' + multi.results.length;
+      main.title = 'Best of ' + multi.results.length + ' characters: ' +
+        multiComparisonSummary(multi) + ' -- click for full diff';
+    }
+    return badges;
+  }
+
+  // Expanded layout: every compared character gets its own labeled badges
+  // directly in the row. Each badge carries its character id (lcProfile) and
+  // row index (lcRow) so the click handler can open that character's diff.
+  function buildPerCharacterBadges(multi, cand, formula, compact) {
+    const badges = [];
+    for (const result of multi.results) {
+      const name = (result.profile && result.profile.name) || 'Unnamed';
+      const profileId = String((result.profile && result.profile.id) || '');
+      if (result.empty) {
+        const badge = buildBadge('empty', name + ' empty',
+          name + ': no worn item in slot ' + (cand.slotKey ? cand.slotKey.key : '?') + '. Score is the raw item value.');
+        badge.dataset.lcView = 'stats';
+        badge.dataset.lcProfile = profileId;
+        badge.dataset.lcRow = '0';
+        badges.push(badge);
+        continue;
+      }
+      if (!result.summary.comparable) {
+        const badge = buildBadge('nomatch', name + ' ?',
+          name + ': item stats are unresolved; no comparison is available');
+        badge.dataset.lcView = 'stats';
+        badge.dataset.lcProfile = profileId;
+        badge.dataset.lcRow = '0';
+        badges.push(badge);
+        continue;
+      }
+      for (const [index, row] of result.comparison.rows.entries()) {
+        if (cand.isAugment && index) break;
+        if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+        for (const badge of buildComparisonBadges(row, formula, compact)) {
+          if (badge.dataset.lcView === 'stats') badge.textContent = name + ' ' + badge.textContent;
+          badge.title = name + ': ' + badge.title;
+          badge.dataset.lcProfile = profileId;
+          badge.dataset.lcRow = String(index);
+          badges.push(badge);
+        }
+      }
+    }
+    return badges;
+  }
+
+  // Expandable panel for a multi-character comparison: a compact chip row
+  // switches between characters above the regular per-character panels.
+  function buildMultiComparePanel(multi, cand, formula, view = 'stats') {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'lc-compare-panel lc-multi-compare-panel';
+    wrapper.dataset.lcView = view;
+    wrapper.dataset.lcRow = 'multi';
+    const chips = document.createElement('div');
+    chips.className = 'lc-compare-chips';
+    const body = document.createElement('div');
+    const render = (result) => {
+      for (const chip of chips.children) {
+        chip.classList.toggle('lc-active', chip.dataset.lcProfileId === result.profile.id);
+      }
+      const panels = [];
+      for (const [index, row] of result.comparison.rows.entries()) {
+        if (cand.isAugment && index) break;
+        if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+        panels.push(buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+          row.isAugment ? result.comparison.rows : null, index, view));
+      }
+      if (!panels.length) {
+        const empty = document.createElement('div');
+        empty.className = 'lc-wishlist-message';
+        empty.textContent = 'No comparable comparison for this character.';
+        panels.push(empty);
+      }
+      body.replaceChildren(...panels);
+    };
+    for (const result of multi.results) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'lc-compare-chip';
+      chip.dataset.lcProfileId = (result.profile && result.profile.id) || '';
+      chip.dataset.state = result.empty ? 'empty'
+        : result.summary.score > 0 ? 'upgrade' : result.summary.score < 0 ? 'downgrade' : 'sidegrade';
+      chip.textContent = (((result.profile && result.profile.name) || 'Unnamed') + ' ' + fmtDelta(result.summary.score)).trim();
+      chip.title = multiResultSummary(result);
+      chip.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        render(result);
+      });
+      chips.appendChild(chip);
+    }
+    wrapper.appendChild(chips);
+    wrapper.appendChild(body);
+    render(multi.best || multi.results[0]);
+    return wrapper;
   }
 
   // ---------- Stat indicators ----------
@@ -563,6 +798,10 @@
     comparisonBadgeTitle,
     buildComparisonBadge,
     buildComparisonBadges,
+    buildMultiComparisonBadges,
+    buildPerCharacterBadges,
+    buildMultiComparePanel,
+    multiComparisonSummary,
     addStatIndicators,
     statifyItemDetail,
   };

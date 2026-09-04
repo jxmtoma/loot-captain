@@ -141,7 +141,7 @@ assert.match(opendkpSource, /raidlootId,/);
 assert.match(opendkpSource, /opendkpHost: OPENDKP_HOST/);
 assert.match(opendkpSource, /let annotationGeneration = 0/);
 assert.match(read('content/shared/ui.js'), /let renderGeneration = 0/);
-assert.match(read('content/shared/ui.js'), /enrichWishlistEntry\(target, profile && profile\.id\)/);
+assert.match(read('content/shared/ui.js'), /enrichWishlistEntry\(pair\.target, owner && owner\.id\)/);
 assert.match(opendkpSource, /new MutationObserver\(\(records\) =>/);
 assert.match(opendkpSource, /characterClass: cls/);
 assert.match(opendkpSource, /const cacheKey = key \+ '\\|' \+ \(cls \|\| 'none'\)/);
@@ -165,6 +165,31 @@ assert.match(bridgeSource, /getReader/);
 assert.match(bridgeSource, /content-length/);
 assert.match(read('content/opendkp.js'), /Extension context invalidated/);
 assert.match(read('content/opendkp-consent.js'), /consentVersion/);
+// Multi-character comparison: symmetric character selection (no separate
+// active character), a badge layout setting, best-profile aggregate badge,
+// per-character panel chips and row badges, popup chip list, and re-annotate
+// when the compare set or layout changes.
+assert.match(read('content/shared/state.js'), /COMPARE_KEY = 'compareProfileIds'/);
+assert.match(read('content/shared/state.js'), /LAYOUT_KEY = 'compareBadgeLayout'/);
+assert.match(read('content/shared/state.js'), /getSelectedProfiles/);
+assert.match(read('content/shared/state.js'), /wishlistTargetPairs/);
+assert.match(read('content/shared/diff.js'), /compareCandidateMulti/);
+assert.match(read('content/shared/ui.js'), /buildMultiComparePanel/);
+assert.match(read('content/shared/ui.js'), /buildPerCharacterBadges/);
+assert.match(read('content/shared/ui.js'), /buildMultiFocusBadge/);
+assert.match(read('content/shared/ui.js'), /buildMultiProcBadge/);
+assert.match(read('content/shared/ui.js'), /lc-compare-chips/);
+assert.match(raidlootSource, /compareCandidateMulti/);
+assert.match(raidlootSource, /'compareProfileIds'/);
+assert.match(raidlootSource, /'compareBadgeLayout'/);
+assert.match(opendkpSource, /compareCandidateMulti/);
+assert.match(opendkpSource, /'compareProfileIds'/);
+assert.match(opendkpSource, /'compareBadgeLayout'/);
+assert.match(popupSource, /COMPARE_KEY = 'compareProfileIds'/);
+assert.match(popupSource, /LAYOUT_KEY = 'compareBadgeLayout'/);
+assert.match(read('popup/popup.html'), /id="compare-list"/);
+assert.match(read('popup/popup.html'), /id="layout-select"/);
+assert.doesNotMatch(read('popup/popup.html'), /id="profile-select"/);
 
 function loadCore(context) {
   for (const file of ['content/shared/slots.js', 'content/shared/parser.js', 'content/shared/diff.js']) {
@@ -229,6 +254,33 @@ assert.equal(LC.diff.diffItems(
   { slot: 'Head', stats: { Damage: { num: 80 }, Delay: { num: 20 } } },
   weaponFormula,
 ).weaponRatioDelta, null);
+// Multi-character comparison: per-profile results, best-profile selection
+// (worn preferred over empty slot, ties keep the active profile), class
+// ineligibility, and unresolved-stats handling.
+const multiFormula = LC.diff.SCORE_FORMULAS.find((item) => item.key === 'hp');
+const multiCand = { name: 'Upgrade Helm', slotKey: LC.slots.canonicalSlot('Head'), classes: ['WAR'], stats: { HP: { num: 150 } } };
+const multiProfiles = [
+  { id: 'a', name: 'Alpha', cls: 'Warrior', items: [{ name: 'Alpha Helm', slot: 'Head', stats: { HP: 100 } }] },
+  { id: 'b', name: 'Beta', cls: 'Warrior', items: [{ name: 'Beta Helm', slot: 'Head', stats: { HP: 60 } }] },
+  { id: 'c', name: 'Gamma', cls: 'Warrior', items: [] },
+  { id: 'd', name: 'Delta', cls: 'Cleric', items: [{ name: 'Cleric Helm', slot: 'Head', stats: { HP: 10 } }] },
+];
+const multiComparison = LC.diff.compareCandidateMulti(multiProfiles, multiCand, multiFormula);
+assert.equal(multiComparison.results.length, 3);
+assert.equal(multiComparison.best.profile.id, 'b');
+assert.equal(multiComparison.best.summary.score, 90);
+const multiGamma = multiComparison.results.find((result) => result.profile.id === 'c');
+assert.equal(multiGamma.empty, true);
+assert.equal(multiGamma.summary.comparable, true);
+const multiAllEmpty = LC.diff.compareCandidateMulti(
+  [{ id: 'x', name: 'Xeni', cls: 'Warrior', items: [] }, { id: 'y', name: 'Yara', cls: 'Warrior', items: [] }],
+  multiCand, multiFormula);
+assert.equal(multiAllEmpty.best.empty, true);
+assert.equal(multiAllEmpty.best.summary.score, 150);
+const multiUnresolved = LC.diff.compareCandidateMulti(multiProfiles, { slotKey: LC.slots.canonicalSlot('Head'), classes: ['WAR'], stats: {} }, multiFormula);
+assert.equal(multiUnresolved.results.length, 3);
+assert.equal(multiUnresolved.best, null);
+assert.equal(LC.diff.compareCandidateMulti(multiProfiles, multiCand, multiFormula).results[0].profile.id, 'a');
 const dualSlotKey = LC.slots.canonicalSlot('Primary, Secondary');
 assert.equal(dualSlotKey.key, 'primary');
 assert.equal(dualSlotKey.paired, false);
@@ -1057,6 +1109,13 @@ const targetProfile = { wishlist: [
 ] };
 assert.equal(state.wishlistTargets(targetProfile, { raidlootId: '101', name: 'Crown of Testing', slot: 'Head', stats: { HP: 130 } }).length, 1);
 assert.equal(state.wishlistTargets(targetProfile, { name: 'One Hander', slot: 'Primary, Secondary', stats: { Damage: 10, Delay: 20 } }).length, 0);
+const targetPairs = state.wishlistTargetPairs(
+  [{ id: 'p', name: 'Primary', wishlist: targetProfile.wishlist }, { id: 'q', name: 'Other', wishlist: targetProfile.wishlist }],
+  { raidlootId: '101', name: 'Crown of Testing', slot: 'Head', stats: { HP: 130 } },
+);
+assert.equal(targetPairs.length, 2);
+assert.equal(targetPairs[0].profile.id, 'p');
+assert.equal(targetPairs[1].profile.id, 'q');
 assert.equal(state.compatibleWishlistItem(
   { isAugment: true, augmentTypes: [7] },
   { isAugment: true, augmentTypes: ['7', '8'] },
@@ -1331,6 +1390,13 @@ assert.equal(state.compatibleWishlistItem(
   await state.getSelectedProfile();
   assert.equal(profiles.p.name, 'Edited');
   assert.equal(saves, 0);
+
+  // Selection-only model: the legacy single-character selection migrates
+  // into compareProfileIds, and the badge layout defaults to collapsed.
+  const selectedProfiles = await state.getSelectedProfiles();
+  assert.equal(selectedProfiles.length, 1);
+  assert.equal(selectedProfiles[0].id, 'p');
+  assert.equal(await state.getBadgeLayout(), 'collapsed');
 
   mode = 'cache';
   profiles = { p: { id: 'p', name: 'Cached', items: [{ id: '1', name: 'Focus Aug', slot: 'Head', isAugment: true, stats: {} }] } };

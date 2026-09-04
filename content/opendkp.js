@@ -218,33 +218,39 @@
   }
 
   function highlightWanted(host, wishlistCand, target) {
-    const wantedEntry = LC.state.findWishlistEntry(LC.currentProfile, wishlistCand);
+    const wanted = (LC.currentProfiles || [])
+      .some((profile) => LC.state.findWishlistEntry(profile, wishlistCand));
     const highlightHost = target || host.closest('tr, li, .p-listbox-item') || host;
     const liveAuction = !!(highlightHost.matches && highlightHost.matches('tr') && highlightHost.querySelector(LIVE_AUCTION_TIMER)) ||
       !!host.closest('app-auctions');
-    highlightHost.classList.toggle('lc-wanted', !!wantedEntry && liveAuction);
-    return wantedEntry;
+    highlightHost.classList.toggle('lc-wanted', !!wanted && liveAuction);
   }
 
   function decorateWishlist(host, cand) {
-    if (!LC.currentProfile || !host || !cand) return;
+    if (!LC.currentProfiles.length || !host || !cand) return;
     const wishlistCand = wishlistCandidate(cand);
-    const wantedEntry = highlightWanted(host, wishlistCand);
-    if (wantedEntry && LC.state.wishlistNeedsMerge(wantedEntry, wishlistCand, LC.currentProfile)) {
-      LC.state.mergeWishlistCandidate(wishlistCand, LC.currentProfile.id).catch(() => {});
+    const wanted = LC.currentProfiles
+      .map((profile) => ({ profile, entry: LC.state.findWishlistEntry(profile, wishlistCand) }))
+      .filter((match) => match.entry);
+    highlightWanted(host, wishlistCand);
+    for (const { profile, entry } of wanted) {
+      if (LC.state.wishlistNeedsMerge(entry, wishlistCand, profile)) {
+        LC.state.mergeWishlistCandidate(wishlistCand, profile.id).catch(() => {});
+      }
     }
     if (host.querySelector(':scope > .lc-wishlist-toggle')) return;
-    const toggle = LC.ui.buildWishlistToggle(wishlistCand, !!wantedEntry, LC.currentProfile.id);
-    const targets = LC.state.wishlistTargets(LC.currentProfile, wishlistCand);
-    const compare = targets.length ? LC.ui.buildWishlistCompareButton(cand, targets, LC.currentFormula, LC.currentProfile.level) : null;
+    const toggles = LC.currentProfiles.map((profile) =>
+      LC.ui.buildWishlistToggle(wishlistCand, wanted.some((match) => match.profile === profile), profile.id, profile.name));
+    const pairs = LC.state.wishlistTargetPairs(LC.currentProfiles, wishlistCand);
+    const compare = pairs.length ? LC.ui.buildWishlistCompareButton(cand, pairs, LC.currentFormula) : null;
     if (compare) compare.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       const existing = host.querySelector(':scope > .lc-wishlist-compare-panel');
       if (existing) { existing.remove(); return; }
-      host.appendChild(LC.ui.buildWishlistComparePanel(cand, targets, LC.currentProfile, LC.currentFormula));
+      host.appendChild(LC.ui.buildWishlistComparePanel(cand, pairs, LC.currentFormula));
     });
-    host.prepend(...[toggle, compare].filter(Boolean));
+    host.prepend(...[...toggles, compare].filter(Boolean));
   }
 
   function removeComparisonUI(host) {
@@ -273,9 +279,12 @@
 
   // Builds the verdict badges for one candidate. onBadge wires up the expandable
   // compare panel; callers without room for a panel (tab headers) leave it out.
+  // With several characters selected, badges honor the badge layout setting:
+  // 'collapsed' reflects the best character (plus aggregated focus/proc) and
+  // 'expanded' shows every character's own labeled badges.
   function comparisonBadges(selected, onBadge) {
-    const badge = LC.ui.buildBadge('nomatch', 'no char', 'Pick a character in the popup');
-    if (!LC.currentProfile) return [badge];
+    const badge = LC.ui.buildBadge('nomatch', 'no char', 'Pick characters in the popup');
+    if (!LC.currentProfiles.length) return [badge];
     if (selected.lookupError) {
       badge.textContent = '?';
       badge.title = selected.lookupError;
@@ -283,6 +292,37 @@
     }
     if (!selected.slotKey) return [];
     const f = LC.currentFormula;
+    if (LC.currentProfiles.length > 1) {
+      const multi = LC.diff.compareCandidateMulti(LC.currentProfiles, selected, f);
+      if (!multi.results.length) return [];
+      const compact = (!selected.isAugment && (multi.best ? multi.best.comparison.rows.length : 0) > 1) ||
+        LC.diff.weaponType(selected) != null;
+      const badges = [];
+      if (LC.currentBadgeLayout === 'expanded') {
+        for (const rowBadge of LC.ui.buildPerCharacterBadges(multi, selected, f, compact)) {
+          if (onBadge) onBadge(rowBadge, null, 0, null, multi);
+          badges.push(rowBadge);
+        }
+        return badges;
+      }
+      if (!multi.best) {
+        badge.textContent = '?';
+        badge.title = 'Item stats are unresolved; no comparison is available';
+        return [badge];
+      }
+      if (multi.best.empty) {
+        badge.dataset.state = 'empty';
+        badge.textContent = 'empty slot';
+        badge.title = 'No worn item in slot ' + selected.slotKey.key + ' for any compared character';
+        return [badge];
+      }
+      for (const rowBadge of LC.ui.buildMultiComparisonBadges(multi, selected, f, compact)) {
+        rowBadge.dataset.lcRow = 'multi';
+        if (onBadge) onBadge(rowBadge, null, 0, null, multi);
+        badges.push(rowBadge);
+      }
+      return badges;
+    }
     const comparison = LC.diff.compareCandidate(LC.currentProfile, selected, f);
     if (!comparison.eligible) return [];
     const summary = LC.diff.summarizeComparisons(comparison);
@@ -317,15 +357,37 @@
     const candidates = Array.isArray(cand.alternatives) && cand.alternatives.length > 1 ? cand.alternatives : [cand];
     const render = (selected) => {
       removeComparisonUI(host);
-      const badges = comparisonBadges(selected, (rowBadge, row, index, comparison) => {
+      const f = LC.currentFormula;
+      const badges = comparisonBadges(selected, (rowBadge, row, index, comparison, multi) => {
         rowBadge.addEventListener('click', (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
           const existing = host.querySelector(':scope > .lc-compare-panel:not(.lc-wishlist-compare-panel)');
           if (existing) {
-            const same = existing.dataset.lcView === rowBadge.dataset.lcView && existing.dataset.lcRow === String(index);
+            const same = rowBadge.dataset.lcProfile
+              ? (existing.dataset.lcView === rowBadge.dataset.lcView &&
+                 existing.dataset.lcProfile === rowBadge.dataset.lcProfile &&
+                 existing.dataset.lcRow === rowBadge.dataset.lcRow)
+              : (multi
+                ? (existing.dataset.lcView === rowBadge.dataset.lcView && existing.dataset.lcRow === 'multi')
+                : (existing.dataset.lcView === rowBadge.dataset.lcView && existing.dataset.lcRow === String(index)));
             existing.remove();
             if (same) return;
+          }
+          // Expanded-layout badges open their own character's diff.
+          if (rowBadge.dataset.lcProfile && multi) {
+            const result = multi.results.find((entry) => String(entry.profile.id) === rowBadge.dataset.lcProfile);
+            const charRow = result && result.comparison.rows[Number(rowBadge.dataset.lcRow)];
+            if (!result || !charRow || !charRow.diff) return;
+            const panel = LC.ui.buildComparePanel(selected, charRow.target, charRow.diff, charRow.slotKey && charRow.slotKey.key,
+              charRow.isAugment ? result.comparison.rows : null, Number(rowBadge.dataset.lcRow), rowBadge.dataset.lcView);
+            panel.dataset.lcProfile = rowBadge.dataset.lcProfile;
+            host.appendChild(panel);
+            return;
+          }
+          if (multi) {
+            host.appendChild(LC.ui.buildMultiComparePanel(multi, selected, f, rowBadge.dataset.lcView));
+            return;
           }
           host.appendChild(LC.ui.buildComparePanel(selected, row.target, row.diff, row.slotKey && row.slotKey.key,
             row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView));
@@ -345,7 +407,7 @@
   }
 
   async function annotatePage(force) {
-    if (!LC.currentProfile) return;
+    if (!LC.currentProfiles.length) return;
     const now = Date.now();
     if (!force && now - lastAnnotate < 300) return;
     lastAnnotate = now;
@@ -530,7 +592,7 @@
       return;
     }
     if (!started) return;
-    const relevant = ['profiles', 'selectedProfileId', 'scoreFormula'].some((k) => changes[k]);
+    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula'].some((k) => changes[k]);
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     // Clear badges and re-annotate

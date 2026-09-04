@@ -449,6 +449,29 @@
     };
   }
 
+  // Compares one candidate across several profiles. Every eligible profile
+  // gets a result (comparable or not, so callers can tell "empty slot" apart
+  // from "unresolved stats"). `best` is the profile with the highest
+  // comparable score, preferring profiles that actually wear something in the
+  // slot; ties keep the earlier (active) profile.
+  function compareCandidateMulti(profiles, cand, formula) {
+    const results = [];
+    for (const profile of profiles || []) {
+      const comparison = compareCandidate(profile, cand, formula);
+      if (!comparison.eligible) continue;
+      const summary = summarizeComparisons(comparison);
+      results.push({ profile, comparison, summary, empty: !summary.hasWorn && !summary.hasEffects });
+    }
+    const comparable = results.filter((result) => result.summary.comparable);
+    const worn = comparable.filter((result) => !result.empty);
+    const pool = worn.length ? worn : comparable;
+    let best = null;
+    for (const result of pool) {
+      if (!best || result.summary.score > best.summary.score) best = result;
+    }
+    return { results, best };
+  }
+
   LC.diff = {
     STAT_ORDER,
     POSITIVE_STATS,
@@ -460,6 +483,7 @@
     diffItems,
     bestComparisonTarget,
     compareCandidate,
+    compareCandidateMulti,
     compareItemPair,
     wishlistComparisonDirection,
     summarizeComparisons,

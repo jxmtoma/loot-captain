@@ -42,29 +42,80 @@
   }
 
   function decorateWishlist(host, cand, attachPanel) {
-    if (!LC.currentProfile || !host || !cand) return null;
+    if (!LC.currentProfiles.length || !host || !cand) return null;
     const existingButton = host.querySelector(':scope > .lc-wishlist-compare');
     if (host.querySelector(':scope > .lc-wishlist-toggle')) return existingButton;
-    const wantedEntry = LC.state.findWishlistEntry(LC.currentProfile, cand);
+    const wanted = LC.currentProfiles
+      .map((profile) => ({ profile, entry: LC.state.findWishlistEntry(profile, cand) }))
+      .filter((match) => match.entry);
     const highlightHost = host.closest('tr') || host;
-    if (wantedEntry) {
+    if (wanted.length) {
       highlightHost.classList.add('lc-wanted');
-      if (LC.state.wishlistNeedsMerge(wantedEntry, cand, LC.currentProfile)) {
-        LC.state.mergeWishlistCandidate(cand, LC.currentProfile.id).catch(() => {});
+      for (const { profile, entry } of wanted) {
+        if (LC.state.wishlistNeedsMerge(entry, cand, profile)) {
+          LC.state.mergeWishlistCandidate(cand, profile.id).catch(() => {});
+        }
       }
     }
-    const toggle = LC.ui.buildWishlistToggle(cand, !!wantedEntry, LC.currentProfile.id);
-    const targets = LC.state.wishlistTargets(LC.currentProfile, cand);
-    const compare = targets.length ? LC.ui.buildWishlistCompareButton(cand, targets, LC.currentFormula, LC.currentProfile.level) : null;
+    const toggles = LC.currentProfiles.map((profile) =>
+      LC.ui.buildWishlistToggle(cand, wanted.some((match) => match.profile === profile), profile.id, profile.name));
+    const pairs = LC.state.wishlistTargetPairs(LC.currentProfiles, cand);
+    const compare = pairs.length ? LC.ui.buildWishlistCompareButton(cand, pairs, LC.currentFormula) : null;
     if (compare && attachPanel) compare.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       const existing = host.querySelector(':scope > .lc-wishlist-compare-panel');
       if (existing) { existing.remove(); return; }
-      host.appendChild(LC.ui.buildWishlistComparePanel(cand, targets, LC.currentProfile, LC.currentFormula));
+      host.appendChild(LC.ui.buildWishlistComparePanel(cand, pairs, LC.currentFormula));
     });
-    host.prepend(...[toggle, compare].filter(Boolean));
+    host.prepend(...[...toggles, compare].filter(Boolean));
     return compare;
+  }
+
+  // Builds the compare panel targeted by one inline badge of a multi-character
+  // comparison. Expanded-layout badges carry their character id (lcProfile)
+  // and row index (lcRow) and open that character's own diff; collapsed badges
+  // open the chip-switched panel covering all characters.
+  function multiBadgePanel(multi, cand, formula, badge) {
+    if (badge.dataset.lcProfile) {
+      const result = multi.results.find((entry) => String(entry.profile.id) === badge.dataset.lcProfile);
+      const row = result && result.comparison.rows[Number(badge.dataset.lcRow)];
+      if (!result || !row || !row.diff) return null;
+      const panel = LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+        row.isAugment ? result.comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView);
+      panel.dataset.lcProfile = badge.dataset.lcProfile;
+      return panel;
+    }
+    return LC.ui.buildMultiComparePanel(multi, cand, formula, badge.dataset.lcView);
+  }
+
+  // Builds the inline badges for a multi-character comparison, honoring the
+  // badge layout setting, and wires the expandable panel to each badge.
+  function buildMultiBadges(multi, cand, f, compact, host, attachPanel) {
+    const expanded = LC.currentBadgeLayout === 'expanded';
+    const badgeList = expanded
+      ? LC.ui.buildPerCharacterBadges(multi, cand, f, compact)
+      : LC.ui.buildMultiComparisonBadges(multi, cand, f, compact);
+    for (const rowBadge of badgeList) {
+      if (!expanded) rowBadge.dataset.lcRow = 'multi';
+      if (attachPanel) rowBadge.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const existing = host.querySelector(':scope > .lc-compare-panel');
+        if (existing) {
+          const same = existing.dataset.lcView === rowBadge.dataset.lcView &&
+            (expanded
+              ? existing.dataset.lcProfile === rowBadge.dataset.lcProfile &&
+                existing.dataset.lcRow === rowBadge.dataset.lcRow
+              : existing.dataset.lcRow === 'multi');
+          existing.remove();
+          if (same) return;
+        }
+        const panel = multiBadgePanel(multi, cand, f, rowBadge);
+        if (panel) host.appendChild(panel);
+      });
+    }
+    return badgeList;
   }
 
   function annotateItemElement(host, cand, attachPanel = true) {
@@ -73,12 +124,39 @@
     const wishlistCompare = decorateWishlist(host, cand, attachPanel);
     if (!cand.slotKey) return wishlistCompare;
     if (host.querySelector(':scope > .lc-badge')) return wishlistCompare;
-    const badge = LC.ui.buildBadge('nomatch', 'no char', 'Pick a character in the popup');
-    if (!LC.currentProfile) {
+    const badge = LC.ui.buildBadge('nomatch', 'no char', 'Pick characters in the popup');
+    if (!LC.currentProfiles.length) {
       host.prepend(badge);
       return wishlistCompare;
     }
     const f = LC.currentFormula;
+    const badges = [];
+    if (LC.currentProfiles.length > 1) {
+      const multi = LC.diff.compareCandidateMulti(LC.currentProfiles, cand, f);
+      if (!multi.results.length) return wishlistCompare;
+      const compact = (!cand.isAugment && (multi.best ? multi.best.comparison.rows.length : 0) > 1) ||
+        LC.diff.weaponType(cand) != null;
+      if (LC.currentBadgeLayout !== 'expanded') {
+        if (!multi.best) {
+          badge.textContent = '?';
+          badge.title = 'Item stats are unresolved; no comparison is available';
+          host.prepend(badge);
+          return wishlistCompare;
+        }
+        if (multi.best.empty) {
+          const hasEffects = multi.best.summary.hasEffects;
+          badge.dataset.state = hasEffects ? 'sidegrade' : 'empty';
+          badge.textContent = hasEffects ? 'effects' : 'empty slot';
+          badge.title = 'No worn item in slot ' + cand.slotKey.key + ' for any compared character' +
+            (hasEffects ? '; effect comparison available' : '. Score is the raw item value.');
+          host.prepend(badge);
+          return wishlistCompare;
+        }
+      }
+      badges.push(...buildMultiBadges(multi, cand, f, compact, host, attachPanel));
+      if (badges.length) host.prepend(...badges);
+      return wishlistCompare;
+    }
     const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
     if (!comparison.eligible) return wishlistCompare;
     const summary = LC.diff.summarizeComparisons(comparison);
@@ -96,7 +174,6 @@
       return wishlistCompare;
     }
     const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
-    const badges = [];
     for (const [index, row] of comparison.rows.entries()) {
       if (cand.isAugment && index) break;
       if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
@@ -152,7 +229,7 @@
         const td = document.createElement('td');
         td.colSpan = tr.cells.length;
         td.appendChild(LC.ui.buildWishlistComparePanel(raidlootCandidate(cand),
-          LC.state.wishlistTargets(LC.currentProfile, raidlootCandidate(cand)), LC.currentProfile, LC.currentFormula));
+          LC.state.wishlistTargetPairs(LC.currentProfiles, raidlootCandidate(cand)), LC.currentFormula));
         newRow.appendChild(td);
         const nativeDetailRow = detail.closest('tr');
         if (nativeDetailRow && nativeDetailRow !== tr && nativeDetailRow.parentNode === tr.parentNode) {
@@ -172,25 +249,35 @@
         const compareRow = Array.from(tr.parentNode.children).find((node) =>
           node.classList && node.classList.contains('lc-compare-row') && node.dataset.lcOwner === id);
         if (compareRow) {
-          const same = compareRow.dataset.lcRow === badge.dataset.lcRow && compareRow.dataset.lcView === badge.dataset.lcView;
+          const same = compareRow.dataset.lcRow === badge.dataset.lcRow &&
+            compareRow.dataset.lcView === badge.dataset.lcView &&
+            compareRow.dataset.lcProfile === badge.dataset.lcProfile;
           compareRow.remove();
           if (same) return;
         }
-        if (!LC.currentProfile) return;
+        if (!LC.currentProfiles.length) return;
         const f = LC.currentFormula;
-        const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
-        const summary = LC.diff.summarizeComparisons(comparison);
-        const row = comparison.rows[Number(badge.dataset.lcRow)];
-        if (!comparison.eligible || !summary.comparable || !row) return;
         const newRow = document.createElement('tr');
         newRow.className = 'lc-compare-row';
         newRow.dataset.lcOwner = id;
         newRow.dataset.lcRow = badge.dataset.lcRow;
         newRow.dataset.lcView = badge.dataset.lcView;
+        newRow.dataset.lcProfile = badge.dataset.lcProfile;
         const td = document.createElement('td');
         td.colSpan = tr.cells.length;
-        td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-          row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView));
+        if (LC.currentProfiles.length > 1 && (badge.dataset.lcProfile || badge.dataset.lcRow === 'multi')) {
+          const multi = LC.diff.compareCandidateMulti(LC.currentProfiles, cand, f);
+          const panel = multiBadgePanel(multi, cand, f, badge);
+          if (!panel) return;
+          td.appendChild(panel);
+        } else {
+          const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
+          const summary = LC.diff.summarizeComparisons(comparison);
+          const row = comparison.rows[Number(badge.dataset.lcRow)];
+          if (!comparison.eligible || !summary.comparable || !row) return;
+          td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+            row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView));
+        }
         newRow.appendChild(td);
         const nativeDetailRow = detail.closest('tr');
         if (nativeDetailRow && nativeDetailRow !== tr && nativeDetailRow.parentNode === tr.parentNode) {
@@ -252,8 +339,8 @@
       const cand = LC.parser.parseRaidlootNode(itemDiv);
       if (!cand) continue;
       const localCandidate = raidlootCandidate(cand);
-      const localWanted = LC.currentProfile && LC.state.findWishlistEntry(LC.currentProfile, localCandidate);
-      if (localWanted) icon.classList.add('lc-wanted');
+      const wantedProfiles = LC.currentProfiles.filter((profile) => LC.state.findWishlistEntry(profile, localCandidate));
+      if (wantedProfiles.length) icon.classList.add('lc-wanted');
       let meta = icon.querySelector(':scope > .lc-wish-meta');
       if (!meta) {
         meta = document.createElement('span');
@@ -268,19 +355,54 @@
         meta.appendChild(slotSpan);
         icon.appendChild(meta);
       }
-      if (LC.currentProfile) meta.appendChild(LC.ui.buildWishlistToggle(localCandidate, !!localWanted, LC.currentProfile.id));
+      for (const profile of LC.currentProfiles) {
+        meta.appendChild(LC.ui.buildWishlistToggle(localCandidate, wantedProfiles.includes(profile), profile.id, profile.name));
+      }
       const badge = document.createElement('span');
       badge.className = 'lc-badge';
       let sortKey = -Infinity;
-      if (!LC.currentProfile) {
+      if (!LC.currentProfiles.length) {
         badge.dataset.state = 'nomatch';
         badge.textContent = 'no char';
-        badge.title = 'Pick a character in the popup';
+        badge.title = 'Pick characters in the popup';
       } else if (!cand.slotKey) {
         badge.dataset.state = 'nomatch';
         badge.textContent = '?';
         badge.title = 'Unknown slot for this item';
       } else {
+        if (LC.currentProfiles.length > 1) {
+          const multi = LC.diff.compareCandidateMulti(LC.currentProfiles, cand, f);
+          if (!multi.results.length) {
+            rows.push({ icon, sortKey });
+            continue;
+          }
+          sortKey = multi.best ? multi.best.summary.score : -Infinity;
+          const compact = (!cand.isAugment && (multi.best ? multi.best.comparison.rows.length : 0) > 1) ||
+            LC.diff.weaponType(cand) != null;
+          if (LC.currentBadgeLayout === 'expanded') {
+            meta.append(...LC.ui.buildPerCharacterBadges(multi, cand, f, compact));
+            rows.push({ icon, sortKey });
+            continue;
+          }
+          if (!multi.best) {
+            badge.dataset.state = 'nomatch';
+            badge.textContent = '?';
+            badge.title = 'Item stats are unresolved; no comparison is available';
+            meta.appendChild(badge);
+            rows.push({ icon, sortKey });
+            continue;
+          }
+          if (multi.best.empty) {
+            const emptyRow = { slotKey: cand.slotKey, diff: multi.best.comparison.rows[0].diff };
+            badge.dataset.state = 'empty';
+            badge.textContent = 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null);
+            badge.title = 'No worn item in slot ' + cand.slotKey.key + ' for any compared character. Score is the raw item value.';
+          } else {
+            meta.append(...LC.ui.buildMultiComparisonBadges(multi, cand, f, compact));
+          }
+          rows.push({ icon, sortKey });
+          continue;
+        }
         const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
         if (!comparison.eligible) {
           rows.push({ icon, sortKey });
@@ -355,7 +477,7 @@
       return;
     }
     if (!started) return;
-    const relevant = ['profiles', 'selectedProfileId', 'scoreFormula'].some((k) => changes[k]);
+    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula'].some((k) => changes[k]);
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     rerunPageAnnotations(true);

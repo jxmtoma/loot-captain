@@ -1,7 +1,8 @@
 // Loot Captain - popup (character switcher + formula)
 
 const PROFILES_KEY = 'profiles';
-const SELECTED_KEY = 'selectedProfileId';
+const COMPARE_KEY = 'compareProfileIds';
+const LAYOUT_KEY = 'compareBadgeLayout';
 const SCORE_KEY = 'scoreFormula';
 const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
@@ -23,25 +24,35 @@ const DEFAULT_FORMULA_KEY = 'ac10hp';
 
 function $(sel) { return document.querySelector(sel); }
 
+let selectedIds = [];
+
 async function load() {
-  const res = await chrome.storage.local.get([PROFILES_KEY, SELECTED_KEY, SCORE_KEY]);
+  const res = await chrome.storage.local.get([PROFILES_KEY, COMPARE_KEY, LAYOUT_KEY, SCORE_KEY]);
   const profiles = res[PROFILES_KEY] || {};
-  const selectedId = res[SELECTED_KEY] || '';
+  selectedIds = Array.isArray(res[COMPARE_KEY]) ? res[COMPARE_KEY] : [];
+  const layoutKey = res[LAYOUT_KEY] === 'expanded' ? 'expanded' : 'collapsed';
   const formulaKey = SCORE_FORMULAS.some((formula) => formula.key === res[SCORE_KEY]) ? res[SCORE_KEY] : DEFAULT_FORMULA_KEY;
 
-  // Profile select
-  const profileSel = $('#profile-select');
-  profileSel.innerHTML = '<option value="">- none -</option>';
+  // Compare characters (multi-select chips)
+  const compareList = $('#compare-list');
+  compareList.innerHTML = '';
   for (const id of Object.keys(profiles)) {
     const p = profiles[id];
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = p.name || 'Unnamed';
-    const meta = [p.cls, p.level && 'Lv ' + p.level].filter(Boolean).join(' · ');
-    if (meta) opt.textContent += ' (' + meta + ')';
-    profileSel.appendChild(opt);
+    const chip = document.createElement('label');
+    chip.className = 'compare-chip';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = id;
+    input.checked = selectedIds.includes(id);
+    chip.appendChild(input);
+    const name = document.createElement('span');
+    name.textContent = [p.name || 'Unnamed', p.cls, p.level && 'Lv ' + p.level].filter(Boolean).join(' · ');
+    chip.appendChild(name);
+    compareList.appendChild(chip);
   }
-  profileSel.value = selectedId;
+
+  // Badge layout (how multi-character badges render on item pages)
+  $('#layout-select').value = layoutKey;
 
   // Formula select
   const formulaSel = $('#formula-select');
@@ -50,12 +61,10 @@ async function load() {
 
   // Status
   const status = $('#status');
-  if (selectedId && profiles[selectedId]) {
-    const p = profiles[selectedId];
-    status.textContent = (p.items || []).length + ' items · ' + (p.cls || '?') + (p.level ? ' Lv' + p.level : '');
-  } else {
-    status.textContent = 'No active character';
-  }
+  const count = selectedIds.filter((id) => profiles[id]).length;
+  status.textContent = count
+    ? count + (count === 1 ? ' character selected' : ' characters selected')
+    : 'No characters selected';
 }
 
 async function init() {
@@ -71,9 +80,15 @@ async function init() {
 
   await load();
 
-  $('#profile-select').addEventListener('change', async (e) => {
-    await chrome.storage.local.set({ [SELECTED_KEY]: e.target.value });
+  $('#compare-list').addEventListener('change', async () => {
+    const ids = Array.from(document.querySelectorAll('#compare-list input:checked'))
+      .map((input) => input.value);
+    await chrome.storage.local.set({ [COMPARE_KEY]: ids });
     await load();
+  });
+
+  $('#layout-select').addEventListener('change', async (e) => {
+    await chrome.storage.local.set({ [LAYOUT_KEY]: e.target.value });
   });
 
   $('#formula-select').addEventListener('change', async (e) => {

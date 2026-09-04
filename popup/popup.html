@@ -18,9 +18,16 @@
     </header>
 
     <section class="setting-card">
-      <label for="profile-select"><span>Active Character</span><small>CHARACTER SELECT</small></label>
-      <select id="profile-select">
-        <option value="">- none -</option>
+      <label><span>Compare Characters</span><small>CHARACTER SELECT</small></label>
+      <div id="compare-list" class="compare-list"></div>
+      <small class="hint">Pick one or more characters to compare against.</small>
+    </section>
+
+    <section class="setting-card">
+      <label for="layout-select"><span>Badge Layout</span><small>MULTI-COMPARE</small></label>
+      <select id="layout-select">
+        <option value="collapsed">Compact — best character, panel chips</option>
+        <option value="expanded">Expanded — every character in the row</option>
       </select>
     </section>
 

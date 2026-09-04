@@ -6,6 +6,8 @@
 
   const PROFILES_KEY = 'profiles';
   const SELECTED_KEY = 'selectedProfileId';
+  const COMPARE_KEY = 'compareProfileIds';
+  const LAYOUT_KEY = 'compareBadgeLayout';
   const SCORE_KEY = 'scoreFormula';
   const PROFILE_STATS_VERSION = 4;
   const NON_NUMERIC_STAT = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
@@ -27,6 +29,23 @@
   }
   async function setSelectedId(id) {
     await LC.ui.store.set(SELECTED_KEY, id);
+  }
+  // The characters picked for comparison. Selection is symmetric -- there is
+  // no separate "active" character; the first selected profile acts as the
+  // reference for per-stat indicators. The legacy single-character selection
+  // (selectedProfileId) migrates into this list once.
+  async function getCompareIds() {
+    const ids = await LC.ui.store.get(COMPARE_KEY, []);
+    return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string' && id) : [];
+  }
+  async function setCompareIds(ids) {
+    await LC.ui.store.set(COMPARE_KEY, Array.isArray(ids) ? ids.filter((id) => typeof id === 'string' && id) : []);
+  }
+  // How inline badges present multi-character results: 'collapsed' shows the
+  // best character plus a count, 'expanded' shows every character in the row.
+  async function getBadgeLayout() {
+    const layout = await LC.ui.store.get(LAYOUT_KEY, 'collapsed');
+    return layout === 'expanded' ? 'expanded' : 'collapsed';
   }
   // Normalize item stats to { raw, num } format and compute slotKey.
   // The options page stores stats as plain values (e.g. { HP: 123 }) and
@@ -219,6 +238,18 @@
       .filter((entry) => compatibleWishlistItem(candidate, entry));
   }
 
+  // Wishlist comparison targets across every selected character, paired with
+  // the character that wants them (for level-aware diffing and enrichment).
+  function wishlistTargetPairs(profiles, candidate) {
+    const pairs = [];
+    for (const profile of profiles || []) {
+      for (const target of wishlistTargets(profile, candidate)) {
+        pairs.push({ target, profile });
+      }
+    }
+    return pairs;
+  }
+
   function wishlistNeedsMerge(entry, item, profile) {
     if (!entry || !item) return false;
     if (profile && (profile.wishlist || []).filter((candidate) => wishlistMatches(candidate, item)).length > 1) return true;
@@ -281,8 +312,7 @@
     profileRefreshes.set(id, refresh);
   }
 
-  async function getSelectedProfile() {
-    const id = await getSelectedId();
+  async function getProfileById(id) {
     if (!id) return null;
     const profiles = await getProfiles();
     const p = profiles[id];
@@ -304,6 +334,23 @@
     }
     return { ...p, id, items };
   }
+  async function getSelectedProfile() {
+    return await getProfileById(await getSelectedId());
+  }
+  // Every selected character, in the order picked. The legacy single
+  // "active character" selection migrates into the compare list once.
+  async function getSelectedProfiles() {
+    let ids = await getCompareIds();
+    if (!ids.length) {
+      const legacy = await getSelectedId();
+      if (legacy) {
+        ids = [legacy];
+        await setCompareIds(ids);
+      }
+    }
+    const loaded = await Promise.all(ids.map((id) => getProfileById(id)));
+    return loaded.filter(Boolean);
+  }
   async function getScoreFormulaKey() {
     return await LC.ui.store.get(SCORE_KEY, LC.diff.DEFAULT_FORMULA_KEY);
   }
@@ -318,26 +365,37 @@
   async function loadAndCacheProfile() {
     const generation = ++profileLoadGeneration;
     LC.currentProfile = null;
+    LC.currentProfiles = [];
+    LC.currentBadgeLayout = 'collapsed';
     LC.currentFormula = null;
-    const profile = await getSelectedProfile();
+    const profiles = await getSelectedProfiles();
     if (generation !== profileLoadGeneration) return;
     const formula = await getFormula();
+    const badgeLayout = await getBadgeLayout();
     if (generation !== profileLoadGeneration) return;
-    if (profile) {
-      LC.currentProfile = profile;
-      LC.currentFormula = formula;
-    }
+    // The first selected profile is the reference for per-stat indicators.
+    LC.currentProfile = profiles[0] || null;
+    LC.currentProfiles = profiles;
+    LC.currentBadgeLayout = badgeLayout;
+    if (profiles.length) LC.currentFormula = formula;
   }
 
   LC.state = {
     PROFILES_KEY,
     SELECTED_KEY,
+    COMPARE_KEY,
+    LAYOUT_KEY,
     SCORE_KEY,
     getProfiles,
     saveProfiles,
     getSelectedId,
     setSelectedId,
+    getCompareIds,
+    setCompareIds,
+    getBadgeLayout,
+    getProfileById,
     getSelectedProfile,
+    getSelectedProfiles,
     getFormulaKey: getScoreFormulaKey,
     setFormulaKey: setScoreFormulaKey,
     getFormula,
@@ -347,6 +405,7 @@
     findWishlistEntry,
     compatibleWishlistItem,
     wishlistTargets,
+    wishlistTargetPairs,
     wishlistNeedsMerge,
     mergeWishlistCandidate,
     toggleWishlist,

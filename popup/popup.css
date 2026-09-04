@@ -107,3 +107,23 @@ select:focus { border-color: #d3ae5a; }
 .btn:hover { border-color: #e0bb62; color: #fff4cc; }
 footer { border-top-color: #59657a; }
 footer span { color: #aeb8c5; }
+
+/* Compare Characters multi-select chips: one row per character */
+.compare-list { display: flex; flex-direction: column; gap: 4px; }
+.compare-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border: 1px solid #4b5b70;
+  border-radius: 2px;
+  background: #09121f;
+  color: #f0eee5;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.compare-chip:hover { border-color: #d3ae5a; }
+.compare-chip input { margin: 0; accent-color: #d5ae55; }
+.compare-chip span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hint { display: block; margin-top: 5px; color: #8b98a8; font-size: 10px; }
