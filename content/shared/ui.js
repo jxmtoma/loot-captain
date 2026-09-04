@@ -46,6 +46,10 @@
     '.lc-wishlist-picker{display:flex;align-items:center;gap:8px;color:#e0b96b;font-weight:bold;}',
     '.lc-wishlist-picker select{max-width:360px;background:#101d2e;color:#f0d18a;border:1px solid #8b7547;font:inherit;padding:2px 4px;}',
     '.lc-wishlist-message{padding:6px 0;color:#d4cfbb;}',
+    '.lc-character-picker-panel{min-width:150px;}',
+    '.lc-character-picker-row{display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;color:#e9e1ca;font:inherit;text-align:left;cursor:pointer;padding:2px 0;}',
+    '.lc-character-picker-row:hover{color:#f0d18a;}',
+    '.lc-character-picker-row:disabled{cursor:wait;opacity:.65;}',
     '.lc-compare-panel{background:#151d1e;color:#e9e1ca;border:1px solid #8b7547;border-radius:4px;padding:8px 10px;margin:6px 0;font:11px/1.35 monospace;max-width:720px;box-shadow:0 3px 12px rgba(0,0,0,.25);}',
     '.lc-compare-panel table{border-collapse:collapse;table-layout:fixed !important;width:100%;background:#202a2b !important;color:#dbe3dc !important;}',
     '.lc-compare-panel tr{background:#202a2b !important;}',
@@ -279,33 +283,84 @@
     return div;
   }
 
-  function setWishlistToggleState(button, wanted, profileName) {
-    const owner = profileName ? profileName + ' ' : '';
+  function setWishlistToggleState(button, wanted) {
     button.setAttribute('aria-pressed', String(wanted));
-    button.setAttribute('aria-label', owner + (wanted ? 'Remove from wishlist' : 'Add to wishlist'));
+    button.setAttribute('aria-label', wanted ? 'Remove from wishlist' : 'Add to wishlist');
     button.textContent = wanted ? '★' : '☆';
-    button.title = owner ? owner.trim() + ' wishlist' : 'Wishlist';
+    button.title = button.dataset.lcMulti ? 'Wishlist (pick a character)' : 'Wishlist';
   }
 
-  function buildWishlistToggle(cand, wanted, profileId, profileName) {
+  // One wishlist star per item. profiles: [{ profile, wanted }]. With a single
+  // character the star toggles directly; with several, clicking opens a picker
+  // so the user can choose which character's wishlist to update.
+  function buildWishlistToggle(cand, profiles) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-toggle';
-    setWishlistToggleState(button, wanted, profileName);
+    const multi = profiles.length > 1;
+    if (multi) button.dataset.lcMulti = '1';
+    setWishlistToggleState(button, profiles.some((entry) => entry.wanted));
     button.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (button.disabled) return;
+      if (multi) {
+        const host = button.parentNode;
+        const existing = host && host.querySelector(':scope > .lc-character-picker-panel');
+        if (existing) { existing.remove(); return; }
+        if (host) host.appendChild(buildWishlistCharacterPicker(cand, profiles, button));
+        return;
+      }
       button.disabled = true;
       try {
-        const result = await LC.state.toggleWishlist(cand, profileId);
-        if (result.ok) setWishlistToggleState(button, result.wanted, profileName);
-        else button.title = 'Could not update the wishlist';
+        const entry = profiles[0];
+        const result = await LC.state.toggleWishlist(cand, entry && entry.profile.id);
+        if (result.ok) {
+          if (entry) entry.wanted = result.wanted;
+          setWishlistToggleState(button, profiles.some((item) => item.wanted));
+        } else {
+          button.title = 'Could not update the wishlist';
+        }
       } finally {
         button.disabled = false;
       }
     });
     return button;
+  }
+
+  function buildWishlistCharacterPicker(cand, profiles, starButton) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'lc-compare-panel lc-character-picker-panel';
+    for (const entry of profiles) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'lc-character-picker-row';
+      const star = document.createElement('span');
+      star.textContent = entry.wanted ? '★' : '☆';
+      star.setAttribute('aria-hidden', 'true');
+      row.appendChild(star);
+      row.appendChild(document.createTextNode((entry.profile && entry.profile.name) || 'Unnamed'));
+      row.setAttribute('aria-label', ((entry.profile && entry.profile.name) || 'Unnamed') +
+        (entry.wanted ? ': remove from wishlist' : ': add to wishlist'));
+      row.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (row.disabled) return;
+        row.disabled = true;
+        try {
+          const result = await LC.state.toggleWishlist(cand, entry.profile.id);
+          if (result.ok) {
+            entry.wanted = result.wanted;
+            star.textContent = result.wanted ? '★' : '☆';
+            setWishlistToggleState(starButton, profiles.some((item) => item.wanted));
+          }
+        } finally {
+          row.disabled = false;
+        }
+      });
+      wrapper.appendChild(row);
+    }
+    return wrapper;
   }
 
   // pairs: [{ target, profile }] -- wishlist entries paired with the character

@@ -179,6 +179,7 @@ assert.match(read('content/shared/ui.js'), /buildPerCharacterBadges/);
 assert.match(read('content/shared/ui.js'), /buildMultiFocusBadge/);
 assert.match(read('content/shared/ui.js'), /buildMultiProcBadge/);
 assert.match(read('content/shared/ui.js'), /lc-compare-chips/);
+assert.match(read('content/shared/ui.js'), /lc-character-picker-panel/);
 assert.match(raidlootSource, /compareCandidateMulti/);
 assert.match(raidlootSource, /'compareProfileIds'/);
 assert.match(raidlootSource, /'compareBadgeLayout'/);

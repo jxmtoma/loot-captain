@@ -239,8 +239,10 @@
       }
     }
     if (host.querySelector(':scope > .lc-wishlist-toggle')) return;
-    const toggles = LC.currentProfiles.map((profile) =>
-      LC.ui.buildWishlistToggle(wishlistCand, wanted.some((match) => match.profile === profile), profile.id, profile.name));
+    const toggle = LC.ui.buildWishlistToggle(wishlistCand, LC.currentProfiles.map((profile) => ({
+      profile,
+      wanted: wanted.some((match) => match.profile === profile),
+    })));
     const pairs = LC.state.wishlistTargetPairs(LC.currentProfiles, wishlistCand);
     const compare = pairs.length ? LC.ui.buildWishlistCompareButton(cand, pairs, LC.currentFormula) : null;
     if (compare) compare.addEventListener('click', (event) => {
@@ -250,7 +252,7 @@
       if (existing) { existing.remove(); return; }
       host.appendChild(LC.ui.buildWishlistComparePanel(cand, pairs, LC.currentFormula));
     });
-    host.prepend(...[...toggles, compare].filter(Boolean));
+    host.prepend(...[toggle, compare].filter(Boolean));
   }
 
   function removeComparisonUI(host) {

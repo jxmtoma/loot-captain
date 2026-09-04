@@ -57,8 +57,10 @@
         }
       }
     }
-    const toggles = LC.currentProfiles.map((profile) =>
-      LC.ui.buildWishlistToggle(cand, wanted.some((match) => match.profile === profile), profile.id, profile.name));
+    const toggle = LC.ui.buildWishlistToggle(cand, LC.currentProfiles.map((profile) => ({
+      profile,
+      wanted: wanted.some((match) => match.profile === profile),
+    })));
     const pairs = LC.state.wishlistTargetPairs(LC.currentProfiles, cand);
     const compare = pairs.length ? LC.ui.buildWishlistCompareButton(cand, pairs, LC.currentFormula) : null;
     if (compare && attachPanel) compare.addEventListener('click', (event) => {
@@ -68,7 +70,7 @@
       if (existing) { existing.remove(); return; }
       host.appendChild(LC.ui.buildWishlistComparePanel(cand, pairs, LC.currentFormula));
     });
-    host.prepend(...[...toggles, compare].filter(Boolean));
+    host.prepend(...[toggle, compare].filter(Boolean));
     return compare;
   }
 
@@ -355,8 +357,11 @@
         meta.appendChild(slotSpan);
         icon.appendChild(meta);
       }
-      for (const profile of LC.currentProfiles) {
-        meta.appendChild(LC.ui.buildWishlistToggle(localCandidate, wantedProfiles.includes(profile), profile.id, profile.name));
+      if (LC.currentProfiles.length) {
+        meta.appendChild(LC.ui.buildWishlistToggle(localCandidate, LC.currentProfiles.map((profile) => ({
+          profile,
+          wanted: wantedProfiles.includes(profile),
+        }))));
       }
       const badge = document.createElement('span');
       badge.className = 'lc-badge';
