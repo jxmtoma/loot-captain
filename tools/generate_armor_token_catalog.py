@@ -17,8 +17,83 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "background" / "armor-token-catalog.js"
-CATALOG_VERSION = "rof-tob-2"
+CATALOG_VERSION = "pop-tob-4"
 SOURCES = {
+    "pop": {
+        "expansion": "Planes of Power",
+        "urls": (
+            "https://everquest.allakhazam.com/wiki/EQ:The_Planes_of_Power",
+            "https://lucy.allakhazam.com/itemlist.html?searchtext=Ornate",
+            "https://www.raidloot.com/group/poparmor",
+            "https://www.raidloot.com/raid/poparmor",
+        ),
+        "version": "PoP armor quests, Lucy item IDs and armor set pages, accessed 2026-09-05",
+    },
+    "god": {
+        "expansion": "Gates of Discord",
+        "urls": (
+            "https://www.eqprogression.com/gates-of-discord-quest-class-armor/",
+            "https://www.eqprogression.com/muramite-armor-combine-information-gates-of-discord/",
+            "https://www.raidloot.com/raid/godarmor",
+        ),
+        "version": "GoD Muramite armor drop and combine guides, accessed 2026-09-05",
+    },
+    "oow": {
+        "expansion": "Omens of War",
+        "urls": (
+            "https://everquest.allakhazam.com/db/quest.html?quest=2988",
+            "https://everquest.allakhazam.com/db/quest.html?quest=2993",
+            "https://www.eqprogression.com/omens-of-war-tier-2-raid-armor-guide/",
+            "https://www.raidloot.com/group/oowarmor",
+            "https://www.raidloot.com/raid/oowarmor",
+        ),
+        "version": "OoW armor turn-in quests and Tier 2 raid armor guide, accessed 2026-09-05",
+    },
+    "por": {
+        "expansion": "Prophecy of Ro",
+        "urls": (
+            "https://everquest.allakhazam.com/wiki/Everquest_Guide_Prophecy_of_Ro",
+            "https://everquest.allakhazam.com/db/quest.html?quest=3375",
+            "https://lucy.allakhazam.com/itemlist.html?searchtext=Crafting+Mold%3A+Spirit",
+        ),
+        "version": "PoR Spirit Mark Armor task and Lucy item IDs, accessed 2026-09-05",
+    },
+    "tss": {
+        "expansion": "The Serpent's Spine",
+        "urls": (
+            "https://tss.eqresource.com/creatingarmor.php",
+            "https://www.raidloot.com/group/tssarmor",
+        ),
+        "version": "TSS armor creation table and armor set pages, accessed 2026-09-05",
+    },
+    "uf": {
+        "expansion": "Underfoot",
+        "urls": (
+            "https://everquest.allakhazam.com/wiki/EQ:Underfoot_Armor_Guide",
+            "https://lucy.allakhazam.com/itemlist.html?searchtext=Encrusted",
+            "https://www.raidloot.com/group/ufarmor",
+            "https://www.raidloot.com/raid/ufarmor",
+        ),
+        "version": "UF armor guide, Lucy item IDs and armor set pages, accessed 2026-09-05",
+    },
+    "hot": {
+        "expansion": "House of Thule",
+        "urls": (
+            "https://www.raidloot.com/group/hotarmor",
+            "https://www.raidloot.com/raid/hotarmor",
+            "https://hot.eqresource.com/creatingarmor.php",
+        ),
+        "version": "HoT armor set and creation guides, accessed 2026-09-05",
+    },
+    "voa": {
+        "expansion": "Veil of Alaris",
+        "urls": (
+            "https://www.raidloot.com/group/voaarmor",
+            "https://www.raidloot.com/raid/voaarmor",
+            "https://voa.eqresource.com/gearoverview.php",
+        ),
+        "version": "VoA armor set and gear overview guides, accessed 2026-09-05",
+    },
     "rof": {
         "expansion": "Rain of Fear",
         "urls": ("https://everquest.allakhazam.com/wiki/eq:Rain_of_Fear_Armor_Guide",),
@@ -121,6 +196,10 @@ SLOTS = (
     ("Tunic", "chest"),
 )
 VISIBLE_SLOTS = {slot for _, slot in SLOTS}
+CLASS_CODES = frozenset((
+    "WAR", "CLR", "PAL", "RNG", "SHD", "DRU", "MNK", "BRD",
+    "ROG", "SHM", "NEC", "WIZ", "MAG", "ENC", "BST", "BER",
+))
 MODERN_SLOTS = (
     ("Wrist", "wrist"),
     ("Hands", "hands"),
@@ -139,9 +218,189 @@ CUSTOM_PIECES = {
             ("Sleeve", "arms"), ("Pants", "legs"), ("Tunic", "chest")),
     "lining": (("Wrist", "wrist"), ("Hand", "hands"), ("Feet", "feet"), ("Head", "head"),
                ("Arm", "arms"), ("Leg", "legs"), ("Chest", "chest")),
+    # UF names its slot templates anatomically, and its item IDs do not run in
+    # SLOTS order: within a tier they run hands, wrist, arms, feet, legs, chest, head.
+    "clay": (("Phalangeal", "hands"), ("Carpal", "wrist"), ("Brachial", "arms"), ("Tarsal", "feet"),
+             ("Crural", "legs"), ("Thoracic", "chest"), ("Cephalic", "head")),
+    # HoT names its slot templates after concepts rather than slots.
+    "remnant": (("Truth", "wrist"), ("Greed", "hands"), ("Survival", "feet"), ("Knowledge", "head"),
+                ("Devotion", "arms"), ("Fear", "legs"), ("Desire", "chest")),
+    "voa": (("Wristwraps", "wrist"), ("Handwraps", "hands"), ("Footwraps", "feet"), ("Headdress", "head"),
+            ("Armwraps", "arms"), ("Legwraps", "legs"), ("Stole", "chest")),
 }
 
+# TSS names each armor type's template after its own piece nouns; within a type
+# the IDs run chest, legs, arms, hands, feet, wrist, head.
+TSS_PIECES = {
+    "plate": (("Chestplate Mold", "chest"), ("Legplate Mold", "legs"), ("Armplate Mold", "arms"),
+              ("Plate Glove Mold", "hands"), ("Plate Boot Mold", "feet"), ("Plate Bracer Mold", "wrist"),
+              ("Helm Mold", "head")),
+    "chain": (("Chestguard Mold", "chest"), ("Leggings Mold", "legs"), ("Armguard Mold", "arms"),
+              ("Chain Glove Mold", "hands"), ("Chain Boot Mold", "feet"), ("Chain Bracer Mold", "wrist"),
+              ("Chain Skullcap Mold", "head")),
+    "leather": (("Chestwrap Pattern", "chest"), ("Legwrap Pattern", "legs"), ("Armwrap Pattern", "arms"),
+                ("Leather Glove Pattern", "hands"), ("Leather Boot Pattern", "feet"),
+                ("Leather Bracer Pattern", "wrist"), ("Leather Skullcap Pattern", "head")),
+    "silk": (("Robe Pattern", "chest"), ("Silk Leggings Pattern", "legs"), ("Silk Armwrap Pattern", "arms"),
+             ("Silk Glove Pattern", "hands"), ("Silk Boot Pattern", "feet"), ("Silk Bracer Pattern", "wrist"),
+             ("Skullcap Pattern", "head")),
+}
+
+ARMOR_TYPE_CLASSES = {
+    "plate": ("WAR", "CLR", "PAL", "SHD", "BRD"),
+    "chain": ("RNG", "ROG", "SHM", "BER"),
+    "leather": ("DRU", "MNK", "BST"),
+    "silk": ("NEC", "WIZ", "MAG", "ENC"),
+}
+
+
+def pop_family(track, set_query, armor_type, pieces):
+    return {"source": "pop", "track": track, "tier": 1, "set_query": set_query,
+            "classes": ARMOR_TYPE_CLASSES[armor_type],
+            "entries": tuple((item_id, name, slot) for item_id, name, slot in pieces)}
+
+
 FAMILIES = (
+    pop_family("group", "Group (Ornate)", "plate", (
+        (16297, "Ornate Bracer Mold", "wrist"), (16298, "Ornate Boot Mold", "feet"),
+        (16299, "Ornate Helm Mold", "head"), (16343, "Ornate Vambrace Mold", "arms"),
+        (16344, "Ornate Greaves Mold", "legs"), (16345, "Ornate Gauntlet Mold", "hands"),
+        (16346, "Ornate Breastplate Mold", "chest"))),
+    pop_family("group", "Group (Ornate)", "chain", (
+        (16290, "Ornate Chain Coif Pattern", "head"), (16291, "Ornate Chain Tunic Pattern", "chest"),
+        (16292, "Ornate Chain Sleeve Pattern", "arms"), (16293, "Ornate Chain Bracelet Pattern", "wrist"),
+        (16294, "Ornate Chain Glove Pattern", "hands"), (16295, "Ornate Chain Pant Pattern", "legs"),
+        (16296, "Ornate Chain Boot Pattern", "feet"))),
+    pop_family("group", "Group (Ornate)", "leather", (
+        (16347, "Ornate Leather Helm Pattern", "head"), (16348, "Ornate Leather Tunic Pattern", "chest"),
+        (16349, "Ornate Leather Sleeve Pattern", "arms"), (16350, "Ornate Leather Wristband Pattern", "wrist"),
+        (16351, "Ornate Leather Glove Pattern", "hands"), (16352, "Ornate Leather Pant Pattern", "legs"),
+        (16353, "Ornate Leather Boot Pattern", "feet"))),
+    pop_family("group", "Group (Ornate)", "silk", (
+        (16354, "Ornate Silk Turban Pattern", "head"), (16355, "Ornate Silk Robe Pattern", "chest"),
+        (16356, "Ornate Silk Sleeve Pattern", "arms"), (16357, "Ornate Silk Bracelet Pattern", "wrist"),
+        (16358, "Ornate Silk Glove Pattern", "hands"), (16359, "Ornate Silk Pant Pattern", "legs"),
+        (16360, "Ornate Silk Boot Pattern", "feet"))),
+    # Plane of Time chest templates are named "Timeless", not "Elemental".
+    pop_family("raid", "Raid (Elemental)", "plate", (
+        (16369, "Elemental Bracer Mold", "wrist"), (16370, "Elemental Boot Mold", "feet"),
+        (16371, "Elemental Helm Mold", "head"), (16372, "Elemental Vambrace Mold", "arms"),
+        (16373, "Elemental Greaves Mold", "legs"), (16374, "Elemental Gauntlet Mold", "hands"),
+        (16375, "Timeless Breastplate Mold", "chest"))),
+    pop_family("raid", "Raid (Elemental)", "chain", (
+        (16362, "Elemental Chain Coif Pattern", "head"), (16363, "Timeless Chain Tunic Pattern", "chest"),
+        (16364, "Elemental Chain Sleeve Pattern", "arms"), (16365, "Elemental Chain Bracelet Pattern", "wrist"),
+        (16366, "Elemental Chain Glove Pattern", "hands"), (16367, "Elemental Chain Pant Pattern", "legs"),
+        (16368, "Elemental Chain Boot Pattern", "feet"))),
+    pop_family("raid", "Raid (Elemental)", "leather", (
+        (16376, "Elemental Leather Helm Pattern", "head"), (16377, "Timeless Leather Tunic Pattern", "chest"),
+        (16378, "Elemental Leather Sleeve Pattern", "arms"), (16379, "Elemental Leather Wrist Pattern", "wrist"),
+        (16380, "Elemental Leather Glove Pattern", "hands"), (16381, "Elemental Leather Pant Pattern", "legs"),
+        (16382, "Elemental Leather Boot Pattern", "feet"))),
+    pop_family("raid", "Raid (Elemental)", "silk", (
+        (16383, "Elemental Silk Turban Pattern", "head"), (16384, "Timeless Silk Robe Pattern", "chest"),
+        (16385, "Elemental Silk Sleeve Pattern", "arms"), (16386, "Elemental Silk Bracelet Pattern", "wrist"),
+        (16387, "Elemental Silk Glove Pattern", "hands"), (16388, "Elemental Silk Pant Pattern", "legs"),
+        (16389, "Elemental Silk Boot Pattern", "feet"))),
+    {"source": "por", "track": "group", "tier": 1, "first_id": 85659,
+     "name_template": "Crafting Mold: Spirit {piece}",
+     "pieces": (("Helm", "head"), ("Sleeves", "arms"), ("Gloves", "hands"), ("Boots", "feet"),
+                ("Bracers", "wrist"), ("Leggings", "legs"), ("Chest", "chest")),
+     "set_query": "Spirit Mark Armor"},
+    {"source": "god", "track": "raid", "tier": 1, "first_id": 68220,
+     "name_template": "Muramite {piece} Armor",
+     "pieces": (("Helm", "head"), ("Sleeve", "arms"), ("Bracer", "wrist"), ("Glove", "hands"),
+                ("Boot", "feet"), ("Greaves", "legs"), ("Chest", "chest")),
+     "set_query": "Raid (Muramite)"},
+    # OoW turn-ins are named per item rather than per slot; the same seven are
+    # shared by all four armor-type quests, so they are not class scoped.
+    {"source": "oow", "track": "group", "tier": 1, "set_query": "Group (Dranik Loyalist)",
+     "entries": ((51440, "Duskfall Chronicles", "head"), (51441, "Dragorn Elder Scepter", "chest"),
+                 (51442, "Dragorn City Ember", "legs"), (51443, "Kuuan Traitor Stones", "feet"),
+                 (51444, "Map of Old Kuua", "arms"), (51445, "Dranik Blood Standard", "wrist"),
+                 (51446, "Spire Control Shard", "hands"))},
+    {"source": "oow", "track": "raid", "tier": 1, "set_query": "Raid (Anguish)",
+     "entries": ((51475, "Patorav's Walking Stick", "head"), (51476, "Jayruk's Vest", "chest"),
+                 (51477, "Patorav's Amulet", "legs"), (51478, "Muramite Cruelty Medal", "feet"),
+                 (51479, "Lenarsk's Embossed Leather Pouch", "arms"), (51480, "Riftseeker Heart", "wrist"),
+                 (51481, "Makyah's Axe", "hands"))},
+    *(
+        {"source": "tss", "track": "group", "tier": 1, "first_id": first_id,
+         "name_template": "Ancient {piece}", "pieces": TSS_PIECES[armor_type],
+         "classes": ARMOR_TYPE_CLASSES[armor_type],
+         "set_query": "Group (Tenish Unfocused)",
+         "alternativeSets": (("group", 1, "Group (Tenish)"),)}
+        for armor_type, first_id in (("chain", 32818), ("plate", 32825), ("leather", 32832), ("silk", 32839))
+    ),
+    {"source": "uf", "track": "group", "tier": 1, "first_id": 47573,
+     "name_template": "Stellite Encrusted {piece} Clay", "pieces": CUSTOM_PIECES["clay"],
+     "set_query": "Group Tier 1 (Stellite)"},
+    {"source": "uf", "track": "group", "tier": 2, "first_id": 47580,
+     "name_template": "Celestrium Encrusted {piece} Clay", "pieces": CUSTOM_PIECES["clay"],
+     "set_query": "Group Tier 2 (Celestrium)"},
+    {"source": "uf", "track": "group", "tier": 3, "first_id": 47587,
+     "name_template": "Vitallium Encrusted {piece} Clay", "pieces": CUSTOM_PIECES["clay"],
+     "set_query": "Group Tier 3 (Vitallium)"},
+    {"source": "uf", "track": "group", "tier": 4, "first_id": 47594,
+     "name_template": "Damascite Encrusted {piece} Clay", "pieces": CUSTOM_PIECES["clay"],
+     "set_query": "Group Tier 4 (Damascite)"},
+    {"source": "uf", "track": "raid", "tier": 1, "first_id": 47601,
+     "name_template": "Palladium Encrusted {piece} Clay", "pieces": CUSTOM_PIECES["clay"],
+     "set_query": "Raid Tier 1 (Palladium)"},
+    {"source": "uf", "track": "raid", "tier": 2, "first_id": 47608,
+     "name_template": "Iridium Encrusted {piece} Clay", "pieces": CUSTOM_PIECES["clay"],
+     "set_query": "Raid Tier 2 (Iridium)"},
+    {"source": "uf", "track": "raid", "tier": 3, "first_id": 47615,
+     "name_template": "Rhodium Encrusted {piece} Clay", "pieces": CUSTOM_PIECES["clay"],
+     "set_query": "Raid Tier 3 (Rhodium)"},
+    {"source": "hot", "track": "group", "tier": 1, "first_id": 56179,
+     "name_template": "Abstruse Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Group Tier 1 (Abstruse)"},
+    {"source": "hot", "track": "group", "tier": 2, "first_id": 56186,
+     "name_template": "Recondite Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Group Tier 2 (Recondite)"},
+    {"source": "hot", "track": "group", "tier": 3, "first_id": 56193,
+     "name_template": "Ambiguous Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Group Tier 3 (Ambiguous)"},
+    {"source": "hot", "track": "group", "tier": 4, "first_id": 56200,
+     "name_template": "Lucid Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Group Tier 4 (Lucid)"},
+    {"source": "hot", "track": "raid", "tier": 1, "first_id": 56207,
+     "name_template": "Enigmatic Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Raid Tier 1 (Enigmatic)"},
+    {"source": "hot", "track": "raid", "tier": 2, "first_id": 56214,
+     "name_template": "Esoteric Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Raid Tier 2 (Esoteric)"},
+    {"source": "hot", "track": "raid", "tier": 3, "first_id": 56221,
+     "name_template": "Obscure Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Raid Tier 3 (Obscure)"},
+    {"source": "hot", "track": "raid", "tier": 4, "first_id": 56228,
+     "name_template": "Perspicuous Remnant of {piece}", "pieces": CUSTOM_PIECES["remnant"],
+     "set_query": "Raid Tier 4 (Perspicuous)"},
+    {"source": "voa", "track": "group", "tier": 1, "first_id": 64750,
+     "name_template": "Rustic {piece} of Argath", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Group Tier 1 (Rustic)"},
+    {"source": "voa", "track": "group", "tier": 2, "first_id": 64757,
+     "name_template": "Formal {piece} of Lunanyn", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Group Tier 2 (Formal)"},
+    {"source": "voa", "track": "group", "tier": 3, "first_id": 64764,
+     "name_template": "Embellished {piece} of Kolos", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Group Tier 3 (Embellished)"},
+    {"source": "voa", "track": "group", "tier": 4, "first_id": 64771,
+     "name_template": "Grandiose {piece} of Alra", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Group Tier 4 (Grandiose)"},
+    {"source": "voa", "track": "raid", "tier": 1, "first_id": 64778,
+     "name_template": "Modest {piece} of Illdaera", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Raid Tier 1 (Modest)"},
+    {"source": "voa", "track": "raid", "tier": 2, "first_id": 64785,
+     "name_template": "Elegant {piece} of Oseka", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Raid Tier 2 (Elegant)"},
+    {"source": "voa", "track": "raid", "tier": 3, "first_id": 64792,
+     "name_template": "Stately {piece} of Ladrys", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Raid Tier 3 (Stately)"},
+    {"source": "voa", "track": "raid", "tier": 4, "first_id": 64799,
+     "name_template": "Ostentatious {piece} of Ryken", "pieces": CUSTOM_PIECES["voa"],
+     "set_query": "Raid Tier 4 (Ostentatious)"},
     {"source": "rof", "track": "group", "tier": 1, "first_id": 72204, "prefix": "Fear Touched", "set_query": "Group Tier 1 (Boreal)"},
     {"source": "rof", "track": "group", "tier": 2, "first_id": 72211, "prefix": "Fear Stained", "set_query": "Group Tier 2 (Distorted)"},
     {"source": "rof", "track": "group", "tier": 3, "first_id": 72218, "prefix": "Fear Washed", "set_query": "Group Tier 3 (Twilight)"},
@@ -306,8 +565,11 @@ def build_items() -> dict[str, dict[str, object]]:
                  template.format(prefix=prefix, piece=suffix, modern=suffix), slot)
                 for offset, (suffix, slot) in enumerate(pieces)
             )
-        if len(entries) != len(SLOTS) or [entry[2] for entry in entries] != [slot for _, slot in SLOTS]:
+        if sorted(entry[2] for entry in entries) != sorted(slot for _, slot in SLOTS):
             raise ValueError(f"family does not cover every visible slot: {family}")
+        classes = list(family.get("classes") or ())
+        if any(cls not in CLASS_CODES for cls in classes) or len(set(classes)) != len(classes):
+            raise ValueError(f"invalid class scoping: {family}")
         alternatives = family.get("alternativeSets")
         if alternatives is not None:
             if not isinstance(alternatives, (tuple, list)):
@@ -343,6 +605,8 @@ def build_items() -> dict[str, dict[str, object]]:
                 "setQuery": family["set_query"],
                 "slot": slot,
             }
+            if classes:
+                record["classes"] = classes
             if alternatives is not None:
                 record["alternativeSets"] = alternatives
             items[key] = record

@@ -19,7 +19,7 @@ Loot Captain helps you:
 - Handle paired ear, wrist, and finger slots automatically.
 - Save a local wishlist and highlight wanted items in RaidLoot and OpenDKP auctions.
 - Fill in missing item stats from public RaidLoot pages.
-- Resolve statless armor tokens through 357 offline, source-reviewed mappings covering RoF plus CoTF through ToB.
+- Resolve statless armor tokens through 630 offline, source-reviewed mappings covering PoP, GoD, OoW, PoR, TSS, UF, HoT and VoA plus RoF through ToB.
 
 Profiles and settings stay in browser-local storage. Loot Captain has no account, analytics, tracking, advertising, or remote code.
 
