@@ -835,9 +835,10 @@ vm.runInNewContext(read('background/armor-token-catalog.js'), workerContext, { f
 vm.runInNewContext(read('background/service-worker.js') +
   '\nglobalThis.validArmorTokenRecordForTest = validArmorTokenRecord;', workerContext, { filename: 'background/service-worker.js' });
 assert.doesNotThrow(() => execFileSync('python3', ['tools/generate_armor_token_catalog.py', '--check'], { encoding: 'utf8' }));
-assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.catalogVersion, 'rof-tob-2');
-assert.equal(Object.keys(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items).length, 357);
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.catalogVersion, 'pop-tob-4');
+assert.equal(Object.keys(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items).length, 630);
 assert.deepEqual([...new Set(Object.values(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items).map((item) => item.expansion))].sort(), [
+  'Planes of Power', 'Gates of Discord', 'Omens of War', 'Prophecy of Ro', "The Serpent's Spine", 'Underfoot', 'House of Thule', 'Veil of Alaris',
   'Rain of Fear', 'Call of the Forsaken', 'The Darkened Sea', 'The Broken Mirror',
   'Empires of Kunark', 'Ring of Scale', 'The Burning Lands', 'Torment of Velious',
   'Claws of Veeshan', 'Terror of Luclin', 'Night of Shadows', "Laurion's Song", 'The Outer Brood',
@@ -847,11 +848,47 @@ assert.deepEqual(JSON.parse(JSON.stringify(workerContext.LOOT_CAPTAIN_ARMOR_TOKE
   setQuery: 'Raid Tier 4 (Dreadweave)', slot: 'head',
 });
 for (const [id, expansion] of Object.entries({
-  85288: 'Call of the Forsaken', 94249: 'The Darkened Sea', 147660: 'The Broken Mirror',
+  16299: 'Planes of Power', 85659: 'Prophecy of Ro', 51446: 'Omens of War', 68226: 'Gates of Discord', 32825: "The Serpent's Spine", 47579: 'Underfoot', 56182: 'House of Thule', 64753: 'Veil of Alaris', 85288: 'Call of the Forsaken', 94249: 'The Darkened Sea', 147660: 'The Broken Mirror',
   148854: 'Empires of Kunark', 151854: 'Ring of Scale', 161404: 'The Burning Lands',
   164404: 'Torment of Velious', 164904: 'Claws of Veeshan', 168004: 'Terror of Luclin',
   168104: 'Night of Shadows', 171774: "Laurion's Song", 174004: 'The Outer Brood',
 })) assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items[id].expansion, expansion);
+// PoR resolves through a set RaidLoot labels by zone rather than expansion.
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['85665'])), {
+  id: 85665, name: 'Crafting Mold: Spirit Chest', expansion: 'Prophecy of Ro', track: 'group', tier: 1,
+  setQuery: 'Spirit Mark Armor', slot: 'chest',
+});
+// OoW turn-ins are class-agnostic: the same seven are shared by all four armor-type quests.
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['51476'])), {
+  id: 51476, name: "Jayruk's Vest", expansion: 'Omens of War', track: 'raid', tier: 1,
+  setQuery: 'Raid (Anguish)', slot: 'chest',
+});
+assert.deepEqual(JSON.parse(JSON.stringify(
+  workerContext.validArmorTokenRecordForTest(
+    workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['51476']).classes)), []);
+// TSS molds make the base piece; the focused set is the Power-source upgrade.
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['32845'])), {
+  id: 32845, name: 'Ancient Skullcap Pattern', expansion: "The Serpent's Spine", track: 'group', tier: 1,
+  setQuery: 'Group (Tenish Unfocused)', slot: 'head', classes: ['NEC', 'WIZ', 'MAG', 'ENC'],
+  alternativeSets: [{ track: 'group', tier: 1, setQuery: 'Group (Tenish)' }],
+});
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['16375'])), {
+  id: 16375, name: 'Timeless Breastplate Mold', expansion: 'Planes of Power', track: 'raid', tier: 1,
+  setQuery: 'Raid (Elemental)', slot: 'chest', classes: ['WAR', 'CLR', 'PAL', 'SHD', 'BRD'],
+});
+// Class scoping is optional; an empty or malformed list is not a silent all-class token.
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.validArmorTokenRecordForTest(
+  workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['16375']).classes)), ['WAR', 'CLR', 'PAL', 'SHD', 'BRD']);
+assert.deepEqual(JSON.parse(JSON.stringify(workerContext.validArmorTokenRecordForTest(
+  workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['72204']).classes)), []);
+for (const bad of [[], '', 'NotAClass', ['NotAClass']]) {
+  assert.equal(workerContext.validArmorTokenRecordForTest({
+    ...workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['16375'], classes: bad }), null);
+}
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['47579'].name, 'Stellite Encrusted Cephalic Clay');
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['47573'].slot, 'hands');
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['56182'].name, 'Abstruse Remnant of Knowledge');
+assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['64753'].name, 'Rustic Headdress of Argath');
 assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['147660'].name, "Raw Crypt-Hunter's Cap");
 assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['148854'].name, "Amorphous Cohort's Helm");
 assert.equal(workerContext.LOOT_CAPTAIN_ARMOR_TOKEN_CATALOG.items['124656'], undefined);
@@ -1180,7 +1217,7 @@ assert.equal(state.compatibleWishlistItem(
   let armorFetchMode = 'normal';
   let armorFixtureMode = 'normal';
   workerContext.DOMParser = ArmorFixtureDOMParser;
-  const dreadweaveCacheKey = 'armor-set:rof-tob-2:raid tier 4 dreadweave:BST';
+  const dreadweaveCacheKey = 'armor-set:pop-tob-4:raid tier 4 dreadweave:BST';
   const truncatedDreadweave = workerContext.parseItemSetForTest(
     armorFixtureHtml(armorFixtureItems('Raid Tier 4 (Dreadweave)', 'BST'))).slice(0, 1);
   workerStorage.raidlootItemCache = { [dreadweaveCacheKey]: truncatedDreadweave };
@@ -1239,8 +1276,8 @@ assert.equal(state.compatibleWishlistItem(
     assert.equal(armorFetches.length, 1);
     assert.match(armorFetches[0], /name=Raid%20Tier%204%20\(Dreadweave\)/);
     assert.match(armorFetches[0], /class=Beastlord/);
-    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:raid tier 4 dreadweave:BST'].length, 8);
-    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:raid tier 4 dreadweave:BST'][0].setQuery,
+    assert.equal(workerStorage.raidlootItemCache['armor-set:pop-tob-4:raid tier 4 dreadweave:BST'].length, 8);
+    assert.equal(workerStorage.raidlootItemCache['armor-set:pop-tob-4:raid tier 4 dreadweave:BST'][0].setQuery,
       'Raid Tier 4 (Dreadweave)');
 
     const beastlordWrist = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81198',
@@ -1292,9 +1329,9 @@ assert.equal(state.compatibleWishlistItem(
     assert.equal(tolHeadItems.every((item) => item.slotKey.key === 'head'), true);
     assert.equal(tolHeadItems.every((item) => item.opendkpSourceName === undefined), true);
     assert.equal(workerStorage.raidlootItemCache[
-      'armor-set:rof-tob-2:group tier 3 luclinite ensanguined:BST'].length, 7);
+      'armor-set:pop-tob-4:group tier 3 luclinite ensanguined:BST'].length, 7);
     assert.equal(workerStorage.raidlootItemCache[
-      'armor-set:rof-tob-2:raid tier 2 luclinite coagulated:BST'].length, 7);
+      'armor-set:pop-tob-4:raid tier 2 luclinite coagulated:BST'].length, 7);
 
     const tolWrist = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '166236',
       name: 'Faded Bloodied Luclinite Wrist Armor', characterClass: 'Beastlord' });
@@ -1335,7 +1372,7 @@ assert.equal(state.compatibleWishlistItem(
       name: 'Fear Touched Bracer', characterClass: 'Beastlord' });
     assert.equal(filteredArmor.item.id, '140001');
     assert.deepEqual(JSON.parse(JSON.stringify(workerStorage.raidlootItemCache[
-      'armor-set:rof-tob-2:group tier 1 boreal:BST'].map((item) => item.id))), [
+      'armor-set:pop-tob-4:group tier 1 boreal:BST'].map((item) => item.id))), [
       '140001', '140002', '140003', '140004', '140005', '140006', '140007',
     ]);
     armorFixtureMode = 'normal';
@@ -1346,8 +1383,15 @@ assert.equal(state.compatibleWishlistItem(
       sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81194', name: 'Fear Infused Helm', characterClass: 'Warrior' }),
     ]);
     assert.deepEqual(JSON.parse(JSON.stringify(concurrent.map((response) => response.item.id))), ['117561', '130001']);
-    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:raid tier 4 dreadweave:BST'].length, 8);
-    assert.equal(workerStorage.raidlootItemCache['armor-set:rof-tob-2:group tier 4 frightweave:WAR'].length, 7);
+    assert.equal(workerStorage.raidlootItemCache['armor-set:pop-tob-4:raid tier 4 dreadweave:BST'].length, 8);
+    assert.equal(workerStorage.raidlootItemCache['armor-set:pop-tob-4:group tier 4 frightweave:WAR'].length, 7);
+
+    const scopedStart = armorFetches.length;
+    const wrongClass = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '16346',
+      name: 'Ornate Breastplate Mold', characterClass: 'Druid' });
+    assert.equal(wrongClass.ok, false);
+    assert.match(wrongClass.error, /cannot be used by your class/);
+    assert.equal(armorFetches.length, scopedStart);
 
     const ordinaryStart = armorFetches.length;
     const ordinaryFirst = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '90001', name: 'Cache Blade' });

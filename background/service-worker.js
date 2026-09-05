@@ -45,6 +45,8 @@ function validArmorTokenRecord(value) {
   const track = boundedName(String(value.track || ''), false).toLowerCase();
   const tier = Number.isInteger(value.tier) ? value.tier : String(value.tier || '').trim();
   if (!expansion || !['group', 'raid'].includes(track) || !Number.isInteger(tier) || tier < 1) return null;
+  const classes = value.classes === undefined ? [] : parserParseClasses(value.classes);
+  if (!Array.isArray(classes) || (value.classes !== undefined && !classes.length)) return null;
   const alternatives = value.alternativeSets === undefined ? [] : value.alternativeSets;
   if (!Array.isArray(alternatives)) return null;
   const normalizedAlternatives = [];
@@ -61,7 +63,7 @@ function validArmorTokenRecord(value) {
     seenSets.add(setKey);
     normalizedAlternatives.push({ track: alternativeTrack, tier: alternativeTier, setQuery: alternativeSetQuery });
   }
-  return { id: String(value.id).trim(), name, expansion, track, tier, setQuery, slot: slot.key, alternativeSets: normalizedAlternatives };
+  return { id: String(value.id).trim(), name, expansion, track, tier, setQuery, slot: slot.key, classes, alternativeSets: normalizedAlternatives };
 }
 
 function buildArmorTokenIndexes() {
@@ -268,6 +270,9 @@ async function fetchArmorSet(set, characterClass, cacheKey) {
 }
 
 async function resolveArmorToken(record, characterClass, itemCache) {
+  if (record.classes && record.classes.length && !record.classes.includes(characterClass)) {
+    throw new Error(record.name + ' cannot be used by your class');
+  }
   const sets = [{ track: record.track, tier: record.tier, setQuery: record.setQuery }, ...(record.alternativeSets || [])];
   const uniqueSets = [...new Map(sets.map((set) => [normalizedLookupName(set.setQuery), set])).values()];
   const settledSets = await Promise.allSettled(uniqueSets.map(async (set) => {
