@@ -31,7 +31,7 @@ header {
   background: linear-gradient(135deg, #243130, #172020);
   box-shadow: 0 3px 18px rgba(0,0,0,.22);
 }
-.brand { display: flex; align-items: center; gap: 13px; max-width: 1000px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 13px; max-width: 1280px; margin: 0 auto; }
 .brand-mark { width: 48px; height: 48px; border-radius: 11px; box-shadow: 0 3px 10px rgba(0,0,0,.35); }
 .brand h1 { margin: 0; color: var(--primary); font: 700 25px Georgia, 'Times New Roman', serif; letter-spacing: .2px; }
 .brand .subtitle { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
@@ -178,14 +178,42 @@ main {
 .card input:focus, .card select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(198,164,94,.14); }
 .hint { color: var(--text-dim); font-size: 12px; margin: 0 0 12px; }
 
-.wishlist-editor { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
-.wishlist-editor-header, .wishlist-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.wishlist-editor-header { margin-bottom: 8px; }
-.wishlist-editor-header h4 { margin: 0; color: var(--primary); font: 700 14px Georgia, 'Times New Roman', serif; }
-.wishlist-editor-header span, .wishlist-empty, .wishlist-slot { color: var(--text-dim); font-size: 11px; }
+.wishlist-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wishlist-empty, .wishlist-slot { color: var(--text-dim); font-size: 11px; }
 .wishlist-list { display: flex; flex-direction: column; gap: 5px; }
 .wishlist-row { padding: 6px 0; border-top: 1px solid var(--border-soft); }
 .wishlist-row:first-child { border-top: 0; }
+/* Wanted, not owned: the wishlist tab and its rows carry a gold tint so they
+   never read as worn gear sitting in the same tab strip. */
+.inventory-tabs button.wishlist-tab { color: #c8a85a; }
+.inventory-tabs button.wishlist-tab.active { color: #f0d18a; border-color: #c8a85a; }
+.wishlist-view .wishlist-row {
+  padding: 8px 10px;
+  border: 1px solid #9d8248;
+  border-radius: 3px;
+  background: linear-gradient(145deg, rgba(132, 101, 35, .28), rgba(60, 45, 16, .18) 72%);
+}
+.wishlist-view .wishlist-name { color: #f0d18a; font-weight: 700; }
+.wishlist-view .wishlist-empty { padding: 10px; }
+/* Game-style wishlist: the slot grid, so an empty slot reads as "nothing
+   wanted here yet" at a glance. */
+.gear-slot.wishlist-gear-slot.filled {
+  border-color: #c8a85a;
+  background: linear-gradient(145deg, rgba(132, 101, 35, .38), rgba(60, 45, 16, .2) 72%);
+}
+.gear-slot.wishlist-gear-slot.filled .gear-slot-name { color: #f0d18a; }
+.last-equip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 3px;
+  background: rgba(16, 28, 43, .6);
+}
+.last-equip-text { color: var(--text-dim); font-size: 11px; }
 .wishlist-item { min-width: 0; }
 .wishlist-name { display: block; overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .wishlist-slot { display: block; margin-top: 2px; text-transform: capitalize; }
@@ -255,7 +283,7 @@ header {
 .brand h1 { color: #e4bf69; text-shadow: 1px 1px #07101b, 0 0 12px rgba(213,174,85,.18); }
 .brand .subtitle { color: #b7c0ca; }
 
-main { max-width: 1080px; padding: 28px 24px 40px; }
+main { max-width: 1280px; padding: 28px 24px 40px; }
 .section-header { margin-bottom: 18px; padding: 9px 10px 0; border-bottom: 1px solid #46566d; }
 .section-header h2 { color: #e6c26d; text-shadow: 1px 1px #07101b; letter-spacing: .5px; }
 #profile-list-section > .section-header::before,
@@ -370,6 +398,22 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
   background: #111c2b;
   border-color: #8e713d;
 }
+/* The style switch sits in the tab strip but must not read as another tab, so
+   it is scoped past the .inventory-tabs button rules that follow it. */
+.inventory-tabs .wishlist-style { display: inline-flex; gap: 4px; margin-left: auto; align-self: center; padding-right: 2px; }
+/* The display above outranks the UA [hidden] rule, so restate it here or the
+   switch stays on screen for every tab. */
+.inventory-tabs .wishlist-style[hidden] { display: none; }
+.inventory-tabs .wishlist-style button {
+  padding: 3px 9px;
+  border: 1px solid #52657d;
+  border-bottom: 1px solid #52657d;
+  border-radius: 3px;
+  background: #101c2b;
+  color: #a7b2c0;
+  font: 700 10px Tahoma, sans-serif;
+}
+.inventory-tabs .wishlist-style button.active { border-color: #c8a85a; background: #1b2b3d; color: #f0d18a; }
 .inventory-body { display: block; min-height: 390px; }
 .inventory-stage { padding: 11px 12px 12px; background: radial-gradient(ellipse at 50% 43%, #273b53 0, #17263a 42%, #0b1523 80%); }
 .inventory-stage-title { padding-bottom: 7px; color: #9faec1; font: 10px Tahoma, sans-serif; letter-spacing: .16em; text-align: center; }
@@ -395,7 +439,13 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
 .gear-glyph { display: grid; flex: 0 0 25px; width: 25px; height: 25px; place-items: center; border: 1px solid #687991; border-radius: 3px; background: radial-gradient(circle at 30% 25%, #5b7593, #121d2d 65%); color: #b8cae1; font: 700 14px/1 Tahoma, sans-serif; }
 .gear-icon { flex: 0 0 25px; width: 25px; height: 25px; border: 1px solid #b18c4b; border-radius: 3px; object-fit: cover; background: #151a27; }
 .gear-slot.filled .gear-glyph { border-color: #b18c4b; color: #f2d481; background: radial-gradient(circle at 30% 25%, #80683f, #151a27 65%); }
+.gear-slot-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; gap: 1px; }
+.gear-slot-label { overflow: hidden; font: 700 8px Tahoma, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #79879a; text-overflow: ellipsis; white-space: nowrap; }
+.gear-slot.filled .gear-slot-label { color: #a8916a; }
 .gear-slot-name { overflow: hidden; font: 10px Tahoma, sans-serif; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.gear-slot:not(.filled) .gear-slot-name { color: #66727f; font-style: italic; }
+/* The slot the last equip landed in, so a change is visible at a glance. */
+.gear-slot.just-equipped { border-color: #e1bf6c; box-shadow: inset 0 0 0 1px #e1bf6c, 0 0 8px rgba(226,190,99,.3); }
 .inventory-character { display: flex; grid-column: 3 / 5; grid-row: 2 / 6; flex-direction: column; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; color: #f0d381; text-align: center; }
 .character-silhouette { display: grid; width: 100%; min-height: 0; flex: 1; place-items: center; color: #a7b9cb; font: 96px/1 Georgia, serif; text-shadow: 0 0 5px #80a5c6, 0 8px 0 #111c2b, 0 0 22px rgba(132,170,208,.38); opacity: .82; }
 .inventory-character strong { max-width: 100%; overflow: hidden; font: 700 14px Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
@@ -412,6 +462,7 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
   .inventory-tabs button { padding-left: 7px; padding-right: 7px; font-size: 9px; }
   .inventory-grid { gap: 4px; }
   .gear-slot-name { font-size: 8px; }
+  .gear-slot-label { font-size: 7px; }
 }
 
 .consent-gate { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(4, 9, 16, .94); }
@@ -428,7 +479,9 @@ main { max-width: 1080px; padding: 28px 24px 40px; }
 .character-sheet-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; margin-bottom: 14px; }
 .character-sheet-card h3 { grid-column: 1 / -1; margin-bottom: 10px; }
 .character-sheet-card label { margin-bottom: 0; }
-.inventory-editor-layout { grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); }
+/* The slot grid is 6 columns wide, so the preview takes the larger share --
+   below roughly 110px a column the item name truncates to nothing useful. */
+.inventory-editor-layout { grid-template-columns: minmax(0, 1.4fr) minmax(300px, .6fr); }
 .editor-profile-switcher { display: flex; align-items: center; gap: 7px; margin-left: 14px; }
 .editor-profile-switcher label { margin: 0; color: #aeb8c5; font: 11px Tahoma, sans-serif; }
 .editor-profile-switcher select { min-width: 150px; padding: 6px 8px; border: 1px solid #4b5b70; border-radius: 2px; background: #09121f; color: #f0eee5; font: 12px Tahoma, sans-serif; }

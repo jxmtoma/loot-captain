@@ -85,7 +85,8 @@
       const row = result && result.comparison.rows[Number(badge.dataset.lcRow)];
       if (!result || !row || !row.diff) return null;
       const panel = LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-        row.isAugment ? result.comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView);
+        row.isAugment ? result.comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView,
+        'worn', result.profile);
       panel.dataset.lcProfile = badge.dataset.lcProfile;
       return panel;
     }
@@ -192,7 +193,7 @@
             if (same) return;
           }
           host.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-            row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView));
+            row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView, 'worn', LC.currentProfile));
         });
         badges.push(rowBadge);
       }
@@ -279,7 +280,8 @@
           const row = comparison.rows[Number(badge.dataset.lcRow)];
           if (!comparison.eligible || !summary.comparable || !row) return;
           td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-            row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView));
+            row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView,
+            'worn', LC.currentProfile));
         }
         newRow.appendChild(td);
         const nativeDetailRow = detail.closest('tr');

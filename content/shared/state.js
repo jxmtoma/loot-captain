@@ -284,6 +284,32 @@
     return wishlistMutation('toggle', item, profileId);
   }
 
+  // Equip a page item into a profile, replacing `worn` or, when worn is null,
+  // appending into an empty slot. The worn item is addressed by its index in
+  // profile.items rather than by slot: an /output inventory import stores the
+  // same slot string for both halves of a paired slot. The worker re-checks the
+  // item's identity at that index, so a stale page is rejected, not misapplied.
+  async function equipItem(cand, profile, worn, slotKey) {
+    if (!profile || !profile.id || !cand) return { ok: false };
+    const items = profile.items || [];
+    const targetIndex = worn ? items.indexOf(worn) : -1;
+    if (worn && targetIndex < 0) return { ok: false };
+    try {
+      return await chrome.runtime.sendMessage({
+        type: 'EQUIP_ITEM',
+        profileId: profile.id,
+        item: storageItem(cand),
+        targetIndex,
+        expected: worn ? { id: worn.id || '', name: worn.name || '', slot: worn.slot || '' } : null,
+        expectedItemCount: items.length,
+        slot: slotKey || '',
+        wishlistItem: normalizeWishlistEntry(cand),
+      });
+    } catch (e) {
+      return { ok: false };
+    }
+  }
+
   async function enrichWishlistEntry(entry, profileId) {
     const target = wishlistItem(entry);
     if (hasItemData(target)) return target;
@@ -413,5 +439,6 @@
     mergeWishlistCandidate,
     toggleWishlist,
     enrichWishlistEntry,
+    equipItem,
   };
 })();

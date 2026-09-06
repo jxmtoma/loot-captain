@@ -1,6 +1,7 @@
 # Wishlist and character-aware scoring roadmap
 
-Status: local wishlist implemented; remaining sections are roadmap, 2026-08-25.
+Status: local wishlist, numeric stat coverage, and equip-in-profile implemented; remaining
+sections are roadmap, 2026-09-05.
 
 ## Product decision
 
@@ -86,7 +87,19 @@ When the same item is later resolved from another source, merge the discovered I
 7. A candidate can be compared with a compatible wishlist baseline without changing existing equipped-item comparisons.
 8. An unresolved wishlist item remains marked and reports unavailable stats instead of being discarded.
 
-## 2. Mark obtained / equip in local profile
+### Editor presentation
+
+The wishlist is a tab in the inventory strip rather than a section of its own, tinted gold
+so it never reads as worn gear. It offers two styles, remembered in `wishlistStyle`: a
+game-style slot grid, which makes an empty slot read as "nothing wanted here yet" at a
+glance, and a plain list. The grid is built separately from the worn-equipment grid, which
+is tied to item indices, augment parenting and selection that wishlist entries do not have.
+
+The style switch belongs to the wishlist tab alone, and it carries its own `display` rule.
+That rule outranks the browser's `[hidden] { display: none }`, so the `[hidden]` case has to
+be restated in CSS -- setting the property alone leaves the switch on screen for every tab.
+
+## 2. Mark obtained / equip in local profile (implemented)
 
 An actionable comparison row should offer `Equip in <slot>`. This updates Loot Captain's local profile; it does not change the character in EverQuest.
 
@@ -108,6 +121,50 @@ Acceptance criteria:
 2. Paired-slot and weapon replacements affect exactly one intended slot.
 3. A replacement confirmation names both items and the slot.
 4. A failed save leaves the original profile and wishlist unchanged.
+
+### How it was built
+
+An `Equip` button sits in each comparison row's panel header and expands in place into a
+`Replace <old> with <new>?` confirmation, so no browser dialog is used. The whole mutation
+runs in the service worker under `EQUIP_ITEM`, inside the same queue as the wishlist
+mutations, and re-reads storage before writing.
+
+The worn item is addressed by its **index in `profile.items`**, not by slot. An
+`/output inventory` import stores the same slot string for both halves of a paired slot,
+and two identical earrings is a normal setup, so neither slot nor name can identify one
+half on its own. The index travels with an identity assertion (`id`, `name`, `slot` of the
+item the page saw at that index); a mismatch rejects the equip and writes nothing, which is
+what keeps a stale page from overwriting the wrong item.
+
+An item the character already owns shows a disabled `Equipped` chip instead of a button.
+That is not only cosmetic: the row's comparison target can be the other half of a paired
+slot, so offering to equip an owned item there would add a second copy rather than replace
+anything.
+
+Comparing an equipped item against itself only ever produces a table of zeroes, so the
+panel says `Already equipped in <slot>` instead of drawing one.
+
+Equipping happens on a RaidLoot or OpenDKP tab but lands in storage the character editor is
+showing, so the editor's `storage.onChanged` handler refreshes worn items, not just the
+wishlist; otherwise an open editor keeps displaying the old gear indefinitely. A hand edit
+in progress wins, so it is never discarded by an incoming change. In the grid every slot
+keeps its label -- several items otherwise truncate to the same prefix with no way to tell
+which slot is which -- and the slot the last equip touched is marked.
+
+Undo lives in the character editor, not on the item page. On a page it would be permanent
+furniture with no natural end, and it would silently retarget whenever something else was
+equipped. The worker stores one level of undo per character in `profile.lastEquip`,
+describing only what that equip touched -- the replaced item, the index, and the wishlist
+entry it consumed -- so a later profile edit is not rolled back with it. An undo whose
+index no longer holds the equipped item is refused rather than applied to whatever now
+sits there.
+
+Two rules are load-bearing and easy to lose in a refactor:
+
+- The **stored** slot wins over the candidate's. A one-hand candidate carries
+  `Primary, Secondary`, and writing that back would make the item match both weapon rows.
+- A replaced augment inherits the `parentId` and `augSlot` of the augment it replaces, so a
+  page cannot relocate it; replacing a parent item re-points the augments that referenced it.
 
 ## 3. Per-character and role-specific scoring
 
@@ -210,15 +267,93 @@ The UI should attach a confidence label to every number:
 
 Do not display a single “+X% DPS” number until it survives comparison with representative combat logs.
 
+## 7. Estimated upgrade projection
+
+Designed 2026-09-05, not yet built. This is the intended differentiator: every other
+EverQuest gear tool stops at item stat deltas.
+
+### The bet
+
+Show a projected character-level impact — HP, mana, ATK — as an explicit **range**, not a
+point value. Exactness is not the goal; changing a loot decision is. A range is honest
+about what is knowable and still actionable, where a single fabricated number is neither.
+
+### Why a range, and why the numbers are uncertain
+
+No stat-to-HP/mana/ATK conversion has been published by Daybreak, and community values
+disagree:
+
+- Estimates for heroic stamina span roughly 12 to 29 HP per point, and disagree on whether
+  the conversion steps every 5 points.
+- Allakhazam's stats wiki describes the relationships qualitatively only, with no numbers.
+- Forum threads concede the "accepted" mana formulas are not correct.
+- The nearest concrete implementation is the EQEmu server source, a reverse-engineered
+  emulator targeting older eras rather than live EverQuest.
+
+That spread is not an obstacle — it *is* the range. `+180 to +435 HP` carries the `Estimate`
+label from section 5, never `Exact` or `Derived`, and the bounds tighten as real
+before/after values are measured in game. The feature improves with use instead of being
+frozen at whatever the forums guessed.
+
+### Data: two generated, source-cited tables
+
+Follow the `tools/generate_armor_token_catalog.py` precedent — exact source-reviewed data,
+not a live crawler, with a `--check` mode wired into `node tests/regression.js`. No new
+permissions or hosts.
+
+1. `STAT_COEFFICIENTS` — per class archetype, `{ stat: { low, high } }` for the HP / mana /
+   ATK contribution per point, each entry carrying its citation. Base and heroic stats need
+   separate coefficients. Measured in-game data points are recorded alongside the cited ones
+   and narrow the bounds.
+2. `AA_STAT_CAPS` — cap-granting AAs with the level at which each becomes available.
+
+### Cap derivation
+
+Base cap is 255 through level 60, then +5 per level (L70 = 305, L100 = 455). Add the AA
+grants available at that level: Planar Power +5/rank across all seven, Innate Enlightenment
++10/rank INT/WIS, Planar Stats +5/rank, Fundament +1, DoN progression +10, CoTF achievements
++5/rank.
+
+**Simplifying assumption: the character has bought every AA available at their level,
+regardless of expansion.** This yields the upper bound of the cap, which pairs naturally
+with a range-based projection. Refinement paths in order of value: per-expansion gating,
+then user-entered ranks, then an optional AA count.
+
+This is the only tractable route, because RaidLoot cannot supply a character's actual AAs.
+RaidLoot profiles are inventory-only, built from an `/output inventory` dump of worn items,
+and RaidLoot's separate AA database is a generic catalog filtered by class and level — it
+describes what a character *could* buy, never what they *did*.
+
+### Input
+
+`profile.baseStats = { STR: { value, cap }, ... }` for the seven base stats — optional
+totals read off the in-game character sheet, which shows value and cap together. When
+absent, the projection falls back to the derived cap. `baseStats` must be added to the
+`editingProfile` whitelist and to `saveProfile` in the options page, which rebuilds profiles
+from a fixed field list and would otherwise drop it.
+
+The input hint must say **unbuffed**: EverQuest shows buffed stats by default, and a buffed
+value entered as the total over-reports how close a stat is to its cap.
+
+### Open questions
+
+- Which class archetypes map to which coefficient sets? The role presets in section 3 are
+  the natural split, which argues for building them first or alongside.
+- Does an at-cap stat contribute zero to both bounds, or only to the upper bound? The game
+  displays the capped value, so over-cap headroom is invisible — a character at 455/455 may
+  have 5 points of hidden headroom or 200.
+- Where do measured in-game data points live so they stay reviewable?
+
 ## Recommended implementation order
 
 1. Preserve profile metadata and add per-profile wishlist fields. (implemented)
 2. Add local wishlist toggles, cross-source identity matching, highlights, editor management, and direct wishlist-baseline comparisons. (implemented)
-3. Add safe per-row equip actions.
-4. Make numeric stat coverage consistent across RaidLoot, OpenDKP, storage, and display.
+3. Add safe per-row equip actions. (implemented)
+4. Make numeric stat coverage consistent across RaidLoot, OpenDKP, storage, and display. (implemented)
 5. Add per-character role presets with transparent score breakdowns.
 6. Preserve and compare structured focus/proc/worn/click effects without scoring them.
-7. Add an optional unbuffed baseline and a small set of sourced derived-stat rules.
+7. Build the estimated upgrade projection in section 7: sourced coefficient and AA cap
+   tables, an optional unbuffed stat snapshot, and range-labeled projections.
 8. Extend the existing weapon ratio into an explicitly labeled throughput estimate.
 9. Consider full DPS forecasting only after log-based validation.
 

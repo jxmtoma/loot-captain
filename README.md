@@ -9,7 +9,8 @@ Loot Captain is a Manifest V3 Chrome/Edge 109+ extension for comparing EverQuest
 - Compare item stats with slot-aware scoring, including paired ears, wrists, and fingers.
 - Compare items against the characters you select, with a badge layout option: compact (best character inline + panel chips) or expanded (every character labeled in the row). Focus and proc effects are compared across all selected characters.
 - Keep a per-character local wishlist; a single wishlist star per item opens a character picker when several characters are selected. Characters that cannot wear the item (class or required level) are excluded from wishlisting.
-- Highlight wanted items in RaidLoot and live OpenDKP auctions, and manage the list in the character editor.
+- Equip an item into a local character profile straight from its comparison row, with an inline confirmation naming both items. This updates Loot Captain's stored profile only; it does not change the character in EverQuest. A successful equip clears the matching wishlist entry and refreshes every badge on the page. An item the character already owns shows as equipped instead, and the character editor offers a one-step undo of the most recent equip.
+- Highlight wanted items in RaidLoot and live OpenDKP auctions, and manage the list in the character editor's Wishlist tab, shown either as a game-style slot grid or a plain list.
 - Enrich missing item stats from public RaidLoot item pages.
 - Resolve statless class-specific armor tokens to real RaidLoot armor, with locally cached set results.
 - Annotate OpenDKP item pages, tables, and tooltips.

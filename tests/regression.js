@@ -30,7 +30,28 @@ assert.match(optionsHtml, /id="btn-refresh-raidloot"[^>]*hidden/);
 assert.match(optionsHtml, /aria-label="Refresh worn equipment and augment data from RaidLoot"/);
 assert.match(optionsHtml, /data-inventory-tab="augments"/);
 assert.match(optionsHtml, /data-inventory-tab="focus"/);
-assert.match(optionsHtml, /id="wishlist-list"/);
+// The wishlist is a tab in the inventory strip, tinted so it does not read as
+// worn gear, rather than a section of its own.
+assert.match(optionsHtml, /data-inventory-tab="wishlist"/);
+assert.doesNotMatch(optionsHtml, /id="wishlist-list"/);
+assert.match(read('options/options.css'), /\.wishlist-view \.wishlist-row/);
+// A display rule on the switch outranks [hidden]; it has to be restated.
+assert.match(read('options/options.css'), /\.wishlist-style\[hidden\] \{ display: none/);
+assert.match(optionsSource, /activeInventoryTab === 'wishlist'/);
+assert.match(optionsHtml, /data-wishlist-style="slots"/);
+assert.match(optionsHtml, /id="last-equip"/);
+assert.match(optionsSource, /wishlistSlotGrid/);
+// A filled slot keeps its label, or several items truncate to the same prefix.
+assert.match(optionsSource, /gear-slot-label/);
+assert.match(read('options/options.css'), /\.gear-slot\.just-equipped/);
+// Worn items change from other tabs, so the open editor has to follow them.
+assert.match(optionsSource, /editingProfile\.lastEquip = stored\.lastEquip/);
+// One tab-sync path, so the style switch hides on every non-wishlist tab.
+assert.match(optionsSource, /styleToggle\.hidden = activeInventoryTab !== 'wishlist'/);
+assert.equal((optionsSource.match(/tab\.setAttribute\('aria-selected'/g) || []).length, 1);
+assert.match(optionsSource, /type: 'UNDO_EQUIP'/);
+// Undo belongs to the character editor, never the item page.
+assert.doesNotMatch(read('content/shared/ui.js'), /undoEquip/);
 assert.doesNotMatch(optionsHtml, /id="profile-class"[^>]*type="text"/);
 for (const className of ['Bard', 'Beastlord', 'Berserker', 'Cleric', 'Druid', 'Enchanter', 'Magician', 'Monk', 'Necromancer', 'Paladin', 'Ranger', 'Rogue', 'Shadowknight', 'Shaman', 'Warrior', 'Wizard']) {
   assert.match(optionsSource, new RegExp("'" + className + "'"));
@@ -99,6 +120,15 @@ assert.match(read('content/shared/ui.js'), /dataset\.lcView = 'proc'/);
 assert.match(read('content/shared/ui.js'), /slotShort\(row\.slotKey\)/);
 assert.match(read('content/shared/state.js'), /PROFILE_STATS_VERSION = 4/);
 assert.match(read('content/shared/state.js'), /type: 'MUTATE_WISHLIST'/);
+assert.match(read('content/shared/state.js'), /type: 'EQUIP_ITEM'/);
+assert.match(serviceWorkerSource, /case 'EQUIP_ITEM'/);
+// The stored slot wins over the candidate's: a one-hander carries
+// "Primary, Secondary" and would otherwise match both weapon rows at once.
+assert.match(serviceWorkerSource, /slot: stored\.slot/);
+// The equip action reuses lc-compare-nav, which is already inside the panel and
+// therefore already covered by LC_UI_SELECTOR and the outside-click allowlist.
+assert.match(read('content/shared/ui.js'), /'lc-compare-nav lc-equip'/);
+assert.doesNotMatch(read('content/shared/ui.js'), /window\.confirm/);
 assert.match(serviceWorkerSource, /let profileMutationQueue = Promise\.resolve\(\)/);
 assert.match(serviceWorkerSource, /RAIDLOOT_ITEM_CACHE_KEY = 'raidlootItemCache'/);
 assert.match(serviceWorkerSource, /chrome\.runtime\.getContexts/);
@@ -1453,6 +1483,286 @@ assert.equal(state.compatibleWishlistItem(
   ]);
   assert.equal(workerStorage.profiles.p.name, 'Saved Profile');
   assert.equal(workerStorage.profiles.p.wishlist.some((item) => item.raidlootId === '503'), true);
+  // Equip. An /output inventory import stores the same slot string for both
+  // halves of a paired slot, so the worker addresses the worn item by index and
+  // re-checks its identity there instead of matching on slot or name.
+  workerStorage.profiles.p.items = [
+    { id: '1', name: 'Old Ear', slot: 'ear', stats: { HP: 10 }, effects: [] },
+    { id: '2', name: 'Other Ear', slot: 'ear', stats: { HP: 20 }, effects: [] },
+  ];
+  workerStorage.profiles.p.wishlist = [{
+    raidlootId: '77', opendkpHost: '', opendkpId: '', name: 'New Ear', slot: 'Ear',
+    isAugment: false, augmentTypes: [], stats: {}, effects: [], addedAt: 1,
+  }];
+  const equipEar = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 2,
+    item: { id: '77', name: 'New Ear', slot: 'Ear', stats: { HP: 50 } },
+    expected: { id: '1', name: 'Old Ear', slot: 'ear' },
+    wishlistItem: { raidlootId: '77', name: 'New Ear', slot: 'Ear' },
+  });
+  assert.equal(equipEar.ok, true);
+  assert.equal(workerStorage.profiles.p.items.length, 2);
+  assert.equal(workerStorage.profiles.p.items[0].name, 'New Ear');
+  assert.equal(workerStorage.profiles.p.items[0].slot, 'ear');
+  assert.equal(workerStorage.profiles.p.items[1].name, 'Other Ear');
+  assert.equal(workerStorage.profiles.p.wishlist.length, 0);
+  const beforeStaleEquip = JSON.parse(JSON.stringify(workerStorage.profiles.p));
+  const staleEquip = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 2,
+    item: { id: '78', name: 'Newer Ear', slot: 'Ear', stats: { HP: 60 } },
+    expected: { id: '1', name: 'Old Ear', slot: 'ear' },
+  });
+  assert.equal(staleEquip.ok, false);
+  assert.deepEqual(workerStorage.profiles.p, beforeStaleEquip);
+  const appendEquip = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: -1, slot: 'head', expectedItemCount: 2,
+    item: { id: '90', name: 'New Helm', slot: 'Head', stats: { AC: 30 } },
+  });
+  assert.equal(appendEquip.ok, true);
+  assert.equal(workerStorage.profiles.p.items.length, 3);
+  assert.equal(workerStorage.profiles.p.items[2].slot, 'head');
+  const staleAppend = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: -1, slot: 'neck', expectedItemCount: 2,
+    item: { id: '91', name: 'New Neck', slot: 'Neck', stats: { AC: 10 } },
+  });
+  assert.equal(staleAppend.ok, false);
+  const unresolvedEquip = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: -1, slot: 'waist', expectedItemCount: 3,
+    item: { id: '92', name: 'Statless Belt', slot: 'Waist', stats: {} },
+  });
+  assert.equal(unresolvedEquip.ok, false);
+  assert.equal(workerStorage.profiles.p.items.length, 3);
+  // An augment inherits the parent and aug slot of the augment it replaces, so
+  // a page cannot relocate it; replacing a parent re-points the augments on it.
+  workerStorage.profiles.p.items = [
+    { id: '9', name: 'Old Chest', slot: 'chest', stats: { AC: 40 }, effects: [] },
+    { id: '50', name: 'Old Aug', slot: 'chest', isAugment: true, parentId: '9', augSlot: 2, stats: { HP: 5 }, effects: [] },
+  ];
+  const equipAug = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 1, expectedItemCount: 2,
+    item: { id: '51', name: 'New Aug', slot: 'Chest', isAugment: true, parentId: 'evil', augSlot: 9, stats: { HP: 25 } },
+    expected: { id: '50', name: 'Old Aug', slot: 'chest' },
+  });
+  assert.equal(equipAug.ok, true);
+  assert.equal(workerStorage.profiles.p.items[1].name, 'New Aug');
+  assert.equal(workerStorage.profiles.p.items[1].parentId, '9');
+  assert.equal(workerStorage.profiles.p.items[1].augSlot, 2);
+  const equipParent = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 2,
+    item: { id: '77', name: 'New Chest', slot: 'Chest', stats: { AC: 80 } },
+    expected: { id: '9', name: 'Old Chest', slot: 'chest' },
+  });
+  assert.equal(equipParent.ok, true);
+  assert.equal(workerStorage.profiles.p.items[1].parentId, '77');
+  // A one-hand candidate carries both weapon slots, so the stored slot must win
+  // or the replacement would match the primary row as well.
+  workerStorage.profiles.p.items = [{ id: '30', name: 'Old Offhand', slot: 'secondary', stats: { AC: 10 }, effects: [] }];
+  const equipWeapon = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 1,
+    item: { id: '31', name: 'New Blade', slot: 'Primary, Secondary', stats: { AC: 20 } },
+    expected: { id: '30', name: 'Old Offhand', slot: 'secondary' },
+  });
+  assert.equal(equipWeapon.ok, true);
+  assert.equal(workerStorage.profiles.p.items[0].slot, 'secondary');
+  const blockedEquip = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: -1, slot: 'head', expectedItemCount: 1,
+    item: { id: '99', name: 'Evil Helm', slot: 'Head', stats: { AC: 1 } },
+  }, 'https://evil.example/');
+  assert.equal(blockedEquip.ok, false);
+  assert.equal(workerStorage.profiles.p.items.length, 1);
+  await Promise.all([
+    sendWorkerMessage({ type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 1,
+      item: { id: '32', name: 'Queued Blade', slot: 'Primary, Secondary', stats: { AC: 30 } },
+      expected: { id: '31', name: 'New Blade', slot: 'secondary' } }),
+    sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'toggle',
+      item: { raidlootId: '504', name: 'Queued Four', slot: 'Neck' } }),
+  ]);
+  assert.equal(workerStorage.profiles.p.items[0].name, 'Queued Blade');
+  assert.equal(workerStorage.profiles.p.wishlist.some((item) => item.raidlootId === '504'), true);
+  // An /output inventory import can store items with no RaidLoot ID, so the
+  // name half of the identity assertion has to hold on its own.
+  workerStorage.profiles.p.items = [{ id: '', name: 'Plain Ear', slot: 'ear', stats: { HP: 10 }, effects: [] }];
+  const staleNameEquip = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 1,
+    item: { id: '', name: 'New Plain Ear', slot: 'Ear', stats: { HP: 50 } },
+    expected: { id: '', name: 'Renamed Ear', slot: 'ear' },
+  });
+  assert.equal(staleNameEquip.ok, false);
+  assert.equal(workerStorage.profiles.p.items[0].name, 'Plain Ear');
+  const namedEquip = await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 1,
+    item: { id: '', name: 'New Plain Ear', slot: 'Ear', stats: { HP: 50 } },
+    expected: { id: '', name: 'Plain Ear', slot: 'ear' },
+  });
+  assert.equal(namedEquip.ok, true);
+  assert.equal(workerStorage.profiles.p.items[0].name, 'New Plain Ear');
+  // Undo restores the replaced item and the wishlist entry the equip consumed.
+  workerStorage.profiles.p.items = [{ id: '40', name: 'Old Ring', slot: 'finger', stats: { HP: 10 }, effects: [] }];
+  workerStorage.profiles.p.wishlist = [{
+    raidlootId: '41', opendkpHost: '', opendkpId: '', name: 'New Ring', slot: 'Fingers',
+    isAugment: false, augmentTypes: [], stats: {}, effects: [], addedAt: 3,
+  }];
+  await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 1,
+    item: { id: '41', name: 'New Ring', slot: 'Fingers', stats: { HP: 90 } },
+    expected: { id: '40', name: 'Old Ring', slot: 'finger' },
+    wishlistItem: { raidlootId: '41', name: 'New Ring', slot: 'Fingers' },
+  });
+  assert.equal(workerStorage.profiles.p.wishlist.length, 0);
+  assert.equal(workerStorage.profiles.p.lastEquip.previous.name, 'Old Ring');
+  const undone = await sendWorkerMessage({ type: 'UNDO_EQUIP', profileId: 'p' });
+  assert.equal(undone.ok, true);
+  assert.equal(workerStorage.profiles.p.items.length, 1);
+  assert.equal(workerStorage.profiles.p.items[0].name, 'Old Ring');
+  assert.equal(workerStorage.profiles.p.items[0].slot, 'finger');
+  assert.equal(workerStorage.profiles.p.wishlist.some((entry) => entry.raidlootId === '41'), true);
+  assert.equal(workerStorage.profiles.p.lastEquip, null);
+  // Undo is one level deep, so a second one has nothing to reverse.
+  assert.equal((await sendWorkerMessage({ type: 'UNDO_EQUIP', profileId: 'p' })).ok, false);
+  // Undoing an append removes the item it added rather than restoring anything.
+  await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: -1, slot: 'neck', expectedItemCount: 1,
+    item: { id: '42', name: 'Added Neck', slot: 'Neck', stats: { AC: 12 } },
+  });
+  assert.equal(workerStorage.profiles.p.items.length, 2);
+  assert.equal((await sendWorkerMessage({ type: 'UNDO_EQUIP', profileId: 'p' })).ok, true);
+  assert.equal(workerStorage.profiles.p.items.length, 1);
+  assert.equal(workerStorage.profiles.p.items.some((item) => item.name === 'Added Neck'), false);
+  // An undo whose index no longer holds the equipped item is refused, so a later
+  // profile edit is not rolled back along with it.
+  await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 1,
+    item: { id: '43', name: 'Third Ring', slot: 'Fingers', stats: { HP: 120 } },
+    expected: { id: '40', name: 'Old Ring', slot: 'finger' },
+  });
+  workerStorage.profiles.p.items[0] = { id: '44', name: 'Hand Edited', slot: 'finger', stats: { HP: 1 }, effects: [] };
+  assert.equal((await sendWorkerMessage({ type: 'UNDO_EQUIP', profileId: 'p' })).ok, false);
+  assert.equal(workerStorage.profiles.p.items[0].name, 'Hand Edited');
+  // Items with no RaidLoot ID rest on the name alone, so that half of the undo
+  // identity check has to hold on its own too.
+  workerStorage.profiles.p.items = [{ id: '', name: 'Plain Ring', slot: 'finger', stats: { HP: 5 }, effects: [] }];
+  workerStorage.profiles.p.lastEquip = null;
+  await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: 0, expectedItemCount: 1,
+    item: { id: '', name: 'Nicer Ring', slot: 'Fingers', stats: { HP: 60 } },
+    expected: { id: '', name: 'Plain Ring', slot: 'finger' },
+  });
+  workerStorage.profiles.p.items[0] = { id: '', name: 'Renamed By Hand', slot: 'finger', stats: { HP: 60 }, effects: [] };
+  assert.equal((await sendWorkerMessage({ type: 'UNDO_EQUIP', profileId: 'p' })).ok, false);
+  assert.equal(workerStorage.profiles.p.items[0].name, 'Renamed By Hand');
+  assert.equal(((await sendWorkerMessage({
+    type: 'EQUIP_ITEM', profileId: 'p', targetIndex: -1, slot: 'head', expectedItemCount: 1,
+    item: { id: '45', name: 'Blocked', slot: 'Head', stats: { AC: 1 } },
+  }, 'https://evil.example/')) || {}).ok, false);
+  assert.equal((await sendWorkerMessage({ type: 'UNDO_EQUIP', profileId: 'p' }, 'https://evil.example/')).ok, false);
+  // The equip button is the one part of this feature whose logic lives entirely
+  // in the DOM, so it gets a minimal element stub rather than only regex checks.
+  // The guard that matters most is the last one: a worn item we cannot locate in
+  // profile.items must render nothing, never fall through to the append path.
+  const stubEl = (tag) => ({
+    tagName: String(tag).toUpperCase(), children: [], attrs: {}, dataset: {}, listeners: {},
+    _text: '', className: '', type: '', title: '', disabled: false,
+    get textContent() {
+      return this.children.length ? this.children.map((child) => child.textContent).join('') : this._text;
+    },
+    // Matches the DOM: assigning textContent leaves one text node behind, so a
+    // later appendChild composes with it rather than replacing it.
+    set textContent(value) { this._text = ''; this.children = [{ textContent: String(value), find: () => null }]; },
+    appendChild(child) { this.children.push(child); return child; },
+    replaceChildren(...next) { this.children = next; this._text = ''; },
+    setAttribute(key, value) { this.attrs[key] = String(value); },
+    getAttribute(key) { return this.attrs[key]; },
+    addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+    querySelector() { return null; },
+    click() {
+      const event = { preventDefault() {}, stopPropagation() {} };
+      return Promise.all((this.listeners.click || []).map((fn) => fn(event)));
+    },
+    find(pred) {
+      if (pred(this)) return this;
+      for (const child of this.children) {
+        const hit = child.find && child.find(pred);
+        if (hit) return hit;
+      }
+      return null;
+    },
+  });
+  const uiContext = {
+    console,
+    document: { createElement: stubEl, createTextNode: (t) => ({ textContent: String(t), find: () => null }) },
+  };
+  uiContext.window = uiContext;
+  uiContext.LootCaptain = {};
+  for (const file of ['content/shared/slots.js', 'content/shared/parser.js', 'content/shared/diff.js', 'content/shared/ui.js']) {
+    vm.runInNewContext(read(file), uiContext, { filename: file });
+  }
+  const uiLC = uiContext.LootCaptain;
+  const earSlot = uiLC.slots.canonicalSlot('ear');
+  const uiWorn = [
+    { id: '1', name: 'Old Ear', slot: 'ear', slotKey: earSlot, stats: { HP: { raw: '10', num: 10 } }, effects: [] },
+    { id: '2', name: 'Other Ear', slot: 'ear', slotKey: earSlot, stats: { HP: { raw: '20', num: 20 } }, effects: [] },
+  ];
+  const uiProfile = { id: 'p', name: 'Tester', cls: 'Warrior', level: '120', items: uiWorn, wishlist: [] };
+  const uiCand = { id: '77', name: 'New Ear', slot: 'Ear', slotKey: earSlot, stats: { HP: { raw: '50', num: 50 } }, effects: [], classes: [] };
+  const equipCalls = [];
+  uiLC.state = { equipItem: (...args) => { equipCalls.push(args); return Promise.resolve({ ok: true }); } };
+  const uiRow = uiLC.diff.compareCandidate(uiProfile, uiCand, null).rows[0];
+  const findEquip = (panel) => panel.find((el) => el.className === 'lc-compare-nav lc-equip');
+  const equipSpan = findEquip(uiLC.ui.buildComparePanel(uiCand, uiRow.target, uiRow.diff,
+    uiRow.slotKey && uiRow.slotKey.key, null, 0, 'stats', 'worn', uiProfile));
+  assert.ok(equipSpan);
+  assert.equal(equipSpan.children[0].textContent, 'Equip');
+  assert.match(equipSpan.children[0].getAttribute('aria-label'), /^Replace .+ with New Ear$/);
+  equipSpan.children[0].click();
+  assert.equal(equipSpan.children.length, 2);
+  // Visible text stays short so it cannot squeeze the flex head; the panel head
+  // already names both items, and the full sentence rides on the label.
+  assert.equal(equipSpan.children[0].textContent, 'Replace?');
+  assert.match(equipSpan.children[0].getAttribute('aria-label'), /^Replace .+ with New Ear\?$/);
+  assert.equal(equipCalls.length, 0, 'the first click must confirm, not equip');
+  equipSpan.children[1].click();
+  assert.equal(equipSpan.children.length, 1);
+  equipSpan.children[0].click();
+  await equipSpan.children[0].click();
+  assert.equal(equipCalls.length, 1);
+  assert.equal(equipCalls[0][1].id, 'p');
+  assert.equal(uiWorn.includes(equipCalls[0][2]), true);
+  assert.equal(equipCalls[0][3], 'ear');
+  assert.equal(equipSpan.children[0].textContent, 'Equipped');
+  assert.equal(findEquip(uiLC.ui.buildComparePanel(uiCand, uiRow.target, uiRow.diff, 'ear',
+    null, 0, 'stats', 'wishlist', uiProfile)), null);
+  const emptyProfile = { ...uiProfile, items: [] };
+  const emptyRow = uiLC.diff.compareCandidate(emptyProfile, uiCand, null).rows[0];
+  const emptySpan = findEquip(uiLC.ui.buildComparePanel(uiCand, emptyRow.target, emptyRow.diff,
+    'ear', null, 0, 'stats', 'worn', emptyProfile));
+  assert.match(emptySpan.children[0].getAttribute('aria-label'), /^Equip New Ear in ear$/);
+  const orphanWorn = { id: '9', name: 'Orphan', slot: 'ear', slotKey: earSlot, stats: { HP: { raw: '1', num: 1 } }, effects: [] };
+  assert.equal(findEquip(uiLC.ui.buildComparePanel(uiCand, orphanWorn, uiRow.diff, 'ear',
+    null, 0, 'stats', 'worn', uiProfile)), null);
+  // An item the character already owns offers no equip, in either half of a
+  // paired slot: the row's target may be the other ear, so equipping it again
+  // would add a second copy instead of replacing anything.
+  const ownedCand = { ...uiCand, id: '2', name: 'Other Ear' };
+  const ownedSpan = findEquip(uiLC.ui.buildComparePanel(ownedCand, uiWorn[0], uiRow.diff, 'ear',
+    null, 0, 'stats', 'worn', uiProfile));
+  assert.equal(ownedSpan.children[0].textContent, 'Equipped');
+  assert.equal(ownedSpan.children[0].disabled, true);
+  // Matching falls back to the name when either side has no RaidLoot ID.
+  const ownedByName = { ...uiCand, id: '', name: 'other  ear' };
+  assert.equal(findEquip(uiLC.ui.buildComparePanel(ownedByName, uiWorn[0], uiRow.diff, 'ear',
+    null, 0, 'stats', 'worn', uiProfile)).children[0].textContent, 'Equipped');
+  // Undo is deliberately not on the page: it would be permanent furniture and
+  // would retarget silently. It lives in the character editor instead.
+  assert.equal(ownedSpan.children.length, 1);
+  const withRecord = { ...uiProfile, lastEquip: { index: 1, item: { id: '2', name: 'Other Ear' }, previous: { name: 'Older Ear' } } };
+  assert.equal(findEquip(uiLC.ui.buildComparePanel(ownedCand, uiWorn[0], uiRow.diff, 'ear',
+    null, 0, 'stats', 'worn', withRecord)).children.length, 1);
+  // Comparing an equipped item against itself is a table of zeroes, so the
+  // panel says so instead of drawing one.
+  const selfPanel = uiLC.ui.buildComparePanel(
+    { ...uiCand, id: '1', name: 'Old Ear' }, uiWorn[0], uiRow.diff, 'ear', null, 0, 'stats', 'worn', uiProfile);
+  assert.match(selfPanel.textContent, /^Already equipped in ear\./);
+  assert.equal(selfPanel.find((el) => el.tagName === 'TABLE'), null);
   workerStorage.raidlootItemCache = {
     'id:1': { id: '1', name: 'Cached Sword', slot: 'Head', stats: { HP: 100 }, effects: [] },
   };
