@@ -53,6 +53,14 @@ Create the Chrome Web Store upload ZIP with:
 ./tools/package-extension.sh
 ```
 
-The versioned archive is written to `dist/` and contains only the extension runtime files.
+The versioned archive is written to `dist/` and contains only the extension runtime files. Only the newest two archives are kept, so the previous release stays available to roll back to.
+
+Regenerate the store screenshots, promo tiles, and icons after a UI change with:
+
+```sh
+swift tools/generate_store_visuals.swift
+```
+
+Run it from the repository root; it writes to `store-assets/`, `docs/assets/`, and `icons/`.
 
 The Chrome Web Store ZIP should contain only `background/`, `content/`, `icons/`, `options/`, `popup/`, and `manifest.json`. Upload the current screenshots and promotional tiles from `store-assets/`, plus `docs/store-listing.md` and the privacy policy, separately. The legacy standalone userscript is intentionally not part of the release.

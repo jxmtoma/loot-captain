@@ -18,6 +18,7 @@ Loot Captain helps you:
 - Compare numeric stats, augments, spell focus effects, weapon procs, and Damage/Delay ratio.
 - Handle paired ear, wrist, and finger slots automatically.
 - Save a local wishlist and highlight wanted items in RaidLoot and OpenDKP auctions.
+- Equip a won item into a local profile straight from its comparison row, with undo in the character editor.
 - Fill in missing item stats from public RaidLoot pages.
 - Resolve statless armor tokens through 630 offline, source-reviewed mappings covering PoP, GoD, OoW, PoR, TSS, UF, HoT and VoA plus RoF through ToB.
 
@@ -25,13 +26,15 @@ Profiles and settings stay in browser-local storage. Loot Captain has no account
 
 Support ongoing development: https://github.com/sponsors/jxmtoma
 
-### What's new in 0.2.0
+### What's new in 0.4.0
 
-- Added 357 statless armor-token mappings covering RoF plus CoTF through ToB.
-- Added class-specific RaidLoot caching and native variants, plus ordinary lookup caching.
-- Added OpenDKP live-auction tab badges and wanted-item highlights, with name-slot parsing fixes.
+- Equip an item into a local character profile from its comparison row on RaidLoot or OpenDKP, with an inline confirmation naming both items. An item the profile already holds shows as equipped instead, and the character editor offers a one-step undo of the most recent equip. This updates Loot Captain's stored profile only; it does not change the character in EverQuest.
+- Moved the wishlist into the character editor's inventory tab strip, shown as a game-style slot grid or a plain list.
+- Replaced the options page's single active character with a per-row Compare checkbox that shares the popup's selection, added a "Fresh from RaidLoot" button on rows imported from a RaidLoot profile, and dropped deleted characters from the compare selection.
+- Extended the statless armor-token catalog back to Planes of Power: 357 to 630 offline mappings adding PoP, GoD, OoW, PoR, TSS, UF, HoT and VoA. PoP and TSS templates are scoped to an armor type rather than every class, so a token a class cannot use is refused instead of resolving to the wrong piece.
+- Compare panels, wishlist panels, and pickers now close when clicking elsewhere on the page, while the wishlist character picker stays open while characters are selected.
 
-The armor catalog uses offline, source-reviewed definitions; it does not use a live crawler or request new permissions. Incomplete or unavailable RaidLoot sets remain unresolved.
+The armor catalog uses offline, source-reviewed definitions; it does not use a live crawler or request new permissions. Incomplete or unavailable RaidLoot sets remain unresolved. This release adds no permissions and no new hosts.
 
 ### Category and language
 
@@ -81,10 +84,11 @@ The repository includes current, correctly sized PNGs in `store-assets/`:
 
 The store icon is `icons/icon128.png`. A YouTube promotional video link remains a manual listing step because no video is included in this repository.
 
-## Release submission checklist for 0.2.0
+## Release submission checklist for 0.4.0
 
 - Run `node tests/regression.js`.
 - Run `python3 tools/generate_armor_token_catalog.py --check`.
-- Run `./tools/package-extension.sh` and confirm `dist/loot-captain-v0.2.0.zip`.
+- Run `swift tools/generate_store_visuals.swift` from the repository root when the UI changed, and re-upload the refreshed screenshots.
+- Run `./tools/package-extension.sh` and confirm `dist/loot-captain-v0.4.0.zip`. The script keeps only the newest two archives, so the previous release stays available to roll back to.
 - Load unpacked for a smoke test, profile switch, and variant check before manually uploading to the Chrome Web Store / Edge.
 - Verify the hosted privacy policy before submission.
