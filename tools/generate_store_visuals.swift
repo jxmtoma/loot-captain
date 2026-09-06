@@ -198,6 +198,12 @@ func drawStar(x: CGFloat, y: CGFloat, filled: Bool = true, size: CGFloat = 20) {
     drawText(filled ? "★" : "☆", x: x, y: y, size: size, fill: color(filled ? "#e0b95f" : "#b7974f"), bold: true, align: .center)
 }
 
+func drawCheckbox(x: CGFloat, y: CGFloat, label: String, checked: Bool) {
+    drawRect(NSRect(x: x, y: y, width: 14, height: 14), fill: color(checked ? "#c49945" : "#0d1826"), stroke: color(checked ? "#e4c16d" : "#7b6841"), radius: 2)
+    if checked { drawText("\u{2713}", x: x + 7, y: y, size: 12, fill: color("#1a170f"), bold: true, align: .center) }
+    drawText(label, x: x + 21, y: y, size: 11, fill: color("#dfe6ef"), bold: true)
+}
+
 func drawCompareTable(x: CGFloat, y: CGFloat, width: CGFloat, rows: [(String, String, String, String)], baseline: String = "wishlist") {
     let rowHeight: CGFloat = 25
     drawText("stat", x: x, y: y, size: 10, fill: color("#e6c26d"), bold: true)
@@ -252,42 +258,39 @@ let optionsImage = newImage(width: 1280, height: 800) {
     drawText("Local character profiles for gear comparison", x: 104, y: 54, size: 13, fill: color("#9eacbc"))
     drawText("CHARACTER SELECT / INVENTORY", x: 64, y: 96, size: 10, fill: color("#8e9daf"))
     drawText("Edit: Ashenvale", x: 64, y: 122, size: 24, fill: color("#e6c26d"), bold: true, serif: true)
-    drawText("Character", x: 592, y: 129, size: 10, fill: color("#aeb8c5"))
-    drawRect(NSRect(x: 652, y: 119, width: 170, height: 28), fill: color("#09121f"), stroke: color("#4b5b70"), radius: 2)
-    drawText("Ashenvale  ▾", x: 664, y: 126, size: 11, fill: color("#f0eee5"))
-    drawButton(x: 830, y: 119, width: 76, label: "+ New")
-    drawButton(x: 914, y: 119, width: 78, label: "Delete")
-    drawButton(x: 1000, y: 119, width: 78, label: "Save", primary: true)
-    drawButton(x: 1086, y: 119, width: 130, label: "← Back")
-    drawRect(NSRect(x: 64, y: 164, width: 1152, height: 170), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
+    drawText("Character", x: 470, y: 129, size: 10, fill: color("#aeb8c5"))
+    drawRect(NSRect(x: 530, y: 119, width: 170, height: 28), fill: color("#09121f"), stroke: color("#4b5b70"), radius: 2)
+    drawText("Ashenvale  \u{25be}", x: 542, y: 126, size: 11, fill: color("#f0eee5"))
+    drawButton(x: 708, y: 119, width: 70, label: "+ New")
+    drawButton(x: 786, y: 119, width: 84, label: "\u{2190} Back")
+    drawButton(x: 878, y: 119, width: 78, label: "Delete")
+    drawButton(x: 964, y: 119, width: 168, label: "Refresh from RaidLoot")
+    drawButton(x: 1140, y: 119, width: 76, label: "Save", primary: true)
+    drawRect(NSRect(x: 64, y: 164, width: 1152, height: 122), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
     drawText("CHARACTER SHEET", x: 84, y: 178, size: 12, fill: color("#f0d381"), bold: true)
     for (x, label, value, width) in [(84, "Name", "Ashenvale", 330), (448, "Class", "Beastlord", 330), (812, "Level", "100", 330)] {
-        drawText(label, x: CGFloat(x), y: 204, size: 11, fill: color("#9eacbc"))
-        drawRect(NSRect(x: CGFloat(x), y: 228, width: CGFloat(width), height: 27), fill: color("#07101b"), stroke: color("#4b5b70"), radius: 3)
-        drawText(value, x: CGFloat(x + 12), y: 234, size: 12, fill: color("#dfe6ef"))
+        drawText(label, x: CGFloat(x), y: 206, size: 11, fill: color("#9eacbc"))
+        drawRect(NSRect(x: CGFloat(x), y: 230, width: CGFloat(width), height: 27), fill: color("#07101b"), stroke: color("#4b5b70"), radius: 3)
+        drawText(value, x: CGFloat(x + 12), y: 236, size: 12, fill: color("#dfe6ef"))
     }
-    drawLine(NSPoint(x: 84, y: 274), NSPoint(x: 1196, y: 274), color: color("#3a4a61"))
-    drawText("WISHLIST", x: 84, y: 286, size: 11, fill: color("#e1bd69"), bold: true)
-    drawText("3 items", x: 1196, y: 286, size: 10, fill: color("#8bd0a9"), align: .right)
-    for (x, name, slot) in [(84, "Nebulous Assault's Cloak", "Back"), (420, "Dreadstone Band", "Finger"), (760, "Gleaming Augment", "Augment")] {
-        drawStar(x: CGFloat(x), y: 304, filled: true, size: 17)
-        drawText(name, x: CGFloat(x + 16), y: 307, size: 10, fill: color("#dfe6ef"), bold: true)
-        drawText(slot, x: CGFloat(x + 16), y: 322, size: 9, fill: color("#8e9daf"))
-    }
-    drawRect(NSRect(x: 64, y: 350, width: 1152, height: 400), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
-    drawText("INVENTORY", x: 84, y: 362, size: 16, fill: color("#e1bd69"), bold: true, serif: true)
-    drawText("18 worn items  ·  4 augments  ·  4 gear effects", x: 280, y: 366, size: 10, fill: color("#8bd0a9"))
-    drawButton(x: 1100, y: 359, width: 90, label: "+ Add Item", disabled: true)
-    drawRect(NSRect(x: 84, y: 392, width: 700, height: 340), fill: color("#090e17"), stroke: color("#826738"), radius: 5, lineWidth: 2)
-    drawTabs(x: 96, y: 402, width: 676, labels: ["Equipment", "Augments", "Spell Focus"], active: 2)
-    drawText("SPELL FOCUS & PROCS", x: 108, y: 449, size: 10, fill: color("#9faec1"), bold: true)
-    drawFocusList(x: 108, y: 467, width: 652)
-    drawRect(NSRect(x: 108, y: 644, width: 652, height: 31), fill: color("#191a24"), stroke: color("#a27c40"), radius: 4)
-    drawText("Auto-Inventory", x: 120, y: 654, size: 10, fill: color("#efd080"), bold: true)
-    drawText("4 gear effects", x: 748, y: 654, size: 10, fill: color("#efd080"), bold: true, align: .right)
-    drawRect(NSRect(x: 802, y: 392, width: 394, height: 340), fill: color("#0b1523"), stroke: color("#52677f"), radius: 5)
-    drawButton(x: 1118, y: 402, width: 60, label: "Edit")
-    drawEffectDetails(x: 822, y: 410, width: 354)
+    drawRect(NSRect(x: 64, y: 302, width: 1152, height: 448), fill: color("#17263a"), stroke: color("#6e603f"), radius: 5)
+    drawText("INVENTORY", x: 84, y: 314, size: 16, fill: color("#e1bd69"), bold: true, serif: true)
+    drawText("18 worn items  \u{b7}  4 augments  \u{b7}  4 gear effects", x: 280, y: 318, size: 10, fill: color("#8bd0a9"))
+    drawButton(x: 1096, y: 311, width: 94, label: "+ Add Item", disabled: true)
+    // Undo bar for the most recent equip made from a comparison row.
+    drawRect(NSRect(x: 84, y: 346, width: 1112, height: 34), fill: color("#191a24"), stroke: color("#a27c40"), radius: 4)
+    drawText("Last equip: Nebulous Assault\u{2019}s Cloak  \u{2192}  Phantasmal Luclinite Idol", x: 100, y: 357, size: 11, fill: color("#efd080"), bold: true)
+    drawButton(x: 1100, y: 348, width: 80, label: "Undo")
+    drawRect(NSRect(x: 84, y: 394, width: 700, height: 344), fill: color("#090e17"), stroke: color("#826738"), radius: 5, lineWidth: 2)
+    drawTabs(x: 96, y: 404, width: 676, labels: ["Equipment", "Augments", "Spell Focus", "Wishlist"], active: 2)
+    drawText("SPELL FOCUS & PROCS", x: 108, y: 451, size: 10, fill: color("#9faec1"), bold: true)
+    drawFocusList(x: 108, y: 469, width: 652)
+    drawRect(NSRect(x: 108, y: 646, width: 652, height: 31), fill: color("#191a24"), stroke: color("#a27c40"), radius: 4)
+    drawText("Auto-Inventory", x: 120, y: 656, size: 10, fill: color("#efd080"), bold: true)
+    drawText("4 gear effects", x: 748, y: 656, size: 10, fill: color("#efd080"), bold: true, align: .right)
+    drawRect(NSRect(x: 802, y: 394, width: 394, height: 344), fill: color("#0b1523"), stroke: color("#52677f"), radius: 5)
+    drawButton(x: 1118, y: 404, width: 60, label: "Edit")
+    drawEffectDetails(x: 822, y: 412, width: 354)
 }
 
 let characterSelectImage = newImage(width: 1280, height: 800) {
@@ -299,20 +302,26 @@ let characterSelectImage = newImage(width: 1280, height: 800) {
     drawText("CHARACTER SELECT / INVENTORY", x: 64, y: 102, size: 10, fill: color("#8e9daf"))
     drawText("Character Select", x: 64, y: 126, size: 24, fill: color("#e6c26d"), bold: true, serif: true)
     drawButton(x: 1018, y: 119, width: 198, label: "+ New Character", primary: true)
-    let profiles: [(String, String, String, String)] = [
-        ("Ashenvale", "Beastlord · Level 100", "22 items", "Selected"),
-        ("Starfall", "Ranger · Level 100", "19 items", "Use Character"),
-        ("Lanternroot", "Cleric · Level 95", "17 items", "Use Character")
+    // Rows carry a Compare toggle rather than a single active character:
+    // every checked profile is compared on RaidLoot and OpenDKP.
+    let profiles: [(String, String, String, Bool, Bool)] = [
+        ("Ashenvale", "Beastlord · Lv 100", "22 items", true, true),
+        ("Starfall", "Ranger · Lv 100", "19 items", true, false),
+        ("Lanternroot", "Cleric · Lv 95", "17 items", false, true)
     ]
     for (index, profile) in profiles.enumerated() {
         let y = 174 + CGFloat(index) * 78
-        drawRect(NSRect(x: 64, y: y, width: 1152, height: 64), fill: color("#17263a"), stroke: color(index == 0 ? "#b08b44" : "#6e603f"), radius: 4)
+        drawRect(NSRect(x: 64, y: y, width: 1152, height: 64), fill: color("#17263a"), stroke: color(profile.3 ? "#b08b44" : "#6e603f"), radius: 4)
         drawIcon(NSRect(x: 82, y: y + 10, width: 42, height: 42))
         drawText(profile.0, x: 140, y: y + 16, size: 17, fill: color("#f1dfaa"), bold: true, serif: true)
         drawText(profile.1, x: 140, y: y + 39, size: 12, fill: color("#aeb8c5"))
-        drawText(profile.2, x: 720, y: y + 27, size: 12, fill: color("#aeb8c5"))
-        drawButton(x: 1016, y: y + 17, width: 160, label: profile.3, primary: index == 0)
+        drawText(profile.2, x: 600, y: y + 27, size: 12, fill: color("#aeb8c5"))
+        drawButton(x: 758, y: y + 17, width: 84, label: "Manage")
+        if profile.4 { drawButton(x: 850, y: y + 17, width: 152, label: "Fresh from RaidLoot") }
+        drawCheckbox(x: 1014, y: y + 26, label: "Compare", checked: profile.3)
+        drawButton(x: 1120, y: y + 17, width: 76, label: "Delete")
     }
+    drawText("Checked characters are compared together on RaidLoot and OpenDKP.", x: 64, y: 398, size: 11, fill: color("#8e9daf"))
     drawRect(NSRect(x: 64, y: 426, width: 1152, height: 102), fill: color("#17263a"), stroke: color("#6e603f"), radius: 4)
     drawText("COMPARISON FORMULA", x: 84, y: 442, size: 12, fill: color("#e1bd69"), bold: true)
     drawText("USED ON RAIDLOOT & OPENDKP", x: 1022, y: 442, size: 11, fill: color("#8bd0a9"), bold: true, align: .right)
@@ -338,17 +347,20 @@ let raidLootImage = newImage(width: 1280, height: 800) {
     drawSourceImage("raidloot-live-base.jpg", rect: NSRect(x: 0, y: 0, width: 1280, height: 800))
     // The live page leaves a wide margin beside the item detail; use it for
     // the extension's intentionally compact, click-through comparison panel.
-    drawStar(x: 620, y: 77, filled: true, size: 22)
-    drawBadge(x: 646, y: 76, width: 110, label: "vs wishlist ↑")
+    drawStar(x: 366, y: 92, filled: true, size: 22)
+    drawBadge(x: 386, y: 93, width: 110, label: "vs wishlist ↑")
     drawRect(NSRect(x: 674, y: 68, width: 540, height: 700), fill: color("#0b1523", alpha: 0.97), stroke: color("#a38348"), radius: 4, lineWidth: 2)
     drawText("LOOT CAPTAIN", x: 698, y: 88, size: 12, fill: color("#d8b767"), bold: true)
     drawText("Ashenvale  ·  Beastlord  ·  Level 100", x: 698, y: 111, size: 12, fill: color("#b7c4d2"))
     drawStar(x: 700, y: 137, filled: true, size: 22)
     drawText("Nebulous Assault's Cloak", x: 716, y: 141, size: 15, fill: color("#f0d381"), bold: true, serif: true)
     drawText("Local wishlist baseline", x: 716, y: 163, size: 10, fill: color("#8bd0a9"))
-    drawBadge(x: 698, y: 184, width: 108, label: "up +1,240")
-    drawBadge(x: 816, y: 184, width: 86, label: "focus up", state: "focus")
-    drawBadge(x: 912, y: 184, width: 92, label: "R proc up", state: "focus")
+    // Equip writes the page item into the local profile for this slot.
+    drawButton(x: 1096, y: 136, width: 84, label: "Equip")
+    // Expanded badge layout: every compared character is labeled in the row.
+    drawBadge(x: 698, y: 184, width: 152, label: "Ashenvale back up +1,240")
+    drawBadge(x: 858, y: 184, width: 140, label: "Starfall back dn -320", state: "downgrade")
+    drawBadge(x: 1006, y: 184, width: 90, label: "focus up", state: "focus")
     drawText("COMPARE VS WISHLIST", x: 698, y: 231, size: 11, fill: color("#e6c26d"), bold: true)
     drawCompareTable(x: 698, y: 250, width: 482, rows: [
         ("HP", "6,120", "11,008", "+4,888"),
@@ -361,7 +373,7 @@ let raidLootImage = newImage(width: 1280, height: 800) {
     drawText("PROC (1 change)", x: 698, y: 432, size: 10, fill: color("#d8b767"), bold: true)
     drawText("Strike of Ice  ·  900 dmg  →  1,200 dmg", x: 698, y: 451, size: 11, fill: color("#9ee0d6"))
     drawLine(NSPoint(x: 698, y: 481), NSPoint(x: 1180, y: 481), color: color("#465d78"))
-    drawText("Click any badge for the full stat/effect diff.", x: 698, y: 502, size: 11, fill: color("#c3ceda"))
+    drawText("Click any badge for the full diff, or Equip to update the local profile.", x: 698, y: 502, size: 11, fill: color("#c3ceda"))
     drawText("Profiles and wishlist data stay in this browser.", x: 698, y: 523, size: 10, fill: color("#8e9daf"))
 }
 
@@ -369,13 +381,16 @@ let openDkpImage = newImage(width: 1280, height: 800) {
     drawSourceImage("opendkp-item-live.jpg", rect: NSRect(x: 0, y: 0, width: 1280, height: 800))
     // Live auction rows are highlighted only when a local wishlist matches.
     drawRect(NSRect(x: 386, y: 291, width: 837, height: 50), fill: color("#8c6e29", alpha: 0.16), stroke: color("#d3ae5a", alpha: 0.82), radius: 2, lineWidth: 2)
-    drawStar(x: 810, y: 302, filled: true, size: 20)
-    drawBadge(x: 836, y: 297, width: 108, label: "vs wishlist ↑")
-    drawBadge(x: 950, y: 297, width: 77, label: "P up")
-    drawBadge(x: 1033, y: 297, width: 86, label: "focus up", state: "focus")
-    drawRect(NSRect(x: 356, y: 474, width: 897, height: 169), fill: color("#111c2b", alpha: 0.98), stroke: color("#a38348"), radius: 4, lineWidth: 2)
+    // The live capture already carries the extension's own stat badge, so the
+    // row only gains the wishlist star; the diff badges live in the panel head.
+    drawStar(x: 914, y: 302, filled: true, size: 20)
+    drawRect(NSRect(x: 356, y: 474, width: 897, height: 200), fill: color("#111c2b", alpha: 0.98), stroke: color("#a38348"), radius: 4, lineWidth: 2)
     drawText("LOOT CAPTAIN  ·  ASHENVALE", x: 382, y: 492, size: 12, fill: color("#f0d381"), bold: true)
-    drawBadge(x: 1038, y: 484, width: 128, label: "LIVE AUCTION", state: "focus")
+    drawBadge(x: 604, y: 484, width: 104, label: "vs wishlist ↑")
+    drawBadge(x: 716, y: 484, width: 70, label: "P up")
+    drawBadge(x: 794, y: 484, width: 82, label: "focus up", state: "focus")
+    drawBadge(x: 1032, y: 484, width: 122, label: "LIVE AUCTION", state: "focus")
+    drawButton(x: 1164, y: 481, width: 74, label: "Equip")
     drawText("★  Wishlist match highlighted", x: 382, y: 520, size: 11, fill: color("#e0b95f"), bold: true)
     drawText("Phantasmal Luclinite Idol  ·  Range", x: 382, y: 541, size: 11, fill: color("#c3ceda"))
     drawCompareTable(x: 382, y: 560, width: 842, rows: [
