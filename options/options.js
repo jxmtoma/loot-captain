@@ -3,6 +3,7 @@
 const PROFILES_KEY = 'profiles';
 const COMPARE_KEY = 'compareProfileIds';
 const SCORE_KEY = 'scoreFormula';
+const WISHLIST_STYLE_KEY = 'wishlistStyle';
 const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
 const PROFILE_STATS_VERSION = 4;
@@ -45,13 +46,15 @@ let itemsEditable = false;
 let selectedItemIndex = 0;
 let selectedFocusIndex = 0;
 let activeInventoryTab = 'equipment';
+let wishlistStyle = 'slots';
 let refreshingProfileId = '';
 
 // ---------- Storage ----------
 async function loadAll() {
-  const res = await chrome.storage.local.get([PROFILES_KEY, COMPARE_KEY, SCORE_KEY]);
+  const res = await chrome.storage.local.get([PROFILES_KEY, COMPARE_KEY, SCORE_KEY, WISHLIST_STYLE_KEY]);
   profiles = res[PROFILES_KEY] || {};
   compareIds = Array.isArray(res[COMPARE_KEY]) ? res[COMPARE_KEY] : [];
+  wishlistStyle = res[WISHLIST_STYLE_KEY] === 'list' ? 'list' : 'slots';
   scoreFormula = SCORE_FORMULAS.some((formula) => formula.key === res[SCORE_KEY]) ? res[SCORE_KEY] : DEFAULT_FORMULA_KEY;
 }
 async function saveAll(changedIds = [], deletedIds = []) {
@@ -239,6 +242,7 @@ async function openEditor(id) {
       level: p.level || '',
       statsVersion: p.statsVersion || 0,
       importedFrom: p.importedFrom || '',
+      lastEquip: p.lastEquip || null,
       wishlist: Array.isArray(p.wishlist) ? p.wishlist.map((item) => ({ ...item })) : [],
       items: (p.items || []).map((it) => ({
         id: it.id || '',
@@ -297,16 +301,81 @@ async function removeWishlistItem(item) {
   renderWishlist();
 }
 
+// The wishlist lives in the inventory tab strip, so it re-renders through the
+// preview rather than owning a section of its own.
 function renderWishlist() {
-  const list = $('#wishlist-list');
-  if (!list || !editingProfile) return;
-  const wishlist = Array.isArray(editingProfile.wishlist) ? editingProfile.wishlist : [];
-  $('#wishlist-count').textContent = wishlist.length + ' item' + (wishlist.length === 1 ? '' : 's');
-  if (!wishlist.length) {
-    list.replaceChildren(el('div', 'wishlist-empty', 'No wishlist items yet.'));
-    return;
+  if (activeInventoryTab === 'wishlist') renderInventoryPreview();
+}
+
+// Undo lives here rather than on the item page: on a page it would be permanent
+// furniture, and it would quietly retarget whenever something else is equipped.
+function renderLastEquip() {
+  const host = $('#last-equip');
+  if (!host) return;
+  const record = editingProfile && editingProfile.lastEquip;
+  const equipped = record && record.item && record.item.name;
+  host.hidden = !equipped;
+  if (!equipped) return;
+  const restores = record.previous && record.previous.name;
+  host.replaceChildren(
+    el('span', 'last-equip-text', restores
+      ? 'Last equip: ' + restores + ' → ' + record.item.name
+      : 'Last equip: added ' + record.item.name),
+  );
+  const undo = el('button', 'btn btn-small', 'Undo');
+  undo.type = 'button';
+  undo.setAttribute('aria-label', restores
+    ? 'Undo the last equip, restoring ' + restores
+    : 'Undo the last equip, removing ' + record.item.name);
+  undo.addEventListener('click', async () => {
+    undo.disabled = true;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'UNDO_EQUIP', profileId: editingProfile.id });
+      if (!response || !response.ok) throw new Error(response && response.error || 'Undo failed');
+      await loadAll();
+      await openEditor(editingProfile.id);
+    } catch (e) {
+      undo.disabled = false;
+      undo.title = 'Could not undo the last equip';
+    }
+  });
+  host.appendChild(undo);
+}
+
+// Wishlist entries laid out on the slot grid, so an empty slot reads as "still
+// nothing wanted here". Kept separate from makeSlot, which is tied to item
+// indices, augment parenting and selection that wishlist entries do not have.
+function wishlistSlotGrid() {
+  const grouped = {};
+  for (const entry of (editingProfile.wishlist || [])) {
+    const root = slotRoot(normalizeEditorSlot(entry.slot || ''));
+    (grouped[root] || (grouped[root] = [])).push(entry);
   }
-  list.replaceChildren(...wishlist.map((item) => {
+  return INVENTORY_SLOT_LAYOUT.map(({ slot, label, column, row }) => {
+    const root = slotRoot(slot);
+    const pairedIndex = /-[12]$/.test(slot) ? Number(slot.slice(-1)) - 1 : -1;
+    const all = grouped[root] || [];
+    const entries = pairedIndex >= 0 ? (all[pairedIndex] ? [all[pairedIndex]] : []) : all;
+    const box = el('div', 'gear-slot wishlist-gear-slot' + (entries.length ? ' filled' : ''));
+    box.style.gridColumn = column;
+    box.style.gridRow = row;
+    const names = entries.map((entry) => entry.name || 'Unnamed item').join(' / ');
+    box.title = entries.length ? label + ' wanted: ' + names : 'Nothing wishlisted for ' + label;
+    const glyph = el('span', 'gear-glyph', SLOT_ICONS[root] || '✦');
+    glyph.setAttribute('aria-hidden', 'true');
+    box.appendChild(glyph);
+    const text = el('div', 'gear-slot-text');
+    text.appendChild(el('span', 'gear-slot-label', label));
+    text.appendChild(el('span', 'gear-slot-name', entries.length ? names : 'Nothing wanted'));
+    box.appendChild(text);
+    return box;
+  });
+}
+
+function wishlistRows() {
+  const wishlist = Array.isArray(editingProfile && editingProfile.wishlist) ? editingProfile.wishlist : [];
+  if (!wishlist.length) return [el('div', 'wishlist-empty', 'No wishlist items yet.')];
+  return wishlist.map((item) => {
     const row = el('div', 'wishlist-row');
     const info = el('div', 'wishlist-item');
     info.appendChild(el('span', 'wishlist-name', item.name || 'Unnamed item'));
@@ -335,7 +404,7 @@ function renderWishlist() {
     actions.append(details, remove);
     row.append(info, actions);
     return row;
-  }));
+  });
 }
 
 const INVENTORY_SLOT_LAYOUT = [
@@ -400,8 +469,42 @@ function getGearEffectEntries() {
 function renderInventoryPreview() {
   const slots = $('#inventory-slots');
   if (!slots || !editingProfile) return;
+  renderLastEquip();
   const showAugments = activeInventoryTab === 'augments';
   const showFocus = activeInventoryTab === 'focus';
+  const syncTabs = () => {
+    document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
+      const active = tab.dataset.inventoryTab === activeInventoryTab;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+    });
+    const styleToggle = $('#wishlist-style');
+    if (styleToggle) styleToggle.hidden = activeInventoryTab !== 'wishlist';
+    document.querySelectorAll('[data-wishlist-style]').forEach((button) => {
+      const active = button.dataset.wishlistStyle === wishlistStyle;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  };
+  if (activeInventoryTab === 'wishlist') {
+    // Wanted, not owned: both styles are tinted so they never read as worn gear.
+    const grid = document.querySelector('.inventory-grid');
+    const asSlots = wishlistStyle === 'slots';
+    grid.classList.toggle('focus-list-view', !asSlots);
+    slots.classList.toggle('focus-list', !asSlots);
+    slots.classList.add('wishlist-view');
+    slots.replaceChildren(...(asSlots ? wishlistSlotGrid() : wishlistRows()));
+    const count = Array.isArray(editingProfile.wishlist) ? editingProfile.wishlist.length : 0;
+    const label = count + ' wanted item' + (count === 1 ? '' : 's');
+    $('#inventory-stage-name').textContent = editingProfile.name || 'Unnamed Character';
+    $('#inventory-stage-meta').textContent =
+      [editingProfile.cls, editingProfile.level ? 'Level ' + editingProfile.level : '', label].filter(Boolean).join(' · ');
+    $('.inventory-stage-title').textContent = 'WISHLIST — WANTED, NOT OWNED';
+    $('#inventory-slot-count').textContent = label;
+    syncTabs();
+    return;
+  }
+  slots.classList.remove('wishlist-view');
   if (showFocus) {
     const grid = document.querySelector('.inventory-grid');
     const entries = getGearEffectEntries();
@@ -429,11 +532,7 @@ function renderInventoryPreview() {
     $('#inventory-stage-meta').textContent = meta;
     $('.inventory-stage-title').textContent = 'SPELL FOCUS & PROCS';
     $('#inventory-slot-count').textContent = visibleCount + ' gear effects';
-    document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
-      const active = tab.dataset.inventoryTab === activeInventoryTab;
-      tab.classList.toggle('active', active);
-      tab.setAttribute('aria-selected', String(active));
-    });
+    syncTabs();
     return;
   }
   document.querySelector('.inventory-grid').classList.remove('focus-list-view');
@@ -469,10 +568,21 @@ function renderInventoryPreview() {
     const box = el('div', 'gear-slot' + (entries.length ? ' filled' : ''));
     box.style.gridColumn = column;
     box.style.gridRow = row;
-    box.title = entries.length ? entries.map((entry) => entry.item.name || 'Unnamed item').join(' / ') : 'Empty ' + label + ' slot';
+    // A filled slot keeps its label: without it several items truncate to the
+    // same prefix and there is no way to tell which slot is which.
+    const record = editingProfile.lastEquip;
+    const justEquipped = !!record && !showAugments && entries.some((entry) =>
+      entry.index === Number(record.index) && entry.item && record.item && entry.item.name === record.item.name);
+    if (justEquipped) box.classList.add('just-equipped');
+    const names = entries.map((entry) => entry.item.name || 'Unnamed item').join(' / ');
+    box.title = (entries.length ? label + ': ' + names : 'Empty ' + label + ' slot') +
+      (justEquipped ? ' (last equipped)' : '');
     const glyph = el('span', 'gear-glyph', SLOT_ICONS[root] || '✦');
     glyph.setAttribute('aria-hidden', 'true');
-    const name = el('span', 'gear-slot-name', entries.length ? entries.map((entry) => entry.item.name || 'Unnamed').join(' / ') : label);
+    const text = el('div', 'gear-slot-text');
+    text.appendChild(el('span', 'gear-slot-label', label));
+    text.appendChild(el('span', 'gear-slot-name', entries.length ? names : 'Empty'));
+    const name = text;
     const iconUrl = entries[0] && ICON_URL_PATTERN.test(entries[0].item.icon || '') && entries[0].item.icon;
     if (iconUrl) {
       const icon = document.createElement('img');
@@ -508,11 +618,7 @@ function renderInventoryPreview() {
   $('#inventory-stage-meta').textContent = meta;
   $('.inventory-stage-title').textContent = showAugments ? 'WORN AUGMENTS' : 'WORN EQUIPMENT';
   $('#inventory-slot-count').textContent = showAugments ? visibleCount + ' augments' : visibleCount + ' / 19 worn slots';
-  document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
-    const active = tab.dataset.inventoryTab === activeInventoryTab;
-    tab.classList.toggle('active', active);
-    tab.setAttribute('aria-selected', String(active));
-  });
+  syncTabs();
 }
 
 function hasNumericStats(item) {
@@ -621,10 +727,20 @@ function renderItemList() {
   if (addItemButton) addItemButton.disabled = !itemsEditable;
   renderInventoryPreview();
   const focusView = activeInventoryTab === 'focus';
+  const wishlistView = activeInventoryTab === 'wishlist';
   const detailsLabel = document.querySelector('.item-details-label');
-  if (detailsLabel) detailsLabel.textContent = focusView ? 'GEAR EFFECT DETAILS' : 'ITEM DETAILS';
-  if (editButton) editButton.hidden = focusView;
-  if (addItemButton) addItemButton.hidden = focusView;
+  if (detailsLabel) {
+    detailsLabel.textContent = focusView ? 'GEAR EFFECT DETAILS' : wishlistView ? 'WISHLIST' : 'ITEM DETAILS';
+  }
+  if (editButton) editButton.hidden = focusView || wishlistView;
+  if (addItemButton) addItemButton.hidden = focusView || wishlistView;
+  if (wishlistView) {
+    // Wishlist entries are wanted items, not profile items, so there is nothing
+    // to edit here; they are added and removed from the item pages themselves.
+    list.appendChild(el('div', 'empty-state',
+      'Wishlist items are added from RaidLoot and OpenDKP item pages. Remove them in the list on the left.'));
+    return;
+  }
   if (focusView) {
     renderFocusDetails();
     return;
@@ -1195,6 +1311,13 @@ async function init() {
       renderItemList();
     });
   });
+  document.querySelectorAll('[data-wishlist-style]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      wishlistStyle = button.dataset.wishlistStyle === 'list' ? 'list' : 'slots';
+      await chrome.storage.local.set({ [WISHLIST_STYLE_KEY]: wishlistStyle });
+      renderItemList();
+    });
+  });
   $('#btn-edit-items').addEventListener('click', () => {
     itemsEditable = !itemsEditable;
     renderItemList();
@@ -1216,8 +1339,23 @@ async function init() {
     if (area !== 'local' || !changes[PROFILES_KEY]) return;
     profiles = changes[PROFILES_KEY].newValue || {};
     if (editingId && editingId !== 'new' && editingProfile && profiles[editingId]) {
-      editingProfile.wishlist = Array.isArray(profiles[editingId].wishlist)
-        ? profiles[editingId].wishlist.map((item) => ({ ...item })) : [];
+      const stored = profiles[editingId];
+      editingProfile.wishlist = Array.isArray(stored.wishlist)
+        ? stored.wishlist.map((item) => ({ ...item })) : [];
+      // Worn items change from outside this page too -- equipping on a RaidLoot
+      // or OpenDKP tab writes here. Without this the open editor keeps showing
+      // the old gear. Hand edits in progress win, so they are not discarded.
+      if (!itemsEditable) {
+        editingProfile.items = (stored.items || []).map((item) => ({
+          ...item,
+          augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
+          stats: Object.assign({}, item.stats || {}),
+          effects: Array.isArray(item.effects) ? item.effects.map((effect) => ({ ...effect })) : [],
+        }));
+        editingProfile.lastEquip = stored.lastEquip || null;
+        renderItemList();
+        return;
+      }
       renderWishlist();
     } else if (!editingId) {
       renderProfileList();

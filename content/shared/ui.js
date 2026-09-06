@@ -64,6 +64,10 @@
     '.lc-compare-title{min-width:0;flex:1 1 auto;}',
     '.lc-compare-nav{display:inline-flex;flex:0 0 auto;align-items:center;gap:4px;color:#c3ceda;}',
     '.lc-compare-nav button{padding:0 6px;border:1px solid #8b7547;background:#101d2e;color:#f0d18a;cursor:pointer;font:inherit;}',
+    '.lc-compare-nav button:disabled{cursor:wait;opacity:.65;}',
+    '.lc-compare-nav button.lc-equipped:disabled{cursor:default;}',
+    '.lc-compare-nav button{white-space:nowrap;}',
+    '.lc-equip{flex:0 1 auto;min-width:0;margin-left:auto;}',
     '.lc-stat-indicator{display:inline-block;font:11px/1.2 sans-serif;margin-left:8px;padding:0 6px;border-radius:3px;}',
     '.lc-stat-indicator[data-dir="up"]{color:#6cdc6c;background:rgba(108,220,108,.12);}',
     '.lc-stat-indicator[data-dir="down"]{color:#ff7676;background:rgba(255,118,118,.12);}',
@@ -176,15 +180,114 @@
     return details;
   }
 
-  function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0, view = 'stats', baselineLabel = 'worn') {
+  // Equip / replace action for one comparison row. The worn item is addressed
+  // by its index in profile.items, so the button only renders when that index
+  // resolves. A worn item we cannot locate must never fall through to the
+  // append path, which would add a duplicate instead of replacing.
+  // True when the profile already holds this item, in any slot. Comparing an
+  // item a character already wears must not offer to equip it again: the row's
+  // target can be the other half of a paired slot, so equipping would add a
+  // second copy rather than replace anything.
+  function sameStoredItem(item, cand) {
+    if (!item || !cand) return false;
+    if (item.id && cand.id) return String(item.id) === String(cand.id);
+    const key = (value) => String(value && value.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return !!key(item) && key(item) === key(cand);
+  }
+
+  function buildEquipAction(cand, worn, slotLabel, view, baselineLabel, profile) {
+    if (!profile || view !== 'stats' || baselineLabel === 'wishlist') return null;
+    if (LC.parser && !LC.parser.canWear(cand, profile)) return null;
+    if (worn && (profile.items || []).indexOf(worn) < 0) return null;
+    const candName = cand.name || ('#' + cand.id);
+    const span = document.createElement('span');
+    span.className = 'lc-compare-nav lc-equip';
+    if ((profile.items || []).some((item) => sameStoredItem(item, cand))) {
+      const equipped = document.createElement('button');
+      equipped.type = 'button';
+      equipped.className = 'lc-equipped';
+      equipped.disabled = true;
+      equipped.textContent = 'Equipped';
+      equipped.title = candName + ' is already in ' + (profile.name || 'this character') + "'s profile";
+      equipped.setAttribute('aria-label', equipped.title);
+      span.appendChild(equipped);
+      // Undo deliberately does not live here. On a page it would be permanent
+      // furniture with no natural end, and it would silently retarget whenever
+      // something else is equipped. It lives in the character editor instead.
+      return span;
+    }
+    const label = worn
+      ? 'Replace ' + (worn.name || ('#' + worn.id)) + ' with ' + candName
+      : 'Equip ' + candName + ' in ' + (slotLabel || 'this slot');
+    const start = document.createElement('button');
+    start.type = 'button';
+    start.textContent = 'Equip';
+    start.title = label;
+    start.setAttribute('aria-label', label);
+    const showStart = () => span.replaceChildren(start);
+    const showConfirm = () => {
+      const confirm = document.createElement('button');
+      confirm.type = 'button';
+      // The panel head already reads "<slot>: <old> -> <new>", so the visible
+      // text stays short; the full sentence rides on the label. A long label
+      // here would squeeze the flex head into one word per line.
+      confirm.textContent = worn ? 'Replace?' : 'Equip here?';
+      confirm.title = label + '?';
+      confirm.setAttribute('aria-label', label + '?');
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel';
+      cancel.setAttribute('aria-label', 'Cancel equipping ' + candName);
+      cancel.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showStart();
+      });
+      confirm.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        confirm.disabled = true;
+        cancel.disabled = true;
+        const result = await LC.state.equipItem(cand, profile, worn, slotLabel);
+        // On success the storage change re-runs annotations and removes this
+        // panel; the label only shows when the write changed nothing.
+        if (result && result.ok) {
+          confirm.textContent = 'Equipped';
+          return;
+        }
+        start.title = 'Could not equip this item';
+        showStart();
+      });
+      span.replaceChildren(confirm, cancel);
+    };
+    start.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showConfirm();
+    });
+    span.appendChild(start);
+    return span;
+  }
+
+  function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0, view = 'stats', baselineLabel = 'worn', profile = null) {
     const div = document.createElement('div');
     div.className = 'lc-compare-panel';
     div.dataset.lcView = view;
     div.dataset.lcRow = String(selectedIndex);
     const head = document.createElement('div');
     head.className = 'lc-head';
+    const equip = buildEquipAction(cand, worn, slotLabel, view, baselineLabel, profile);
     if (!worn) {
       head.textContent = 'No worn item in ' + (slotLabel || ((cand.slotKey && cand.slotKey.key) || '?')) + '.';
+      if (equip) head.appendChild(equip);
+      div.appendChild(head);
+      return div;
+    }
+    // Comparing an item with itself only ever yields a table of zeroes, which
+    // is what an equipped item compares against once it is in the profile.
+    if (sameStoredItem(worn, cand)) {
+      head.textContent = 'Already equipped in ' + (slotLabel || ((cand.slotKey && cand.slotKey.key) || 'this slot')) + '.';
+      if (equip) head.appendChild(equip);
       div.appendChild(head);
       return div;
     }
@@ -246,7 +349,7 @@
         const index = (selectedIndex + offset + alternatives.length) % alternatives.length;
         const row = alternatives[index];
         div.replaceWith(buildComparePanel(cand, row.target, row.diff,
-          row.slotKey && row.slotKey.key, alternatives, index, view, baselineLabel));
+          row.slotKey && row.slotKey.key, alternatives, index, view, baselineLabel, profile));
       };
       for (const [label, title, offset] of [['‹', 'Previous worn augment', -1], ['›', 'Next worn augment', 1]]) {
         const button = document.createElement('button');
@@ -264,6 +367,7 @@
       }
       head.appendChild(nav);
     }
+    if (equip) head.appendChild(equip);
     div.appendChild(head);
     if (view === 'stats' && diff.comparable) div.appendChild(table);
     const focusDetails = buildEffectDetails('Spell focus', diff.effects && diff.effects.focus);
@@ -762,7 +866,7 @@
         if (cand.isAugment && index) break;
         if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
         panels.push(buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
-          row.isAugment ? result.comparison.rows : null, index, view));
+          row.isAugment ? result.comparison.rows : null, index, view, 'worn', result.profile));
       }
       if (!panels.length) {
         const empty = document.createElement('div');

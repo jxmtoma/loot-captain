@@ -383,6 +383,8 @@ function allowedSender(type, sender) {
   if (type === 'ENRICH_PROFILE_ITEMS') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'LOOKUP_ITEM_STATS') return isOpenDkpPage(sender);
   if (type === 'MUTATE_WISHLIST') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (type === 'EQUIP_ITEM') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (type === 'UNDO_EQUIP') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'SAVE_PROFILES') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   return false;
 }
@@ -469,6 +471,38 @@ function sanitizeWishlistItem(value) {
   };
 }
 
+// A page-derived item, reduced to the stored profile item shape. augSlot and
+// parentId are deliberately dropped: an equip always inherits them from the
+// item it replaces, so a page cannot move an augment into another slot.
+function sanitizeProfileItem(value) {
+  if (!value || typeof value !== 'object' || JSON.stringify(value).length > MAX_WISHLIST_ITEM_BYTES) {
+    throw new Error('Invalid item');
+  }
+  const id = value.id ? numericId(value.id, 'item ID') : '';
+  const name = boundedName(value.name, true);
+  const icon = String(value.icon || '').trim();
+  if (icon.length > 300 || /[\u0000-\u001f]/.test(icon)) throw new Error('Invalid item icon');
+  const slot = boundedName(value.slot, true);
+  if (slot.length > 80 || !parserCanonicalSlot(slot)) throw new Error('Invalid item slot');
+  const stats = {};
+  const entries = Object.entries(value.stats || {});
+  if (entries.length > 128) throw new Error('Too many item stats');
+  for (const [key, raw] of entries) {
+    const cleanKey = String(key || '').trim();
+    const statValue = raw && typeof raw === 'object' && 'num' in raw ? raw.num : raw;
+    const num = parseFloat(statValue);
+    if (cleanKey && cleanKey.length <= 80 && Number.isFinite(num)) stats[cleanKey] = num;
+  }
+  const effects = parserNormalizeEffects(Array.isArray(value.effects) ? value.effects.slice(0, 64) : []);
+  if (!Object.keys(stats).length && !effects.length) throw new Error('Item stats are unresolved');
+  const augmentTypes = [...new Set((Array.isArray(value.augmentTypes) ? value.augmentTypes : [])
+    .slice(0, 32).map((type) => cleanWishlistId(type, 10)).filter(Boolean))];
+  return {
+    id, name, icon, slot, isAugment: !!value.isAugment, augmentTypes,
+    augSlot: '', parentId: '', enriched: !!value.enriched, stats, effects,
+  };
+}
+
 function wishlistMatches(entry, item) {
   if (entry.raidlootId && item.raidlootId) return entry.raidlootId === item.raidlootId;
   if (entry.opendkpId && item.opendkpId && entry.opendkpHost && entry.opendkpHost === item.opendkpHost) {
@@ -523,6 +557,115 @@ function mutateWishlist(profileId, action, value) {
     profiles[profileId] = { ...profile, wishlist: next };
     await chrome.storage.local.set({ profiles });
     return { wanted, entry: wanted ? merged : null, profiles };
+  });
+}
+
+// Replace one worn item, or append into an empty slot. The page addresses the
+// target by array index rather than by slot, because an /output inventory
+// import stores the same slot string for both halves of a paired slot and two
+// identical earrings are a normal setup. The index is paired with an identity
+// assertion, so a stale page is rejected instead of overwriting the wrong item.
+function equipItem(profileId, msg) {
+  return queueProfileMutation(async () => {
+    const item = sanitizeProfileItem(msg.item);
+    const profiles = await storageGet('profiles', {});
+    const profile = profiles[profileId];
+    if (!profile) throw new Error('Character profile not found');
+    const items = Array.isArray(profile.items) ? [...profile.items] : [];
+    const targetIndex = Number(msg.targetIndex);
+    if (!Number.isInteger(targetIndex) || targetIndex < -1 || targetIndex >= items.length) {
+      throw new Error('Invalid equip target');
+    }
+    let writtenIndex = targetIndex;
+    let previous = null;
+    if (targetIndex === -1) {
+      if (items.length !== Number(msg.expectedItemCount)) throw new Error('Character inventory changed');
+      if (items.length >= MAX_ITEM_COUNT) throw new Error('Too many items');
+      const slot = boundedName(msg.slot, true);
+      if (slot.length > 80 || !parserCanonicalSlot(slot)) throw new Error('Invalid item slot');
+      writtenIndex = items.length;
+      items.push({ ...item, slot });
+    } else {
+      const stored = items[targetIndex];
+      const expected = msg.expected || {};
+      if (!stored || typeof stored !== 'object' || stored.name !== expected.name ||
+          String(stored.id || '') !== String(expected.id || '') || stored.slot !== expected.slot) {
+        throw new Error('Worn item changed');
+      }
+      previous = stored;
+      // Keep the stored slot: a one-hand candidate carries "Primary, Secondary",
+      // and writing that back would make it match both weapon rows. Inheriting
+      // augSlot and parentId keeps a replaced augment in its parent's slot.
+      items[targetIndex] = {
+        ...item, slot: stored.slot, augSlot: stored.augSlot || '', parentId: stored.parentId || '',
+      };
+      const oldKey = stored.id || stored.name;
+      const newKey = item.id || item.name;
+      if (!stored.isAugment && oldKey !== newKey) {
+        for (const [index, entry] of items.entries()) {
+          if (entry && entry.isAugment && entry.parentId === oldKey) items[index] = { ...entry, parentId: newKey };
+        }
+      }
+    }
+    const wanted = msg.wishlistItem ? sanitizeWishlistItem(msg.wishlistItem) : null;
+    const allWishlist = (Array.isArray(profile.wishlist) ? profile.wishlist : []).map(sanitizeWishlistItem);
+    const dropped = wanted ? allWishlist.filter((entry) => wishlistMatches(entry, wanted)) : [];
+    const wishlist = allWishlist.filter((entry) => !dropped.includes(entry));
+    // One level of undo, describing only what this equip touched, so an
+    // unrelated profile edit afterwards is not rolled back with it.
+    const lastEquip = {
+      index: writtenIndex,
+      previous,
+      wishlist: dropped,
+      item: { id: item.id, name: item.name },
+      at: Date.now(),
+    };
+    profiles[profileId] = { ...profile, items, wishlist, lastEquip };
+    await chrome.storage.local.set({ profiles });
+    return { profiles };
+  });
+}
+
+// Reverse the most recent equip. The stored record names the index it wrote and
+// the item it wrote there; if that no longer matches, the profile has moved on
+// and the undo is refused rather than applied to whatever now sits at the index.
+function undoEquip(profileId) {
+  return queueProfileMutation(async () => {
+    const profiles = await storageGet('profiles', {});
+    const profile = profiles[profileId];
+    if (!profile) throw new Error('Character profile not found');
+    const record = profile.lastEquip;
+    if (!record || typeof record !== 'object') throw new Error('Nothing to undo');
+    const items = Array.isArray(profile.items) ? [...profile.items] : [];
+    const index = Number(record.index);
+    const current = Number.isInteger(index) && index >= 0 && index < items.length ? items[index] : null;
+    const recorded = record.item || {};
+    if (!current || current.name !== recorded.name || String(current.id || '') !== String(recorded.id || '')) {
+      throw new Error('Character inventory changed');
+    }
+    // record.previous is an item this worker copied out of storage, not page
+    // input, so it is restored as-is; a page-supplied item could not reach here.
+    const previous = record.previous && typeof record.previous === 'object' ? record.previous : null;
+    if (previous) {
+      items[index] = previous;
+      const oldKey = current.id || current.name;
+      const newKey = previous.id || previous.name;
+      if (!previous.isAugment && oldKey !== newKey) {
+        for (const [at, entry] of items.entries()) {
+          if (entry && entry.isAugment && entry.parentId === oldKey) items[at] = { ...entry, parentId: newKey };
+        }
+      }
+    } else {
+      items.splice(index, 1);
+    }
+    const restored = (Array.isArray(record.wishlist) ? record.wishlist : []).map(sanitizeWishlistItem);
+    const wishlist = (Array.isArray(profile.wishlist) ? profile.wishlist : []).map(sanitizeWishlistItem);
+    for (const entry of restored) {
+      if (!wishlist.some((existing) => wishlistMatches(existing, entry))) wishlist.push(entry);
+    }
+    profiles[profileId] = { ...profile, items, wishlist, lastEquip: null };
+    await chrome.storage.local.set({ profiles });
+    return { profiles };
   });
 }
 
@@ -685,6 +828,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const profileId = cleanWishlistId(msg.profileId, 100);
         if (!profileId) throw new Error('Character profile is required');
         const result = await mutateWishlist(profileId, msg.action, msg.item);
+        sendResponse({ ok: true, ...result });
+        break;
+      }
+      case 'EQUIP_ITEM': {
+        const profileId = cleanWishlistId(msg.profileId, 100);
+        if (!profileId) throw new Error('Character profile is required');
+        const result = await equipItem(profileId, msg);
+        sendResponse({ ok: true, ...result });
+        break;
+      }
+      case 'UNDO_EQUIP': {
+        const profileId = cleanWishlistId(msg.profileId, 100);
+        if (!profileId) throw new Error('Character profile is required');
+        const result = await undoEquip(profileId);
         sendResponse({ ok: true, ...result });
         break;
       }

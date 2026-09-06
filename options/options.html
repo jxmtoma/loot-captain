@@ -117,13 +117,6 @@
           <label>Level
             <input type="number" id="profile-level" min="1" max="125" placeholder="e.g. 120">
           </label>
-          <div class="wishlist-editor">
-            <div class="wishlist-editor-header">
-              <h4>Wishlist</h4>
-              <span id="wishlist-count">0 items</span>
-            </div>
-            <div id="wishlist-list" class="wishlist-list"></div>
-          </div>
         </div>
 
         <!-- Worn items -->
@@ -133,12 +126,18 @@
             <button id="btn-add-item" class="btn btn-small btn-primary">+ Add Item</button>
           </div>
           <p class="hint">Items are compared by slot. Paired slots (ear, wrist, finger) can hold two items.</p>
+          <div id="last-equip" class="last-equip" hidden></div>
           <div class="inventory-editor-layout">
           <div id="inventory-preview" class="inventory-preview">
               <div class="inventory-tabs" role="tablist" aria-label="Inventory view">
                 <button type="button" class="active" data-inventory-tab="equipment" role="tab" aria-selected="true">Equipment</button>
                 <button type="button" data-inventory-tab="augments" role="tab" aria-selected="false">Augments</button>
                 <button type="button" data-inventory-tab="focus" role="tab" aria-selected="false">Spell Focus</button>
+                <button type="button" class="wishlist-tab" data-inventory-tab="wishlist" role="tab" aria-selected="false">Wishlist</button>
+                <span id="wishlist-style" class="wishlist-style" hidden>
+                  <button type="button" data-wishlist-style="slots" aria-pressed="true">Game</button>
+                  <button type="button" data-wishlist-style="list" aria-pressed="false">List</button>
+                </span>
             </div>
             <div class="inventory-body">
               <div class="inventory-stage">

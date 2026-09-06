@@ -382,7 +382,8 @@
             const charRow = result && result.comparison.rows[Number(rowBadge.dataset.lcRow)];
             if (!result || !charRow || !charRow.diff) return;
             const panel = LC.ui.buildComparePanel(selected, charRow.target, charRow.diff, charRow.slotKey && charRow.slotKey.key,
-              charRow.isAugment ? result.comparison.rows : null, Number(rowBadge.dataset.lcRow), rowBadge.dataset.lcView);
+              charRow.isAugment ? result.comparison.rows : null, Number(rowBadge.dataset.lcRow), rowBadge.dataset.lcView,
+              'worn', result.profile);
             panel.dataset.lcProfile = rowBadge.dataset.lcProfile;
             host.appendChild(panel);
             return;
@@ -392,7 +393,7 @@
             return;
           }
           host.appendChild(LC.ui.buildComparePanel(selected, row.target, row.diff, row.slotKey && row.slotKey.key,
-            row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView));
+            row.isAugment ? comparison.rows : null, index, rowBadge.dataset.lcView, 'worn', LC.currentProfile));
         });
       });
       if (prepend) host.prepend(...badges); else host.append(...badges);
