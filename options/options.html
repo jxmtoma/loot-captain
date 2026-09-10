@@ -39,13 +39,13 @@
 
       <div class="card formula-card">
         <div class="card-header">
-          <h3>Comparison Formula</h3>
+          <h3>Fallback Comparison Formula</h3>
           <span class="recommended-label">USED ON RAIDLOOT &amp; OPENDKP</span>
         </div>
         <label for="score-formula">Score formula
           <select id="score-formula"></select>
         </label>
-        <p class="hint">Controls the base upgrade score. Weapons also show their Damage/Delay ratio when available.</p>
+        <p class="hint">Used by characters without a saved formula. Weapons also show their Damage/Delay ratio when available.</p>
       </div>
 
       <div class="card import-card raidloot-import-card">
@@ -104,6 +104,12 @@
         </div>
       </div>
 
+      <div class="card">
+        <label for="character-formula">Character score formula</label>
+        <select id="character-formula"></select>
+        <p id="character-formula-status" class="hint" role="status"></p>
+      </div>
+
       <div class="editor-grid">
         <!-- Profile meta -->
         <div class="card character-sheet-card">
@@ -117,7 +123,12 @@
           <label>Level
             <input type="number" id="profile-level" min="1" max="125" placeholder="e.g. 120">
           </label>
+          <label>Server
+            <input type="text" id="profile-server" placeholder="e.g. Oakwynd">
+          </label>
         </div>
+
+        <section id="character-data-panel" class="card character-data-card" aria-label="Character stats and calibration"></section>
 
         <!-- Worn items -->
         <div class="card inventory-card">
@@ -170,6 +181,10 @@
     </section>
   </main>
 
+  <script src="../content/shared/diff.js"></script>
+  <script src="../content/shared/character-data.js"></script>
+  <script src="../content/shared/projection.js"></script>
   <script src="options.js"></script>
+  <script src="character-data.js"></script>
 </body>
 </html>

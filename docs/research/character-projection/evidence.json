@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "reviewedOn": "2026-09-09",
+  "target": {
+    "class": "Beastlord",
+    "level": 100,
+    "server": "Oakwynd",
+    "expansion": null,
+    "patch": null,
+    "basis": "User class confirmation and Ereebus metadata in Loot Captain local storage. Rain of Fear browser page is context, not proof of unlock."
+  },
+  "decision": {
+    "research": "complete",
+    "productionProjection": "insufficient_evidence",
+    "reason": "No controlled in-game gear-swap measurement or character snapshot supplied; current patch applicability and HP/mana/ATK coefficients remain unvalidated.",
+    "referenceProjection": "implemented_bst100_reference_v2",
+    "referenceBasis": "User explicitly authorized consistent estimates without calibration; see reference-model.md. Live-server validation remains insufficient."
+  },
+  "sources": [
+    {
+      "id": "eq-2016-mods",
+      "type": "publisher_statement",
+      "url": "https://www.everquest.com/news/may-2016-patch-preview",
+      "published": "2016-05-06",
+      "finding": "Heroic stats replaced ten item modifiers; the character stat window exposes modifier totals and threshold tooltips. This does not supply HP/mana conversion coefficients.",
+      "retrieved_on": "2026-09-07"
+    },
+    {
+      "id": "eq-2016-detail",
+      "type": "publisher_statement",
+      "url": "https://forums.everquest.com/index.php?threads/stat-consolidation-and-you-may-2016-patch-preview.232498/",
+      "published": "2016-05-06",
+      "finding": "Includes retroactive item conversion and heroic/modifier relationships. Do not reverse its item-migration formula into a character-stat formula.",
+      "retrieved_on": "2026-09-07",
+      "retrieved_sha256": "03d0ee5a43d7f5dcb045298051643618cbb96e77b64ba7c89191eaa18960c3c9"
+    },
+    {
+      "id": "eq-2021-mod2",
+      "type": "developer_reference",
+      "url": "https://forums.everquest.com/index.php?threads/heroic-stats-above-400-mod2s-calculated-incorrectly.266158/#post-4048883",
+      "published": "2021-07-20",
+      "author": "Meeko, Developer (Code), post 11",
+      "finding": "Publishes the post-400 step denominator 3600/(maximum-minimum-1), explicitly demonstrates Accuracy 217 at hDex 2000, and announces an internal fix intended for the next update. Not a current Oakwynd measurement.",
+      "retrieved_on": "2026-09-07",
+      "retrieved_sha256": "68850ea12e8d09d02cd169749d2cbb33427b5425a17021a14d4bad723228a41c"
+    },
+    {
+      "id": "eq-beastlord-wis",
+      "type": "publisher_guide",
+      "url": "https://www.everquest.com/news/imported-eq-enus-51200",
+      "published": null,
+      "finding": "Identifies Wisdom as the Beastlord mana attribute. Qualitative and historical, not a level-100 coefficient.",
+      "retrieved_on": "2026-09-07"
+    },
+    {
+      "id": "eqemu-client-mods",
+      "type": "emulator_implementation",
+      "url": "https://github.com/EQEmu/EQEmu/blob/7ab909ee47e8639b2137a6818bfdff99845c9d39/zone/client_mods.cpp",
+      "revision": "7ab909ee47e8639b2137a6818bfdff99845c9d39",
+      "published": "2026-04-02",
+      "finding": "GetMaxStat/GetMaxSTA, CalcBaseHP, CalcMaxHP and CalcBaseMana expose client/rule/data dependencies. CalcMaxHP applies percentage bonuses after adding item HP. Reference for emulator behavior only; no code copied into the extension.",
+      "retrieved_on": "2026-09-07",
+      "retrieved_sha256": "e9130701ea083d9a6c8a6976e1b8a68a4cebe58689df3f68ed5c27007ca84649"
+    },
+    {
+      "id": "rl-planar-rof",
+      "type": "game_data_catalog",
+      "url": "https://www.raidloot.com/aa?name=Planar+Power&class=Beastlord&level=100&exp=Rain+of+Fear",
+      "catalog_updated": "2025-12",
+      "finding": "Returned Planar Power rank 55, level 100, RoF, cumulative base-stat cap grant 275. Does not establish purchased rank or a complete character cap.",
+      "retrieved_on": "2026-09-07",
+      "retrieved_sha256": "3accd7f146e5021a059d032241833f449e8b5fc84a2feb48da6a83049a054880"
+    },
+    {
+      "id": "rl-durability",
+      "type": "game_data_catalog",
+      "url": "https://www.raidloot.com/aa?name=Natural+Durability&class=Beastlord&level=100",
+      "catalog_updated": "2025-12",
+      "finding": "Returned rank 10, level 65, SoD, maximum HP effect 18%; description specifies stamina-derived base health. Multiplication scope requires validation against the game.",
+      "retrieved_on": "2026-09-07",
+      "retrieved_sha256": "80cff9f1de3597c5a93c56879fa0be1195b9ab713958b7597c4cb46ff35f2a3d"
+    },
+    {
+      "id": "rl-enhancement",
+      "type": "game_data_catalog",
+      "url": "https://www.raidloot.com/aa?name=Physical+Enhancement&class=Beastlord&level=100",
+      "catalog_updated": "2025-12",
+      "finding": "Returned rank 1, level 59, SoL: AC soft cap and melee avoidance, 2% each. This record does not grant HP.",
+      "retrieved_on": "2026-09-07",
+      "retrieved_sha256": "80acd2ce991d3c6208cdee36e6757cfd46d57ecbb5559680db189cdaf7d3891c"
+    },
+    {
+      "id": "rl-enlightenment",
+      "type": "game_data_catalog",
+      "url": "https://www.raidloot.com/aa?name=Innate+Enlightenment&class=Beastlord&level=100",
+      "catalog_updated": "2025-12",
+      "finding": "Returned rows list priest and pure-caster class masks, excluding BST. The query selector alone is not evidence of eligibility; exclude this AA from the Beastlord model.",
+      "retrieved_on": "2026-09-07",
+      "retrieved_sha256": "f783dd55e92814f76e099da8a5f3ac1d09900dbc993a4d34f3ef0e0eb273fc35"
+    },
+    {
+      "id": "client-factors",
+      "type": "reference_configuration_not_live_measurement",
+      "url": "https://github.com/GiverofMemory/NostalgiaEQ-Client/blob/71b420046d0ceca1c11d3d40f875112673178a2a/BaseData.txt",
+      "retrieved_on": "2026-09-09",
+      "retrieved_sha256": "3be12bc9a8ba347e7d7fc90a1a142e081826f103723f871827846ff0a94e4553"
+    },
+    {
+      "id": "eqemu-bonuses",
+      "type": "reference_configuration_not_live_measurement",
+      "url": "https://github.com/EQEmu/EQEmu/blob/7ab909ee47e8639b2137a6818bfdff99845c9d39/zone/bonuses.cpp",
+      "retrieved_on": "2026-09-09",
+      "retrieved_sha256": "33b1b679c11221762ba9f26591129a5c0d4ee616687f3176abec31cb7a617cea"
+    },
+    {
+      "id": "eqemu-atk",
+      "type": "reference_configuration_not_live_measurement",
+      "url": "https://github.com/EQEmu/EQEmu/blob/7ab909ee47e8639b2137a6818bfdff99845c9d39/zone/client.cpp",
+      "retrieved_on": "2026-09-09",
+      "retrieved_sha256": "60bd5a2801ec8889360d1be173eb3ebb732e048bf9c5c133ba519d3287264e4d"
+    },
+    {
+      "id": "eqemu-ac",
+      "type": "reference_configuration_not_live_measurement",
+      "url": "https://github.com/EQEmu/EQEmu/blob/7ab909ee47e8639b2137a6818bfdff99845c9d39/zone/attack.cpp",
+      "finding": "ACSum supplies pre-softcap item scaling and AGI term; level-100 Beastlord class bonus cancels. Softcap returns and shield exceptions are not modeled.",
+      "retrieved_sha256": "64746c894f29bc5839c12aa03c367a181388d1996069a8e0166ef7c7c0135c5f"
+    }
+  ],
+  "referenceVectors": [
+    {
+      "sourceId": "eq-2021-mod2",
+      "kind": "developer_example_not_measurement",
+      "input": {
+        "HDex": 2000
+      },
+      "output": {
+        "Accuracy": 217
+      }
+    }
+  ],
+  "measuredSamples": [],
+  "unsupportedAssumptions": [
+    "All available AAs are purchased",
+    "Role presets determine conversion coefficients",
+    "A displayed cap substitutes for a current value",
+    "Forum coefficient disagreement establishes bounds",
+    "Emulator output equals current TLP behavior",
+    "AA cap grants can be added again to a measured sheet cap",
+    "One multi-stat swap identifies several independent coefficients"
+  ]
+}

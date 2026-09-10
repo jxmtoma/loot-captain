@@ -2,7 +2,8 @@
 
 (function () {
   'use strict';
-  const LC = window.LootCaptain = window.LootCaptain || {};
+  const root = typeof window === 'undefined' ? globalThis : window;
+  const LC = root.LootCaptain = root.LootCaptain || {};
 
   const STAT_ORDER = [
     'AC', 'HP', 'Regen', 'MANA', 'ManaRegen', 'END', 'EndRegen', 'ATK',
@@ -34,8 +35,20 @@
     { key: 'manaregen', label: 'Mana Regen', terms: { ManaRegen: 1 } },
     { key: 'endregen', label: 'End Regen', terms: { EndRegen: 1 } },
     { key: 'netpos', label: 'Net positive', terms: '__POSITIVE__' },
-  ];
+  ].map((formula) => ({ ...formula, version: 1 }));
   const DEFAULT_FORMULA_KEY = 'ac10hp';
+  function resolveFormula(profile, fallback) {
+    const key = typeof fallback === 'string' ? fallback : fallback && fallback.key;
+    const defaultFormula = SCORE_FORMULAS.find((formula) => formula.key === key) || SCORE_FORMULAS[0];
+    const selected = profile && profile.scoreFormula;
+    if (selected == null) return defaultFormula;
+    const formula = SCORE_FORMULAS.find((entry) => entry.key === selected.key && entry.version === selected.version);
+    if (formula) return formula;
+    return { ...defaultFormula, warning: 'Unsupported character formula ' +
+      String(selected.key || '?').slice(0, 80) + ' v' + String(selected.version || '?').slice(0, 20) +
+      '; using ' + defaultFormula.key + ' v' + defaultFormula.version };
+  }
+
   const PROC_FAMILIES = [
     ['damage', /\b(?:damage|strike|blast|nuke|dot|burn|harm|decrease current hp)\b/i],
     ['hate', /\b(?:hate|aggro|agro|threat|taunt)\b/i],
@@ -81,12 +94,11 @@
   }
 
   function numericStat(value) {
-    const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
-    return num != null && !isNaN(num) ? num : null;
+    return LC.parser.normalizeStatValue(value).num;
   }
 
   function isDiffStatKey(key) {
-    return !/^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i.test(String(key || '').trim());
+    return !/^(?:slot|class|race|type|deity|skill|effect|click|worn|proc|focus|tools|required|restriction|lore|aug)/i.test(String(key || '').trim());
   }
 
   function hasDamageModifier(item) {
@@ -296,10 +308,29 @@
     return { rows, comparable: candidate.length > 0 || target.length > 0 };
   }
 
+  function compareInformationalEffects(cand, worn) {
+    const informational = (item) => (item && item.effects || []).filter((effect) => !['focus', 'proc'].includes(effect.type));
+    const remaining = [...informational(worn)];
+    const rows = informational(cand).map((effect) => {
+      const index = remaining.findIndex((other) => other.type === effect.type &&
+        (other.kind || '') === (effect.kind || '') &&
+        (other.key && other.key === effect.key && effect.type !== 'unknown' || other.name === effect.name));
+      const current = index < 0 ? null : remaining.splice(index, 1)[0];
+      return { type: effect.type, current, candidate: effect,
+        status: current ? (current.rank === effect.rank && current.raw === effect.raw ? 'same' : 'changed') :
+          (!worn || worn.effectsKnown === true ? 'added' : 'unresolved') };
+    });
+    for (const current of remaining) rows.push({ type: current.type, current, candidate: null,
+      status: cand.effectsKnown === true ? 'removed' : 'unresolved' });
+    return { rows, comparable: rows.length > 0,
+      complete: cand.effectsKnown === true && (!worn || worn.effectsKnown === true) };
+  }
+
   function compareEffects(profile, cand, worn) {
     const focus = compareEffectType(profile, cand, worn, 'focus');
     const proc = compareEffectType(profile, cand, worn, 'proc');
-    return { focus, proc, comparable: focus.comparable || proc.comparable };
+    const other = compareInformationalEffects(cand, worn);
+    return { focus, proc, other, comparable: focus.comparable || proc.comparable || other.comparable };
   }
 
   function weaponRatio(item) {
@@ -308,7 +339,8 @@
     if (!keys || !keys.some((key) => ['primary', 'secondary', 'range'].includes(key))) return null;
     const damage = numericStat(item.stats && item.stats.Damage);
     const delay = numericStat(item.stats && item.stats.Delay);
-    return damage != null && delay > 0 ? damage / delay : null;
+    const ratio = damage != null && delay > 0 ? damage / delay : null;
+    return ratio != null && Number.isFinite(ratio) ? ratio : null;
   }
 
   function weaponType(item) {
@@ -323,20 +355,18 @@
 
   function diffItems(cand, worn, formula) {
     const f = formula || SCORE_FORMULAS[0];
-    const sharedNumericStat = worn && Object.keys(cand.stats || {}).some((key) =>
-      isDiffStatKey(key) && numericStat(cand.stats[key]) != null && numericStat(worn.stats && worn.stats[key]) != null);
-    const comparable = hasNumericStats(cand) && (worn == null || (hasNumericStats(worn) && sharedNumericStat));
-    if (!comparable) return { diffs: {}, score: 0, worn, formula: f, comparable: false };
-    const diffs = {};
+    const candidateStats = LC.parser.normalizeStats(cand && cand.stats || {});
+    const wornStats = LC.parser.normalizeStats(worn && worn.stats || {});
+    const diffs = Object.create(null);
     const allKeys = new Set([
-      ...Object.keys(cand.stats || {}),
-      ...Object.keys((worn && worn.stats) || {}),
+      ...Object.keys(candidateStats),
+      ...Object.keys(wornStats),
+      ...(f.terms === '__POSITIVE__' ? POSITIVE_STATS : Object.keys(f.terms)),
     ].filter(isDiffStatKey));
     for (const k of allKeys) {
-      const c = numericStat(cand.stats && cand.stats[k]);
-      const w = numericStat(worn && worn.stats && worn.stats[k]);
-      if (c == null && w == null) continue;
-      const delta = (c || 0) - (w || 0);
+      const c = numericStat(candidateStats[k]);
+      const w = worn == null ? 0 : numericStat(wornStats[k]);
+      const delta = c == null || w == null || !Number.isFinite(c - w) ? null : c - w;
       diffs[k] = {
         worn: w == null ? null : w,
         cand: c == null ? null : c,
@@ -344,36 +374,52 @@
         positive: POSITIVE_STATS.has(k),
       };
     }
-    let score = 0;
-    if (f.terms === '__POSITIVE__') {
-      for (const k of Object.keys(diffs)) if (diffs[k].positive) score += diffs[k].delta;
-    } else {
-      for (const k of Object.keys(f.terms)) {
-        const d = diffs[k];
-        if (d) score += d.delta * f.terms[k];
-      }
+    const missingScoreStats = [];
+    const scoreTerms = f.terms === '__POSITIVE__' ? [...POSITIVE_STATS].reduce((terms, key) => {
+      terms[key] = 1;
+      return terms;
+    }, {}) : f.terms;
+    for (const k of Object.keys(scoreTerms)) {
+      if (!diffs[k] || diffs[k].delta == null) missingScoreStats.push(k);
     }
+    let numericScoreAvailable = missingScoreStats.length === 0;
+    let score = numericScoreAvailable ? 0 : null;
+    if (f.terms === '__POSITIVE__') {
+      if (numericScoreAvailable) for (const k of POSITIVE_STATS) score += diffs[k].delta;
+    } else {
+      if (numericScoreAvailable) for (const k of Object.keys(f.terms)) score += diffs[k].delta * f.terms[k];
+    }
+    if (numericScoreAvailable && !Number.isFinite(score)) {
+      numericScoreAvailable = false;
+      score = null;
+      missingScoreStats.push('score');
+    }
+    const comparable = Object.values(diffs).some((diff) => diff.delta != null);
+    const hasData = [...Object.keys(candidateStats), ...Object.keys(wornStats)].some(isDiffStatKey);
     const candRatio = weaponRatio(cand);
     const wornRatio = worn && weaponRatio(worn);
-    const weaponRatioDelta = candRatio != null && (!worn || wornRatio != null) ? candRatio - (wornRatio || 0) : null;
-    return { diffs, score, weaponRatioDelta, worn, formula: f, comparable: true };
+    const ratioDelta = candRatio != null && (!worn || wornRatio != null) ? candRatio - (wornRatio || 0) : null;
+    const weaponRatioDelta = ratioDelta != null && Number.isFinite(ratioDelta) ? ratioDelta : null;
+    return {
+      diffs, score, weaponRatioDelta, worn, formula: f, comparable, hasData,
+      numericScoreAvailable, missingScoreStats,
+    };
   }
 
   function bestComparisonTarget(cand, wornCandidates, formula) {
     if (!wornCandidates.length) return null;
-    if (wornCandidates.length === 1) {
-      return diffItems(cand, wornCandidates[0], formula).comparable ? wornCandidates[0] : null;
-    }
+    if (wornCandidates.length === 1) return wornCandidates[0];
     let best = null, bestScore = -Infinity;
     for (const w of wornCandidates) {
       const d = diffItems(cand, w, formula);
-      if (!d.comparable) return null;
+      if (!d.numericScoreAvailable) return wornCandidates[0];
       if (d.score > bestScore) { bestScore = d.score; best = w; }
     }
     return best;
   }
 
   function compareCandidate(profile, cand, formula) {
+    formula = resolveFormula(profile, formula);
     if (!profile || !cand || !cand.slotKey) return { eligible: false, rows: [] };
     if (LC.parser && !LC.parser.classMatches(profile.cls, cand.classes)) return { eligible: false, rows: [] };
     if (cand.isAugment) {
@@ -383,8 +429,11 @@
           const effects = compareEffects(profile, cand, worn);
           return { worn, diff: { ...diffItems(cand, worn, formula), effects, effectsComparable: effects.comparable } };
         })
-        .filter((match) => match.diff.comparable)
-        .sort((a, b) => b.diff.score - a.diff.score);
+        .sort((a, b) => {
+          if (a.diff.numericScoreAvailable !== b.diff.numericScoreAvailable) return a.diff.numericScoreAvailable ? -1 : 1;
+          if (!a.diff.numericScoreAvailable) return 0;
+          return b.diff.score - a.diff.score;
+        });
       if (!matches.length) return { eligible: false, rows: [] };
       return {
         eligible: true,
@@ -422,15 +471,16 @@
     return { eligible: true, rows };
   }
 
-  function compareItemPair(cand, target, formula, level) {
+  function compareItemPair(cand, target, formula, level, profile) {
+    formula = resolveFormula(profile, formula);
     const effects = compareEffects({ level, items: target ? [target] : [] }, cand, target);
     return { ...diffItems(cand, target, formula), effects, effectsComparable: effects.comparable };
   }
 
   function wishlistComparisonDirection(cand, targets, formula, level) {
-    const directions = (targets || []).map((target) => compareItemPair(cand, target, formula, level))
-      .filter((diff) => diff.comparable)
-      .map((diff) => Math.sign(diff.score));
+    const comparisons = (targets || []).map((target) => compareItemPair(cand, target, formula, level));
+    if (!comparisons.length || comparisons.some((diff) => !diff.numericScoreAvailable)) return 0;
+    const directions = comparisons.map((diff) => Math.sign(diff.score));
     if (directions.length && directions.every((direction) => direction > 0)) return 1;
     if (directions.length && directions.every((direction) => direction < 0)) return -1;
     return 0;
@@ -438,13 +488,18 @@
 
   function summarizeComparisons(comparison) {
     const rows = comparison.rows || [];
-    const comparable = comparison.eligible && rows.length > 0 && rows.every((row) =>
-      row.diff && (row.diff.comparable || row.diff.effectsComparable));
+    const comparable = comparison.eligible && rows.some((row) =>
+      row.diff && (row.diff.comparable || row.diff.hasData || row.diff.effectsComparable));
+    const numericScoreAvailable = comparison.eligible && rows.length > 0 && rows.every((row) =>
+      row.diff && row.diff.numericScoreAvailable);
+    const missingScoreStats = [...new Set(rows.flatMap((row) => row.diff && row.diff.missingScoreStats || []))];
     return {
       comparable,
       hasWorn: rows.some((row) => row.worn && row.worn.length),
       hasEffects: rows.some((row) => row.diff && row.diff.effectsComparable),
-      score: comparable ? (rows[0].isAugment ? rows[0].diff.score : rows.reduce((sum, row) => sum + row.diff.score, 0)) : 0,
+      numericScoreAvailable,
+      missingScoreStats,
+      score: numericScoreAvailable ? (rows[0].isAugment ? rows[0].diff.score : rows.reduce((sum, row) => sum + row.diff.score, 0)) : null,
       rows,
     };
   }
@@ -452,7 +507,7 @@
   // Compares one candidate across several profiles. Every eligible profile
   // gets a result (comparable or not, so callers can tell "empty slot" apart
   // from "unresolved stats"). `best` is the profile with the highest
-  // comparable score, preferring profiles that actually wear something in the
+  // available numeric score, preferring profiles that actually wear something in the
   // slot; ties keep the earlier (active) profile.
   function compareCandidateMulti(profiles, cand, formula) {
     const results = [];
@@ -462,20 +517,24 @@
       const summary = summarizeComparisons(comparison);
       results.push({ profile, comparison, summary, empty: !summary.hasWorn && !summary.hasEffects });
     }
-    const comparable = results.filter((result) => result.summary.comparable);
+    const formulas = results.map((result) => resolveFormula(result.profile, formula));
+    const mixedFormulas = new Set(formulas.map((entry) => entry.key + ':' + entry.version)).size > 1 ||
+      formulas.some((entry) => entry.warning);
+    const comparable = mixedFormulas ? [] : results.filter((result) => result.summary.numericScoreAvailable);
     const worn = comparable.filter((result) => !result.empty);
     const pool = worn.length ? worn : comparable;
     let best = null;
     for (const result of pool) {
       if (!best || result.summary.score > best.summary.score) best = result;
     }
-    return { results, best };
+    return { results, best, mixedFormulas };
   }
 
   LC.diff = {
     STAT_ORDER,
     POSITIVE_STATS,
     SCORE_FORMULAS,
+    resolveFormula,
     DEFAULT_FORMULA_KEY,
     findWornInSlot,
     findWornAugments,
@@ -489,5 +548,6 @@
     summarizeComparisons,
     compareEffects,
     weaponType,
+    numericStat,
   };
 })();

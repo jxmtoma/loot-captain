@@ -142,12 +142,16 @@
         LC.diff.weaponType(cand) != null;
       if (LC.currentBadgeLayout !== 'expanded') {
         if (!multi.best) {
-          badge.textContent = '?';
-          badge.title = 'Item stats are unresolved; no comparison is available';
-          host.prepend(badge);
+          const partial = buildMultiBadges(multi, cand, f, compact, host, attachPanel);
+          if (partial.length) host.prepend(...partial);
+          else {
+            badge.textContent = '?';
+            badge.title = 'Score unavailable; item stats are unresolved';
+            host.prepend(badge);
+          }
           return wishlistCompare;
         }
-        if (multi.best.empty) {
+        if (multi.best.empty && multi.results.every((result) => result.empty)) {
           const hasEffects = multi.best.summary.hasEffects;
           badge.dataset.state = hasEffects ? 'sidegrade' : 'empty';
           badge.textContent = hasEffects ? 'effects' : 'empty slot';
@@ -180,7 +184,7 @@
     const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
     for (const [index, row] of comparison.rows.entries()) {
       if (cand.isAugment && index) break;
-      if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+      if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
       for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact)) {
         rowBadge.dataset.lcRow = index;
         if (attachPanel) rowBadge.addEventListener('click', (ev) => {
@@ -278,7 +282,7 @@
           const comparison = LC.diff.compareCandidate(LC.currentProfile, cand, f);
           const summary = LC.diff.summarizeComparisons(comparison);
           const row = comparison.rows[Number(badge.dataset.lcRow)];
-          if (!comparison.eligible || !summary.comparable || !row) return;
+          if (!comparison.eligible || (!summary.comparable && !summary.hasEffects) || !row) return;
           td.appendChild(LC.ui.buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
             row.isAugment ? comparison.rows : null, Number(badge.dataset.lcRow), badge.dataset.lcView,
             'worn', LC.currentProfile));
@@ -386,7 +390,7 @@
             rows.push({ icon, sortKey });
             continue;
           }
-          sortKey = multi.best ? multi.best.summary.score : -Infinity;
+          sortKey = multi.best && multi.best.summary.numericScoreAvailable ? multi.best.summary.score : -Infinity;
           const compact = (!cand.isAugment && (multi.best ? multi.best.comparison.rows.length : 0) > 1) ||
             LC.diff.weaponType(cand) != null;
           if (LC.currentBadgeLayout === 'expanded') {
@@ -395,14 +399,11 @@
             continue;
           }
           if (!multi.best) {
-            badge.dataset.state = 'nomatch';
-            badge.textContent = '?';
-            badge.title = 'Item stats are unresolved; no comparison is available';
-            meta.appendChild(badge);
+            meta.append(...LC.ui.buildMultiComparisonBadges(multi, cand, f, compact));
             rows.push({ icon, sortKey });
             continue;
           }
-          if (multi.best.empty) {
+          if (multi.best.empty && multi.results.every((result) => result.empty)) {
             const emptyRow = { slotKey: cand.slotKey, diff: multi.best.comparison.rows[0].diff };
             badge.dataset.state = 'empty';
             badge.textContent = 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null);
@@ -420,9 +421,9 @@
         }
         const summary = LC.diff.summarizeComparisons(comparison);
         if (!summary.hasWorn && !summary.hasEffects) {
-          const emptyDiff = LC.diff.diffItems(cand, null, f);
+          const emptyDiff = comparison.rows[0].diff;
           const hasEffects = comparison.rows.some((row) => row.diff && row.diff.effectsComparable);
-          if (!emptyDiff.comparable && !hasEffects) {
+          if (!emptyDiff.comparable && !emptyDiff.hasData && !hasEffects) {
             badge.dataset.state = 'nomatch';
             badge.textContent = '?';
             badge.title = 'Item stats are unresolved; no comparison is available';
@@ -430,21 +431,21 @@
             rows.push({ icon, sortKey });
             continue;
           }
-          sortKey = emptyDiff.score || 0;
+          sortKey = emptyDiff.numericScoreAvailable ? emptyDiff.score : -Infinity;
           badge.dataset.state = hasEffects && !emptyDiff.comparable ? 'sidegrade' : 'empty';
           const emptyRow = { slotKey: cand.slotKey, diff: comparison.rows[0].diff };
-          badge.textContent = emptyDiff.comparable ? 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null) : 'effects';
-          badge.title = 'No worn item in slot ' + cand.slotKey.key + (hasEffects && !emptyDiff.comparable ? '; effect comparison available' : '. Score is the raw item value.');
+          badge.textContent = emptyDiff.numericScoreAvailable ? 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null) : (hasEffects ? 'effects' : 'score ?');
+          badge.title = 'No worn item in slot ' + cand.slotKey.key + (hasEffects && !emptyDiff.numericScoreAvailable ? '; effect comparison available' : emptyDiff.numericScoreAvailable ? '. Score is the raw item value.' : '; score unavailable.');
         } else {
           if (!summary.comparable) {
             badge.dataset.state = 'nomatch';
             badge.textContent = '?';
-            badge.title = 'Item stats are unresolved; no comparison is available';
+            badge.title = 'Score unavailable; item stats are unresolved';
             meta.appendChild(badge);
             rows.push({ icon, sortKey });
             continue;
           }
-          sortKey = summary.score;
+          sortKey = summary.numericScoreAvailable ? summary.score : -Infinity;
           const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
           for (const [index, row] of comparison.rows.entries()) {
             if (cand.isAugment && index) break;

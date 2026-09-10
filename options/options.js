@@ -7,21 +7,9 @@ const WISHLIST_STYLE_KEY = 'wishlistStyle';
 const CONSENT_KEY = 'consentVersion';
 const CONSENT_VERSION = 1;
 const PROFILE_STATS_VERSION = 4;
-const DEFAULT_FORMULA_KEY = 'ac10hp';
+const DEFAULT_FORMULA_KEY = (typeof window === 'undefined' ? globalThis : window).LootCaptain.diff.DEFAULT_FORMULA_KEY;
 const ICON_URL_PATTERN = /^(?:data:image\/|https:\/\/(?:cdn\.raidloot\.com|dlil5rqe0ybd2\.cloudfront\.net)\/)/i;
-const SCORE_FORMULAS = [
-  { key: 'ac10hp', label: '1AC = 10HP' },
-  { key: 'ac15hp', label: '1AC = 15HP' },
-  { key: 'hdex', label: '1HDex = 4AC = 40HP' },
-  { key: 'hagi', label: '1HAgi = 4AC = 40HP' },
-  { key: 'hp', label: 'HP' },
-  { key: 'mana', label: 'Mana' },
-  { key: 'end', label: 'Endurance' },
-  { key: 'regen', label: 'HP Regen' },
-  { key: 'manaregen', label: 'Mana Regen' },
-  { key: 'endregen', label: 'End Regen' },
-  { key: 'netpos', label: 'Net positive' },
-];
+const SCORE_FORMULAS = (typeof window === 'undefined' ? globalThis : window).LootCaptain.diff.SCORE_FORMULAS;
 const EVERQUEST_CLASSES = [
   ['Bard', 'BRD'], ['Beastlord', 'BST'], ['Berserker', 'BER'], ['Cleric', 'CLR'],
   ['Druid', 'DRU'], ['Enchanter', 'ENC'], ['Magician', 'MAG'], ['Monk', 'MNK'],
@@ -64,8 +52,8 @@ async function saveAll(changedIds = [], deletedIds = []) {
     if (!response || !response.ok) throw new Error(response && response.error || 'Could not save profiles');
     profiles = response.profiles || profiles;
   }
-  await chrome.storage.local.set({ [SCORE_KEY]: scoreFormula });
 }
+
 
 function appendDebugLog(entries) {
   const log = $('#debug-log');
@@ -102,8 +90,36 @@ function renderFormulaSelect() {
   select.value = scoreFormula;
   select.addEventListener('change', async () => {
     scoreFormula = select.value;
-    await saveAll();
+    await chrome.storage.local.set({ [SCORE_KEY]: scoreFormula });
   });
+}
+
+function renderCharacterFormula() {
+  const select = $('#character-formula');
+  if (!select || !editingProfile) return;
+  const scoring = (typeof window === 'undefined' ? globalThis : window).LootCaptain.diff;
+  const resolved = scoring.resolveFormula(editingProfile, scoreFormula);
+  select.replaceChildren(...SCORE_FORMULAS.map((formula) => {
+    const option = el('option', '', formula.label + ' (' + formula.key + ' v' + formula.version + ')');
+    option.value = formula.key;
+    return option;
+  }));
+  select.value = resolved.key;
+  $('#character-formula-status').textContent = resolved.warning || '';
+  select.onchange = async () => {
+    const id = editingId;
+    const formula = SCORE_FORMULAS.find((entry) => entry.key === select.value);
+    const choice = { key: formula.key, version: formula.version };
+    try {
+      if (id !== 'new') {
+        const result = await chrome.runtime.sendMessage({ type: 'SET_PROFILE_FORMULA', profileId: id, formula: choice });
+        if (!result || !result.ok) throw new Error(result && result.error || 'Could not save formula');
+      }
+      if (editingId === id) { editingProfile.scoreFormula = choice; renderCharacterFormula(); }
+    } catch (error) {
+      if (editingId === id) { renderCharacterFormula(); $('#character-formula-status').textContent = error.message; }
+    }
+  };
 }
 
 function normalizeClassName(value) {
@@ -240,8 +256,11 @@ async function openEditor(id) {
       name: p.name || '',
       cls: normalizeClassName(p.cls),
       level: p.level || '',
+      server: p.server || '',
+      characterData: p.characterData || null,
       statsVersion: p.statsVersion || 0,
       importedFrom: p.importedFrom || '',
+      scoreFormula: p.scoreFormula,
       lastEquip: p.lastEquip || null,
       wishlist: Array.isArray(p.wishlist) ? p.wishlist.map((item) => ({ ...item })) : [],
       items: (p.items || []).map((it) => ({
@@ -256,6 +275,7 @@ async function openEditor(id) {
         enriched: !!it.enriched,
         stats: Object.assign({}, it.stats || {}),
         effects: Array.isArray(it.effects) ? it.effects.map((effect) => ({ ...effect })) : [],
+        effectsKnown: it.effectsKnown === true,
       })),
     };
     $('#editor-title').textContent = 'Edit: ' + (p.name || 'Unnamed');
@@ -265,6 +285,8 @@ async function openEditor(id) {
   $('#profile-editor-section').classList.remove('hidden');
   renderEditorProfileSelector();
   renderEditor();
+  renderCharacterFormula();
+  renderCharacterData();
   await loadEditorStats(editingProfile);
 }
 
@@ -283,6 +305,7 @@ function renderEditor() {
   $('#profile-name').value = editingProfile.name;
   $('#profile-class').value = editingProfile.cls;
   $('#profile-level').value = editingProfile.level;
+  $('#profile-server').value = editingProfile.server || '';
   $('#profile-name').oninput = renderInventoryPreview;
   $('#profile-class').onchange = renderInventoryPreview;
   $('#profile-level').oninput = renderInventoryPreview;
@@ -623,8 +646,7 @@ function renderInventoryPreview() {
 
 function hasNumericStats(item) {
   return Object.values(item.stats || {}).some((value) => {
-    const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
-    return num != null && !isNaN(num);
+    return Number.isFinite(normalizeEditorStat(value).num);
   });
 }
 
@@ -679,6 +701,7 @@ async function loadEditorStats(profile) {
         ? [...loaded.augmentTypes] : (item.augmentTypes || []);
       item.stats = statsToPlain(loaded.stats);
       item.effects = Array.isArray(loaded.effects) ? loaded.effects : (item.effects || []);
+      item.effectsKnown = loaded.effectsKnown === true;
       loadedCount++;
     }
     renderItemList();
@@ -862,20 +885,25 @@ function renderItemList() {
         nameInput.disabled = !itemsEditable;
         nameInput.addEventListener('input', () => {
           const newKey = nameInput.value.trim();
-          if (newKey && newKey !== key) {
+          if (newKey && newKey !== key && !['__proto__', 'constructor', 'prototype'].includes(newKey)) {
             const val = item.stats[key];
             delete item.stats[key];
-            item.stats[newKey] = val;
+            item.stats[newKey] = { ...normalizeEditorStat(val), source: 'manual' };
             renderItemList();
           }
         });
         const valInput = el('input');
         valInput.className = 'stat-value';
-        valInput.type = 'number';
-        valInput.value = item.stats[key];
-        valInput.placeholder = '0';
+        const stat = normalizeEditorStat(item.stats[key]);
+        valInput.type = 'text';
+        valInput.inputMode = 'decimal';
+        valInput.value = Number.isFinite(stat.num) ? String(stat.num) : stat.raw;
+        if (!Number.isFinite(stat.num) && stat.raw) valInput.title = 'Unavailable numeric value: ' + stat.raw;
+        valInput.placeholder = 'Unknown';
         valInput.disabled = !itemsEditable;
-        valInput.addEventListener('input', () => { item.stats[key] = valInput.value; });
+        valInput.addEventListener('input', () => {
+          item.stats[key] = { raw: valInput.value, num: finiteEditorStatNumber(valInput.value), source: 'manual' };
+        });
         const rmBtn = el('button', 'btn-remove btn-remove-stat', '×');
         rmBtn.disabled = !itemsEditable;
         rmBtn.addEventListener('click', () => {
@@ -904,11 +932,13 @@ function renderItemList() {
 
 // ---------- Save ----------
 async function saveProfile() {
+  const wasNew = editingId === 'new';
   const name = $('#profile-name').value.trim();
   if (!name) { alert('Please enter a character name.'); return; }
   editingProfile.name = name;
   editingProfile.cls = $('#profile-class').value;
   editingProfile.level = $('#profile-level').value.trim();
+  editingProfile.server = $('#profile-server') ? $('#profile-server').value.trim() : editingProfile.server || '';
   // Clean up items: remove empty ones, normalize stats
   editingProfile.items = editingProfile.items
     .filter((it) => it.name && it.slot)
@@ -916,13 +946,14 @@ async function saveProfile() {
       const stats = {};
       for (const k of Object.keys(it.stats)) {
         const key = k.trim();
-        const v = parseFloat(it.stats[k]);
-        if (key && !isNaN(v)) stats[key] = v;
+        if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;
+        const value = normalizeEditorStat(it.stats[k]);
+        if (key && !NON_NUMERIC_STAT.test(key)) stats[key] = value;
       }
       return {
         id: it.id, name: it.name, icon: it.icon || '', slot: it.slot,
         isAugment: !!it.isAugment, augmentTypes: Array.isArray(it.augmentTypes) ? [...it.augmentTypes] : [],
-        augSlot: it.augSlot || '', parentId: it.parentId || '', enriched: !!it.enriched, stats, effects: it.effects || [],
+        augSlot: it.augSlot || '', parentId: it.parentId || '', enriched: !!it.enriched, stats, effects: it.effects || [], effectsKnown: it.effectsKnown === true,
       };
     });
   let savedId = editingId;
@@ -938,7 +969,10 @@ async function saveProfile() {
   editingId = savedId;
   $('#editor-title').textContent = 'Edit: ' + (editingProfile.name || 'Unnamed');
   $('#btn-delete-profile').classList.remove('hidden');
+  editingProfile.characterData = profiles[savedId].characterData || null;
   renderEditorProfileSelector();
+  if (wasNew) renderCharacterData();
+  else refreshCharacterDataStatus();
 }
 
 async function deleteProfile() {
@@ -1037,13 +1071,33 @@ function parseInventoryMetadata(text) {
   return metadata;
 }
 
-// Convert raidloot item stats ({raw,num}) to the options-page plain format.
+const NON_NUMERIC_STAT = /^(?:slot|class|race|type|deity|skill|effect|click|worn|proc|focus|tools|required|restriction|lore|aug)/i;
+const STAT_SOURCES = new Set(['raidloot', 'opendkp', 'manual', 'legacy']);
+
+function finiteEditorStatNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || !value.trim() || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function normalizeEditorStat(value, source) {
+  const object = value && typeof value === 'object' ? value : null;
+  const hasNum = !!object && Object.prototype.hasOwnProperty.call(object, 'num');
+  const rawValue = object && Object.prototype.hasOwnProperty.call(object, 'raw')
+    ? object.raw : object && Object.prototype.hasOwnProperty.call(object, 'num') ? object.num : value;
+  const raw = rawValue == null ? '' : String(rawValue);
+  const candidateSource = object && object.source || source || 'legacy';
+  return { raw, num: hasNum ? finiteEditorStatNumber(object.num) : finiteEditorStatNumber(value),
+    source: STAT_SOURCES.has(candidateSource) ? candidateSource : 'legacy' };
+}
+
+// Keep unknown RaidLoot values and their source text in the editor.
 function statsToPlain(stats) {
   const out = {};
   for (const k of Object.keys(stats || {})) {
-    const v = stats[k];
-    const num = v && typeof v === 'object' && 'num' in v ? v.num : parseFloat(v);
-    if (num != null && !isNaN(num)) out[k] = num;
+    if (['__proto__', 'constructor', 'prototype'].includes(k) || NON_NUMERIC_STAT.test(k)) continue;
+    out[k] = normalizeEditorStat(stats[k]);
   }
   return out;
 }
@@ -1061,6 +1115,7 @@ function mapRaidlootItem(item) {
     enriched: true,
     stats: statsToPlain(item.stats),
     effects: Array.isArray(item.effects) ? item.effects.map((effect) => ({ ...effect })) : [],
+    effectsKnown: item.effectsKnown === true,
   };
 }
 
@@ -1336,10 +1391,19 @@ async function init() {
   });
   renderProfileList();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes[PROFILES_KEY]) return;
+    if (area !== 'local') return;
+    if (changes[SCORE_KEY]) {
+      scoreFormula = (typeof window === 'undefined' ? globalThis : window).LootCaptain.diff.resolveFormula(null, changes[SCORE_KEY].newValue).key;
+      $('#score-formula').value = scoreFormula;
+      renderCharacterFormula();
+    }
+    if (!changes[PROFILES_KEY]) return;
     profiles = changes[PROFILES_KEY].newValue || {};
+    refreshCharacterDataStatus();
     if (editingId && editingId !== 'new' && editingProfile && profiles[editingId]) {
       const stored = profiles[editingId];
+      editingProfile.scoreFormula = stored.scoreFormula;
+      renderCharacterFormula();
       editingProfile.wishlist = Array.isArray(stored.wishlist)
         ? stored.wishlist.map((item) => ({ ...item })) : [];
       // Worn items change from outside this page too -- equipping on a RaidLoot
@@ -1351,6 +1415,7 @@ async function init() {
           augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
           stats: Object.assign({}, item.stats || {}),
           effects: Array.isArray(item.effects) ? item.effects.map((effect) => ({ ...effect })) : [],
+          effectsKnown: item.effectsKnown === true,
         }));
         editingProfile.lastEquip = stored.lastEquip || null;
         renderItemList();

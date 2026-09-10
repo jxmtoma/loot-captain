@@ -93,8 +93,9 @@ assert.match(optionsSource, /refreshProfileFromList/);
 assert.doesNotMatch(optionsSource, /await saveAll\(\[savedId\]\);\s*closeEditor\(\);/);
 assert.match(optionsSource, /https:\/\/www\.raidloot\.com\/items\?name=/);
 assert.match(optionsSource, /details\.rel = 'noopener'/);
-assert.match(popupSource, /key: 'regen'/);
-assert.match(popupSource, /key: 'manaregen'/);
+assert.match(popupSource, /scoring.SCORE_FORMULAS/);
+assert.match(read('content/shared/diff.js'), /key: 'regen'/);
+assert.match(read('content/shared/diff.js'), /key: 'manaregen'/);
 assert.match(optionsSource, /\{ slot: 'neck', label: 'Neck', column: 6, row: 2 \}/);
 assert.match(optionsSource, /\{ slot: 'back', label: 'Back', column: 6, row: 3 \}/);
 assert.match(optionsSource, /\{ slot: 'shoulders', label: 'Shoulder', column: 6, row: 4 \}/);
@@ -161,6 +162,9 @@ assert.doesNotMatch(opendkpSource, /p-tabview-header/);
 assert.match(opendkpSource, /highlightWanted\(link, wishlistCandidate\(cand\), link\)/);
 // The verdict badges render on the tab itself, not only in the opened body.
 assert.match(opendkpSource, /nameEl\.append\(\.\.\.comparisonBadges\(cand\)\)/);
+const partialComparisonBadgesSource = opendkpSource.match(/if \(!multi\.best\) \{[\s\S]*?return partial;\n\s*\}/)?.[0] || '';
+assert.match(partialComparisonBadgesSource, /rowBadge\.dataset\.lcRow = 'multi'/);
+assert.match(partialComparisonBadgesSource, /onBadge\(rowBadge, null, 0, null, multi\)/);
 assert.match(read('content/shared/ui.js'), /\.p-tabview-nav-link\.lc-wanted/);
 {
   const source = opendkpSource.match(/ {2}function auctionTabName\(nameEl\) \{[\s\S]*?\n {2}\}/)[0];
@@ -251,10 +255,51 @@ core.LootCaptain = {};
 loadCore(core);
 const LC = core.LootCaptain;
 
+const normalizedStats = LC.parser.normalizeStats({
+  HP: 0,
+  MANA: '0',
+  AC: { raw: '123', num: null, source: 'opendkp' },
+  END: { raw: '12oops' },
+  Regen: true,
+  Delay: Infinity,
+}, 'manual');
+assert.equal(normalizedStats.HP.num, 0);
+assert.equal(normalizedStats.HP.source, 'manual');
+assert.equal(normalizedStats.MANA.num, 0);
+assert.equal(normalizedStats.AC.raw, '123');
+assert.equal(normalizedStats.AC.num, null);
+assert.equal(normalizedStats.AC.source, 'opendkp');
+assert.equal(normalizedStats.END.num, null);
+assert.equal(normalizedStats.Regen.num, null);
+assert.equal(normalizedStats.Delay.num, null);
+assert.equal(LC.parser.normalizeStatValue({ raw: '98' }, 'manual').num, null);
+
 const formula = LC.diff.SCORE_FORMULAS.find((item) => item.key === 'hp');
 const unresolved = LC.diff.diffItems({ stats: { HP: { num: 100 } } }, { stats: {} }, formula);
 assert.equal(unresolved.comparable, false);
-assert.equal(unresolved.score, 0);
+assert.equal(unresolved.score, null);
+assert.equal(unresolved.numericScoreAvailable, false);
+assert.equal(JSON.stringify(unresolved.missingScoreStats), JSON.stringify(['HP']));
+const emptyBaseline = LC.diff.diffItems({ stats: { HP: { raw: '100', num: 100 } } }, null, formula);
+assert.equal(emptyBaseline.comparable, true);
+assert.equal(emptyBaseline.numericScoreAvailable, true);
+assert.equal(emptyBaseline.score, 100);
+assert.equal(emptyBaseline.diffs.HP.worn, 0);
+const knownZero = LC.diff.diffItems(
+  { stats: { HP: { raw: '0', num: 0 } } },
+  { stats: { HP: { raw: '0', num: 0 } } },
+  formula,
+);
+assert.equal(knownZero.comparable, true);
+assert.equal(knownZero.numericScoreAvailable, true);
+assert.equal(knownZero.score, 0);
+const unresolvedWorn = LC.diff.diffItems(
+  { stats: { HP: { raw: '100', num: 100 } } },
+  { stats: { HP: { raw: 'unavailable', num: null } } },
+  formula,
+);
+assert.equal(unresolvedWorn.numericScoreAvailable, false);
+assert.equal(JSON.stringify(unresolvedWorn.missingScoreStats), JSON.stringify(['HP']));
 const wishlistPair = LC.diff.compareItemPair(
   { name: 'Candidate Helm', slot: 'Head', stats: { HP: { num: 150 } } },
   { name: 'Wanted Helm', slot: 'Head', stats: { HP: { num: 100 } } },
@@ -284,13 +329,16 @@ const mixedStats = LC.diff.diffItems(
   LC.diff.SCORE_FORMULAS.find((item) => item.key === 'ac10hp'),
 );
 assert.equal(mixedStats.comparable, true);
-assert.equal(mixedStats.score, -50);
-assert.equal(mixedStats.diffs.AC.delta, -10);
+assert.equal(mixedStats.score, null);
+assert.equal(mixedStats.numericScoreAvailable, false);
+assert.equal(JSON.stringify(mixedStats.missingScoreStats), JSON.stringify(['AC']));
+assert.equal(mixedStats.diffs.HP.delta, 50);
+assert.equal(mixedStats.diffs.AC.delta, null);
 const weaponFormula = LC.diff.SCORE_FORMULAS.find((item) => item.key === 'ac10hp');
 for (const slot of ['Primary', 'Secondary', 'Range']) {
   const weaponUpgrade = LC.diff.diffItems(
-    { slot, stats: { Damage: { num: 100 }, Delay: { num: 20 }, HP: { num: 200 } } },
-    { slot, stats: { Damage: { num: 80 }, Delay: { num: 20 }, HP: { num: 100 } } },
+    { slot, stats: { Damage: { num: 100 }, Delay: { num: 20 }, HP: { num: 200 }, AC: { num: 10 } } },
+    { slot, stats: { Damage: { num: 80 }, Delay: { num: 20 }, HP: { num: 100 }, AC: { num: 10 } } },
     weaponFormula,
   );
   assert.equal(weaponUpgrade.comparable, true);
@@ -444,7 +492,7 @@ assert.equal(LC.diff.bestComparisonTarget(
   { stats: { HP: { num: 100 } } },
   [{ stats: { HP: { num: 50 } } }, { stats: {} }],
   LC.diff.SCORE_FORMULAS.find((item) => item.key === 'hp'),
-), null);
+).stats.HP.num, 50);
 assert.equal(LC.diff.findWornInSlot({ items: [
   { slot: 'Ear-1' }, { slot: 'Ear-2' }, { slot: 'Head' },
 ] }, LC.slots.canonicalSlot('Ear')).length, 2);
@@ -682,9 +730,11 @@ assert.equal(excludedSecondary.slotKey.keys.includes('secondary'), false);
 assert.equal(LC.diff.compareCandidate({
   cls: 'Warrior', items: [{ slot: 'Secondary', isAugment: true, stats: { HP: 20 } }],
 }, excludedSecondary, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp')).eligible, false);
-assert.equal(LC.diff.compareCandidate({
+const effectOnlyEligibility = LC.diff.compareCandidate({
   cls: 'Warrior', items: [{ slot: 'Ear', isAugment: true, stats: { 'Focus Effect': 1 } }],
-}, excludedSecondary, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp')).eligible, false);
+}, excludedSecondary, LC.diff.SCORE_FORMULAS.find((formula) => formula.key === 'hp'));
+assert.equal(effectOnlyEligibility.eligible, true);
+assert.equal(effectOnlyEligibility.rows[0].diff.numericScoreAvailable, false);
 assert.equal(LC.diff.diffItems(
   { stats: { HP: { num: 250 }, 'Focus Effect': { num: null } } },
   { stats: { 'Focus Effect': { num: 3 } } },
@@ -1044,7 +1094,7 @@ assert.match(read('options/options.html'), /id="consent-gate" class="consent-gat
 assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 
 const options = { document: { addEventListener() {} } };
-vm.runInNewContext(read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText; globalThis.parseInventoryMetadata = parseInventoryMetadata; globalThis.hasSpellFocusForTest = hasSpellFocus; globalThis.mapRaidlootItemForTest = mapRaidlootItem; globalThis.raidlootImportedProfileIdForTest = raidlootImportedProfileId;', options, { filename: 'options/options.js' });
+vm.runInNewContext(read('content/shared/diff.js') + '\n' + read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText; globalThis.parseInventoryMetadata = parseInventoryMetadata; globalThis.hasSpellFocusForTest = hasSpellFocus; globalThis.mapRaidlootItemForTest = mapRaidlootItem; globalThis.statsToPlainForTest = statsToPlain; globalThis.raidlootImportedProfileIdForTest = raidlootImportedProfileId;', options, { filename: 'options/options.js' });
 assert.equal(options.raidlootImportedProfileIdForTest('raidloot.com/profile/12345'), '12345');
 assert.equal(options.raidlootImportedProfileIdForTest('character-Inventory.txt'), '');
 assert.deepEqual(JSON.parse(JSON.stringify(options.mapRaidlootItemForTest({
@@ -1053,12 +1103,22 @@ assert.deepEqual(JSON.parse(JSON.stringify(options.mapRaidlootItemForTest({
   effects: [{ type: 'focus', name: 'Focus', raw: 'Focus' }],
 }))), {
   id: 7, name: 'Refresh Helm', icon: 'data:image/png;base64,AA==', slot: 'Head', isAugment: true,
-  augmentTypes: [3], augSlot: 2, parentId: '6', enriched: true, stats: { HP: 125 },
+  augmentTypes: [3], augSlot: 2, parentId: '6', enriched: true, stats: { HP: { raw: '125', num: 125, source: 'legacy' } },
+  effectsKnown: false,
   effects: [{ type: 'focus', name: 'Focus', raw: 'Focus' }],
 });
 assert.equal(options.hasSpellFocusForTest({ isAugment: true, slot: 'Head', effects: [{ type: 'focus' }] }), true);
 assert.equal(options.hasSpellFocusForTest({ slot: 'Head', effects: [{ type: 'focus' }] }), true);
 assert.equal(options.hasSpellFocusForTest({ slot: 'powersource', effects: [{ type: 'focus' }] }), false);
+const manualEditorStats = options.statsToPlainForTest({
+  HP: { raw: 'manual 125', num: 125, source: 'manual' },
+  AC: { raw: 'unresolved 999', num: null, source: 'opendkp' },
+});
+assert.equal(manualEditorStats.HP.num, 125);
+assert.equal(manualEditorStats.HP.source, 'manual');
+assert.equal(manualEditorStats.AC.raw, 'unresolved 999');
+assert.equal(manualEditorStats.AC.num, null);
+assert.equal(manualEditorStats.AC.source, 'opendkp');
 const inventory = options.parseInventoryText([
   'Character: Aurelia',
   'Class: Warrior',
@@ -1185,8 +1245,14 @@ const mergedWish = state.normalizeWishlistEntry({
 }, raidlootWish);
 assert.equal(mergedWish.raidlootId, '101');
 assert.equal(mergedWish.opendkpHost, 'guild.opendkp.com');
-assert.equal(mergedWish.stats.HP, 100);
-assert.equal(mergedWish.stats.AC, 10);
+assert.equal(mergedWish.stats.HP.num, 100);
+assert.equal(mergedWish.stats.AC.num, 10);
+const unknownWishlistUpdate = state.normalizeWishlistEntry({
+  raidlootId: '101', name: 'Crown of Testing', slot: 'Head',
+  stats: { HP: { raw: 'failed parse: 999', num: null, source: 'opendkp' } },
+}, mergedWish);
+assert.equal(unknownWishlistUpdate.stats.HP.num, 100);
+assert.equal(unknownWishlistUpdate.stats.HP.source, 'legacy');
 const targetProfile = { wishlist: [
   mergedWish,
   state.normalizeWishlistEntry({ raidlootId: '102', name: 'Second Crown', slot: 'Head', stats: { HP: 120 }, addedAt: 2 }),
@@ -1459,6 +1525,20 @@ assert.equal(state.compatibleWishlistItem(
   assert.equal(oversizedFetchCanceled, true);
   assert.equal(bridgeEvents.length, 2);
   assert.equal(JSON.parse(bridgeEvents[1].detail).data.ItemID, 46);
+  const editedStats = options.statsToPlainForTest({
+    HP: { raw: 'manual 250', num: 250, source: 'manual' },
+    AC: { raw: 'not available', num: null, source: 'opendkp' },
+  });
+  const editedSave = await sendWorkerMessage({
+    type: 'SAVE_PROFILES', profiles: { p: {
+      id: 'p', name: 'Edited Stats', items: [{ id: 'e1', name: 'Edited Helm', slot: 'Head', stats: editedStats }],
+    } }, deletedIds: [],
+  }, 'chrome-extension://test/options/options.html');
+  assert.equal(editedSave.ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(workerStorage.profiles.p.items[0].stats)), {
+    HP: { raw: 'manual 250', num: 250, source: 'manual' },
+    AC: { raw: 'not available', num: null, source: 'opendkp' },
+  });
   await Promise.all([
     sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'toggle',
       item: { raidlootId: '501', name: 'Queued One', slot: 'Head', stats: { HP: 10 } } }),
@@ -1475,6 +1555,12 @@ assert.equal(state.compatibleWishlistItem(
   } });
   assert.equal(workerStorage.profiles.p.wishlist.length, 2);
   assert.equal(workerStorage.profiles.p.wishlist.find((item) => item.raidlootId === '501').opendkpId, '601');
+  await sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'merge', item: {
+    raidlootId: '501', name: 'Queued One', slot: 'Head',
+    stats: { HP: { raw: 'failed parse: 999', num: null, source: 'opendkp' } },
+  } });
+  const preservedWishlist = workerStorage.profiles.p.wishlist.find((item) => item.raidlootId === '501');
+  assert.equal(preservedWishlist.stats.HP.num, 10);
   await Promise.all([
     sendWorkerMessage({ type: 'SAVE_PROFILES', profiles: { p: { id: 'p', name: 'Saved Profile', items: [] } }, deletedIds: [] },
       'chrome-extension://test/options/options.html'),
@@ -1528,7 +1614,7 @@ assert.equal(state.compatibleWishlistItem(
   assert.equal(staleAppend.ok, false);
   const unresolvedEquip = await sendWorkerMessage({
     type: 'EQUIP_ITEM', profileId: 'p', targetIndex: -1, slot: 'waist', expectedItemCount: 3,
-    item: { id: '92', name: 'Statless Belt', slot: 'Waist', stats: {} },
+    item: { id: '92', name: 'Statless Belt', slot: 'Waist', stats: { HP: { raw: 'unresolved', num: null } } },
   });
   assert.equal(unresolvedEquip.ok, false);
   assert.equal(workerStorage.profiles.p.items.length, 3);
@@ -1698,6 +1784,48 @@ assert.equal(state.compatibleWishlistItem(
   }
   const uiLC = uiContext.LootCaptain;
   const earSlot = uiLC.slots.canonicalSlot('ear');
+  const partialMulti = {
+    results: [
+      {
+        profile: { id: 'empty', name: 'Empty' }, empty: true,
+        summary: { comparable: true, numericScoreAvailable: true, score: 50, rows: [{ diff: { numericScoreAvailable: true } }] },
+        comparison: { rows: [{ slotKey: earSlot, target: null, diff: { numericScoreAvailable: true, score: 50, hasData: true } }] },
+      },
+      {
+        profile: { id: 'unknown', name: 'Unknown' }, empty: false,
+        summary: { comparable: true, numericScoreAvailable: false, score: null, rows: [{ diff: { numericScoreAvailable: false } }] },
+        comparison: { rows: [{ slotKey: earSlot, target: { name: 'Unresolved Ear' }, diff: {
+          numericScoreAvailable: false, score: null, hasData: true, missingScoreStats: ['HP'], effectsComparable: false,
+        } }] },
+      },
+    ],
+    best: null,
+  };
+  const partialBadges = uiLC.ui.buildPerCharacterBadges(partialMulti,
+    { slotKey: earSlot, stats: { HP: { num: 100 } }, isAugment: false }, formula, false);
+  assert.equal(partialBadges.some((badge) => badge.dataset.lcProfile === 'empty' && badge.dataset.state === 'empty'), true);
+  const unresolvedBadge = partialBadges.find((badge) => badge.dataset.lcProfile === 'unknown');
+  assert.ok(unresolvedBadge);
+  assert.equal(unresolvedBadge.dataset.lcRow, '0');
+  assert.equal(unresolvedBadge.dataset.state, 'nomatch');
+  const collapsedPartial = uiLC.ui.buildMultiComparisonBadges(partialMulti,
+    { slotKey: earSlot, stats: { HP: { num: 100 } } }, formula, false);
+  assert.equal(collapsedPartial[0].dataset.lcView, 'stats');
+  assert.equal(collapsedPartial[0].dataset.state, 'nomatch');
+  assert.match(collapsedPartial[0].textContent, /score \?/);
+  const zeroLine = stubEl('div');
+  zeroLine.querySelector = () => ({ textContent: 'HP:' });
+  const zeroContainer = { querySelectorAll: (selector) => selector === '.lc-stat-line' ? [zeroLine] : [] };
+  uiLC.ui.addStatIndicators(zeroContainer,
+    { slotKey: earSlot, stats: { HP: 0 } }, { items: [] }, formula);
+  assert.equal(zeroLine.children[0].textContent, '=');
+  const partialCand = { name: 'Partial Helm', stats: { HP: 0 }, slotKey: earSlot };
+  const partialWorn = { name: 'Old Helm', stats: { HP: 10, AC: 5 } };
+  const partialDiff = uiLC.diff.diffItems(partialCand, partialWorn, uiLC.diff.SCORE_FORMULAS[0]);
+  const partialPanel = uiLC.ui.buildComparePanel(partialCand, partialWorn, partialDiff, 'ear');
+  assert.match(partialPanel.textContent, /score unavailable: missing AC/);
+  assert.ok(partialPanel.find((el) => el.title === 'Exact item delta'));
+  assert.ok(partialPanel.find((el) => el.title === 'Unavailable: a stat is unknown'));
   const uiWorn = [
     { id: '1', name: 'Old Ear', slot: 'ear', slotKey: earSlot, stats: { HP: { raw: '10', num: 10 } }, effects: [] },
     { id: '2', name: 'Other Ear', slot: 'ear', slotKey: earSlot, stats: { HP: { raw: '20', num: 20 } }, effects: [] },
@@ -1825,8 +1953,8 @@ assert.equal(state.compatibleWishlistItem(
   });
   const firstWish = profiles.p.wishlist.find((item) => item.raidlootId === '201');
   assert.equal(firstWish.opendkpId, '301');
-  assert.equal(firstWish.stats.HP, 10);
-  assert.equal(firstWish.stats.AC, 5);
+  assert.equal(firstWish.stats.HP.num, 10);
+  assert.equal(firstWish.stats.AC.num, 5);
   profiles.p.wishlist = [
     state.normalizeWishlistEntry({ raidlootId: '401', name: 'Bridged Wish', slot: 'Head', addedAt: 1 }),
     state.normalizeWishlistEntry({ opendkpHost: 'guild.opendkp.com', opendkpId: '402', name: 'Bridged Wish', slot: 'Head', addedAt: 2 }),
@@ -1850,5 +1978,11 @@ assert.equal(state.compatibleWishlistItem(
   firstResolve({ ok: true, items: [{ id: '1', name: 'Sword', slot: 'Head', stats: { HP: 100 } }] });
   await older;
   assert.equal(stateContext.LootCaptain.currentProfile.items[0].stats.HP.num, 200);
+  execFileSync(process.execPath, ['tests/missing-data-comparison.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tests/missing-data-storage.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tests/profile-scoring-effects.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tests/character-data.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tests/projection.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tests/reference-stats.js'], { stdio: 'inherit' });
   console.log('regression checks passed');
 })();

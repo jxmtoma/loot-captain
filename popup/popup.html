@@ -33,7 +33,10 @@
 
     <section class="setting-card">
       <label for="formula-select"><span>Score Formula</span><small>INVENTORY</small></label>
+      <label for="formula-character">Edit scoring for</label>
+      <select id="formula-character"></select>
       <select id="formula-select"></select>
+      <small id="formula-status" class="hint" role="status"></small>
     </section>
 
     <section class="actions">
@@ -44,6 +47,7 @@
       <span id="status"></span>
     </footer>
   </div>
+  <script src="../content/shared/diff.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
