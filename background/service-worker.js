@@ -13,7 +13,7 @@ const MAX_WISHLIST_ITEM_BYTES = 128 * 1024;
 const MAX_PROFILE_MUTATION_BYTES = 4 * 1024 * 1024;
 let profileMutationQueue = Promise.resolve();
 
-importScripts('raidloot-parser.js', 'armor-token-catalog.js');
+importScripts('raidloot-parser.js', 'armor-token-catalog.js', '../content/shared/diff.js', '../content/shared/character-data.js', '../content/shared/projection.js', '../content/shared/reference-stats.js');
 
 const ARMOR_CLASS_NAMES = {
   WAR: 'Warrior', CLR: 'Cleric', PAL: 'Paladin', RNG: 'Ranger', SHD: 'ShadowKnight',
@@ -138,8 +138,7 @@ async function parseHtmlInOffscreen(message) {
 
 function numericItemStatCount(item) {
   return Object.values(item && item.stats || {}).filter((value) => {
-    const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
-    return num != null && !isNaN(num);
+    return Number.isFinite(parserNormalizeStatValue(value).num);
   }).length;
 }
 
@@ -385,6 +384,10 @@ function allowedSender(type, sender) {
   if (type === 'MUTATE_WISHLIST') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'EQUIP_ITEM') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'UNDO_EQUIP') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (type === 'GET_CHARACTER_PROJECTION') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (type === 'GET_AA_CATALOG') return isExtensionPage(sender);
+  if (type === 'SAVE_CHARACTER_DATA') return isExtensionPage(sender);
+  if (type === 'SET_PROFILE_FORMULA') return isExtensionPage(sender);
   if (type === 'SAVE_PROFILES') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   return false;
 }
@@ -422,6 +425,54 @@ function cleanWishlistId(value, maxLength) {
   return id;
 }
 
+const MAX_STAT_RAW_LENGTH = 512;
+
+function sanitizeStatValue(value, defaultSource) {
+  const object = value && typeof value === 'object' ? value : null;
+  const rawValue = object && Object.prototype.hasOwnProperty.call(object, 'raw')
+    ? object.raw : object && Object.prototype.hasOwnProperty.call(object, 'num') ? object.num : value;
+  const raw = rawValue == null ? '' : String(rawValue);
+  if (raw.length > MAX_STAT_RAW_LENGTH || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(raw)) throw new Error('Invalid stat raw value');
+  return parserNormalizeStatValue(value, defaultSource);
+}
+
+function sanitizeStats(value, defaultSource) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const entries = Object.entries(value);
+  if (entries.length > 128) throw new Error('Too many item stats');
+  const stats = {};
+  for (const [key, raw] of entries) {
+    const cleanKey = String(key || '').trim();
+    if (cleanKey && cleanKey.length <= 80 && !['__proto__', 'constructor', 'prototype'].includes(cleanKey)) {
+      stats[cleanKey] = sanitizeStatValue(raw, defaultSource);
+    }
+  }
+  return stats;
+}
+
+function hasKnownStoredStat(stats) {
+  return Object.entries(stats || {}).some(([key, value]) => !PARSER_NON_NUMERIC_LABEL.test(key) && Number.isFinite(value && value.num));
+}
+
+function mergeStoredStats(current, candidate) {
+  const merged = {};
+  for (const key of new Set([...Object.keys(current || {}), ...Object.keys(candidate || {})])) {
+    if (!Object.prototype.hasOwnProperty.call(current || {}, key)) { merged[key] = candidate[key]; continue; }
+    if (!Object.prototype.hasOwnProperty.call(candidate || {}, key)) { merged[key] = current[key]; continue; }
+    const left = current[key];
+    const right = candidate[key];
+    const leftKnown = Number.isFinite(left && left.num);
+    const rightKnown = Number.isFinite(right && right.num);
+    if (!rightKnown && leftKnown) merged[key] = left;
+    else if (rightKnown && !leftKnown) merged[key] = right;
+    else if (leftKnown && rightKnown && left.num === right.num) {
+      merged[key] = right.raw.length > left.raw.length || (left.source === 'legacy' && right.source !== 'legacy') ? right : left;
+    }
+    else merged[key] = right;
+  }
+  return merged;
+}
+
 function wishlistSlotKey(item) {
   const slot = parserCanonicalSlot(item && item.slot);
   return slot && slot.key || '';
@@ -445,15 +496,7 @@ function sanitizeWishlistItem(value) {
   if (!raidlootId && !(opendkpHost && opendkpId) && !(name && parserCanonicalSlot(slot))) {
     throw new Error('Wishlist item needs a source ID or a name and slot');
   }
-  const stats = {};
-  const entries = Object.entries(value.stats || {});
-  if (entries.length > 128) throw new Error('Too many wishlist stats');
-  for (const [key, raw] of entries) {
-    const cleanKey = String(key || '').trim();
-    const value = raw && typeof raw === 'object' && 'num' in raw ? raw.num : raw;
-    const num = parseFloat(value);
-    if (cleanKey && cleanKey.length <= 80 && Number.isFinite(num)) stats[cleanKey] = num;
-  }
+  const stats = sanitizeStats(value.stats, 'legacy');
   const augmentTypes = [...new Set((Array.isArray(value.augmentTypes) ? value.augmentTypes : [])
     .slice(0, 32).map((type) => cleanWishlistId(type, 10)).filter(Boolean))];
   const effects = parserNormalizeEffects(Array.isArray(value.effects) ? value.effects.slice(0, 64) : []);
@@ -467,6 +510,8 @@ function sanitizeWishlistItem(value) {
     augmentTypes,
     stats,
     effects,
+    effectsKnown: value.effectsKnown === true && Array.isArray(value.effects) && value.effects.length <= 64 &&
+      value.effects.every((effect) => parserNormalizeEffect(effect, 'unknown')),
     addedAt: Number(value.addedAt) > 0 ? Number(value.addedAt) : Date.now(),
   };
 }
@@ -484,22 +529,15 @@ function sanitizeProfileItem(value) {
   if (icon.length > 300 || /[\u0000-\u001f]/.test(icon)) throw new Error('Invalid item icon');
   const slot = boundedName(value.slot, true);
   if (slot.length > 80 || !parserCanonicalSlot(slot)) throw new Error('Invalid item slot');
-  const stats = {};
-  const entries = Object.entries(value.stats || {});
-  if (entries.length > 128) throw new Error('Too many item stats');
-  for (const [key, raw] of entries) {
-    const cleanKey = String(key || '').trim();
-    const statValue = raw && typeof raw === 'object' && 'num' in raw ? raw.num : raw;
-    const num = parseFloat(statValue);
-    if (cleanKey && cleanKey.length <= 80 && Number.isFinite(num)) stats[cleanKey] = num;
-  }
+  const stats = sanitizeStats(value.stats, 'legacy');
   const effects = parserNormalizeEffects(Array.isArray(value.effects) ? value.effects.slice(0, 64) : []);
-  if (!Object.keys(stats).length && !effects.length) throw new Error('Item stats are unresolved');
+  if (!hasKnownStoredStat(stats) && !effects.length) throw new Error('Item stats are unresolved');
   const augmentTypes = [...new Set((Array.isArray(value.augmentTypes) ? value.augmentTypes : [])
     .slice(0, 32).map((type) => cleanWishlistId(type, 10)).filter(Boolean))];
   return {
     id, name, icon, slot, isAugment: !!value.isAugment, augmentTypes,
-    augSlot: '', parentId: '', enriched: !!value.enriched, stats, effects,
+    augSlot: '', parentId: '', enriched: !!value.enriched, stats, effects, effectsKnown: value.effectsKnown === true && Array.isArray(value.effects) && value.effects.length <= 64 &&
+      value.effects.every((effect) => parserNormalizeEffect(effect, 'unknown')),
   };
 }
 
@@ -523,8 +561,9 @@ function mergeWishlistItem(item, current) {
     slot: item.slot || current.slot || '',
     isAugment: !!item.isAugment || !!current.isAugment,
     augmentTypes: [...new Set([...(current.augmentTypes || []), ...(item.augmentTypes || [])])],
-    stats: { ...(current.stats || {}), ...(item.stats || {}) },
-    effects: itemEffects.length >= currentEffects.length ? itemEffects : currentEffects,
+    stats: mergeStoredStats(current.stats || {}, item.stats || {}),
+    effects: item.effectsKnown === true ? itemEffects : parserNormalizeEffects([...currentEffects, ...itemEffects]),
+    effectsKnown: item.effectsKnown === true || (!itemEffects.length && current.effectsKnown === true),
     addedAt: Math.min(Number(item.addedAt) || Date.now(), Number(current.addedAt) || Date.now()),
   };
 }
@@ -555,7 +594,7 @@ function mutateWishlist(profileId, action, value) {
     }
     if (wanted) next.splice(matches[0] == null ? next.length : Math.min(matches[0], next.length), 0, merged);
     profiles[profileId] = { ...profile, wishlist: next };
-    await chrome.storage.local.set({ profiles });
+    await writeProfiles(profiles);
     return { wanted, entry: wanted ? merged : null, profiles };
   });
 }
@@ -621,7 +660,7 @@ function equipItem(profileId, msg) {
       at: Date.now(),
     };
     profiles[profileId] = { ...profile, items, wishlist, lastEquip };
-    await chrome.storage.local.set({ profiles });
+    await writeProfiles(profiles);
     return { profiles };
   });
 }
@@ -664,8 +703,61 @@ function undoEquip(profileId) {
       if (!wishlist.some((existing) => wishlistMatches(existing, entry))) wishlist.push(entry);
     }
     profiles[profileId] = { ...profile, items, wishlist, lastEquip: null };
-    await chrome.storage.local.set({ profiles });
+    await writeProfiles(profiles);
     return { profiles };
+  });
+}
+
+// All profile writes keep invalidation sticky, including a later Undo to the original gear.
+async function writeProfiles(profiles) {
+  for (const profile of Object.values(profiles)) {
+    const data = profile.characterData;
+    if (data && data.version === 1 && data.snapshot && !data.snapshot.invalidatedAt &&
+        data.snapshot.binding !== await LootCaptain.characterData.fingerprint(profile)) {
+      profile.characterData = { ...data, revision: data.revision + 1, snapshot: { ...data.snapshot,
+        invalidatedAt: Date.now(), invalidationReason: 'equipment or character context changed' } };
+    }
+  }
+  await chrome.storage.local.set({ profiles });
+}
+
+function saveCharacterData(msg) {
+  return queueProfileMutation(async () => {
+    if (JSON.stringify(msg).length > 256 * 1024) throw new Error('Character input is too large');
+    const profiles = await storageGet('profiles', {});
+    if (typeof msg.profileId !== 'string' || !Object.prototype.hasOwnProperty.call(profiles, msg.profileId)) {
+      throw new Error('Character no longer exists');
+    }
+    const profile = profiles[msg.profileId];
+    const model = LootCaptain.characterData;
+    const data = profile.characterData || { version: 1, revision: 0, snapshot: null, aaRanks: [], observations: [] };
+    if (data.version !== 1) throw new Error('Unsupported character-data version');
+    if (data.revision !== msg.expectedRevision) throw new Error('Character inputs changed in another tab. Reload the saved inputs before saving.');
+    const binding = await model.fingerprint(profile);
+    if (binding !== msg.expectedBinding) throw new Error('Gear or character details changed. Save character edits and reload the inputs first.');
+    let next = { ...data, revision: data.revision + 1 };
+    if (msg.action === 'aa') {
+      next.aaRanks = model.aaRanks(msg.value);
+      if (data.snapshot && model.serialize(next.aaRanks) !== model.serialize(data.aaRanks)) {
+        next.snapshot = { ...data.snapshot, invalidatedAt: Date.now(), invalidationReason: 'saved AA ranks or definitions changed' };
+      }
+    } else if (msg.action === 'snapshot') {
+      next.snapshot = model.snapshot(msg.value, { ...profile, id: msg.profileId }, binding, data.aaRanks);
+    } else if (msg.action === 'observation') {
+      if (!data.snapshot || data.snapshot.invalidatedAt || data.snapshot.binding !== binding) throw new Error('Capture a current baseline snapshot before recording a swap');
+      if (data.observations.length >= 50) throw new Error('Export your records, then remove an old observation before adding more (limit 50)');
+      next.observations = [...data.observations, model.observation(msg.value, data.snapshot)];
+    } else if (msg.action === 'approveRule') {
+      const approval = LootCaptain.projection.approve(data, msg.value);
+      next.ruleApprovals = [...(data.ruleApprovals || []).filter((entry) => !(entry.ruleKey === approval.ruleKey && entry.observationId === approval.observationId)), approval];
+    } else if (msg.action === 'removeObservation') {
+      if (!data.observations.some((entry) => entry.id === msg.value)) throw new Error('Observation no longer exists');
+      next.observations = data.observations.filter((entry) => entry.id !== msg.value);
+      next.ruleApprovals = (data.ruleApprovals || []).filter((entry) => entry.observationId !== msg.value);
+    } else throw new Error('Unknown character-data action');
+    profiles[msg.profileId] = { ...profile, characterData: next };
+    await writeProfiles(profiles);
+    return profiles[msg.profileId].characterData;
   });
 }
 
@@ -688,12 +780,15 @@ function saveProfiles(records, deletedIds, expectedRecords) {
       profiles[id] = {
         ...(profiles[id] || {}),
         ...profile,
+        // Whole-profile saves may be stale; scoring is owned by SET_PROFILE_FORMULA.
+        scoreFormula: profiles[id] ? profiles[id].scoreFormula : profile.scoreFormula,
+        characterData: profiles[id] && profiles[id].characterData,
         wishlist: Array.isArray(profiles[id] && profiles[id].wishlist)
           ? profiles[id].wishlist : (Array.isArray(profile.wishlist) ? profile.wishlist : []),
       };
     }
     for (const id of deletedIds || []) delete profiles[String(id)];
-    await chrome.storage.local.set({ profiles });
+    await writeProfiles(profiles);
     return profiles;
   });
 }
@@ -712,6 +807,67 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       switch (msg.type) {
+      case 'GET_CHARACTER_PROJECTION': {
+        if (JSON.stringify(msg).length > MAX_WISHLIST_ITEM_BYTES) throw new Error('Projection request too large');
+        const profiles = await storageGet('profiles', {});
+        const profile = typeof msg.profileId === 'string' && Object.prototype.hasOwnProperty.call(profiles, msg.profileId) && profiles[msg.profileId];
+        if (!profile) throw new Error('Character no longer exists');
+        const index = msg.targetIndex;
+        if (!Number.isInteger(index) || index < 0 || index >= profile.items.length) throw new Error('Choose an equipped comparison target');
+        const worn = profile.items[index];
+        if (!msg.expected || ['id', 'name', 'slot'].some((key) => String(worn[key] || '') !== String(msg.expected[key] || ''))) throw new Error('Comparison target changed; reopen the comparison');
+        const candidate = sanitizeProfileItem(msg.item);
+        const oldSlot = parserCanonicalSlot(worn.slot), newSlot = parserCanonicalSlot(candidate.slot);
+        if (!oldSlot || !newSlot || !(oldSlot.keys || [oldSlot.key]).some((key) => (newSlot.keys || [newSlot.key]).includes(key)) || !!worn.isAugment !== !!candidate.isAugment) throw new Error('Incompatible replacement slot');
+        if (worn.isAugment && !(worn.augmentTypes || []).some((type) => candidate.augmentTypes.map(String).includes(String(type)))) throw new Error('Augment types are unresolved or incompatible');
+        const classes = parserParseClasses(msg.classes);
+        if (classes.length && !classes.includes('ALL') && !classes.includes(parserNormalizeClass(profile.cls))) throw new Error('This character cannot wear the candidate');
+        if (msg.requiredLevel != null && (!Number.isInteger(msg.requiredLevel) || msg.requiredLevel < 1 || msg.requiredLevel > Number(profile.level))) throw new Error('Candidate level requirement is incompatible');
+        if (msg.mode != null && !['reference', 'calibrated'].includes(msg.mode)) throw new Error('Unknown projection mode');
+        const projection = msg.mode === 'calibrated'
+          ? await LootCaptain.projection.project({ ...profile, id: msg.profileId }, candidate, worn, msg.confirmed === true)
+          : await LootCaptain.referenceStats.project({ ...profile, id: msg.profileId }, candidate, worn);
+        sendResponse({ ok: true, projection });
+        break;
+      }
+      case 'GET_AA_CATALOG': {
+        const profiles = await storageGet('profiles', {});
+        const profile = typeof msg.profileId === 'string' && Object.prototype.hasOwnProperty.call(profiles, msg.profileId) && profiles[msg.profileId];
+        if (!profile) throw new Error('Save the character first');
+        const cls = ARMOR_CLASS_NAMES[parserNormalizeClass(profile.cls)], level = Number(profile.level);
+        if (!cls || !Number.isInteger(level) || level < 1 || level > 255) throw new Error('Save the character class and level first');
+        if (!msg.expansion) { sendResponse({ ok: true, expansions: PARSER_AA_ERAS.map(([name]) => name) }); break; }
+        if (!PARSER_AA_ERAS.some(([name]) => name === msg.expansion)) throw new Error('Choose a listed expansion');
+        const url = 'https://www.raidloot.com/aa?' + new URLSearchParams({ class: cls, exp: '' });
+        // Level/expansion query filters collapse or omit older ranks. Fetch one class's
+        // full catalog, then select eligible ranks locally by level and era.
+        const html = await fetchText(url);
+        if (html.length > 8 * 1024 * 1024) throw new Error('AA catalog is too large to parse safely');
+        const catalog = await parseHtmlInOffscreen({ type: 'PARSE_AA_CATALOG', html, cls, level, expansion: msg.expansion });
+        sendResponse({ ok: true, ...catalog, sourceUrl: url, fetchedAt: new Date().toISOString() });
+        break;
+      }
+      case 'SAVE_CHARACTER_DATA': {
+        const characterData = await saveCharacterData(msg);
+        sendResponse({ ok: true, characterData });
+        break;
+      }
+      case 'SET_PROFILE_FORMULA': {
+        const selected = msg.formula;
+        if (!selected || !LootCaptain.diff.SCORE_FORMULAS.some((entry) =>
+            entry.key === selected.key && entry.version === selected.version)) throw new Error('Unsupported score formula');
+        await queueProfileMutation(async () => {
+          const profiles = await storageGet('profiles', {});
+          if (typeof msg.profileId !== 'string' || !Object.prototype.hasOwnProperty.call(profiles, msg.profileId)) {
+            throw new Error('Character no longer exists');
+          }
+          profiles[msg.profileId] = { ...profiles[msg.profileId], scoreFormula: { key: selected.key, version: selected.version } };
+          await writeProfiles(profiles);
+        });
+        sendResponse({ ok: true });
+        break;
+      }
+
       case 'SCRAPE_PROFILE': {
         const profileId = numericId(msg.profileId, 'profile ID');
         const html = await fetchText('https://www.raidloot.com/profile/' + profileId);
@@ -781,6 +937,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 ? [...loaded.augmentTypes] : (item.augmentTypes || []),
               stats: loaded.stats || item.stats,
               effects: Array.isArray(loaded.effects) ? loaded.effects : (item.effects || []),
+              effectsKnown: loaded.effectsKnown === true,
             },
             debug,
             cacheItem: debug.source === 'cache' ? null : (hasItemData(loaded) || loaded.icon ? loaded : null),

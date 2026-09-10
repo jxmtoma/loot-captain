@@ -10,7 +10,7 @@
   const LAYOUT_KEY = 'compareBadgeLayout';
   const SCORE_KEY = 'scoreFormula';
   const PROFILE_STATS_VERSION = 4;
-  const NON_NUMERIC_STAT = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
+  const NON_NUMERIC_STAT = /^(?:slot|class|race|type|deity|skill|effect|click|worn|proc|focus|tools|required|restriction|lore|aug)/i;
   let profileLoadGeneration = 0;
   const profileRefreshes = new Map();
 
@@ -48,33 +48,27 @@
     return layout === 'expanded' ? 'expanded' : 'collapsed';
   }
   // Normalize item stats to { raw, num } format and compute slotKey.
-  // The options page stores stats as plain values (e.g. { HP: 123 }) and
-  // slot as a raw string; the diff engine expects { raw, num } + slotKey.
+  // Legacy records may contain plain numbers; current records preserve
+  // { raw, num, source }. Omitted stats never imply zero.
   function normalizeItemStats(item) {
     const stats = {};
     const sourceStats = LC.parser.normalizeStats(item.stats || {});
     for (const k of Object.keys(sourceStats)) {
       if (NON_NUMERIC_STAT.test(k)) continue;
-      const v = sourceStats[k];
-      if (v && typeof v === 'object' && 'num' in v) {
-        stats[k] = v;
-      } else {
-        const num = parseFloat(v);
-        stats[k] = { raw: String(v), num: isNaN(num) ? null : num };
-      }
+      stats[k] = sourceStats[k];
     }
     return {
       ...item,
       slotKey: LC.slots.canonicalSlot(item.slot),
       effects: LC.parser.normalizeEffects(item.effects || []),
+      effectsKnown: item.effectsKnown === true,
       stats,
     };
   }
 
   function hasNumericStats(item) {
     return Object.values(item.stats || {}).some((value) => {
-      const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
-      return num != null && !isNaN(num);
+      return Number.isFinite(LC.parser.normalizeStatValue(value).num);
     });
   }
 
@@ -124,15 +118,15 @@
 
   function storageItem(item) {
     const stats = {};
-    for (const [key, value] of Object.entries(item.stats || {})) {
-      const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
-      if (num != null && !isNaN(num)) stats[key] = num;
+    for (const [key, value] of Object.entries(LC.parser.normalizeStats(item.stats || {}))) {
+      if (!NON_NUMERIC_STAT.test(key)) stats[key] = value;
     }
     return {
       id: item.id || '', name: item.name || '', icon: item.icon || '', slot: item.slot || '',
       isAugment: !!item.isAugment, augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
       augSlot: item.augSlot || '', parentId: item.parentId || '', enriched: !!item.enriched, stats,
       effects: LC.parser.normalizeEffects(item.effects || []),
+      effectsKnown: item.effectsKnown === true,
     };
   }
 
@@ -144,13 +138,29 @@
     return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
-  function wishlistStats(item) {
-    const stats = {};
-    for (const [key, value] of Object.entries(item && item.stats || {})) {
-      const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
-      if (num != null && !isNaN(num)) stats[key] = num;
+  function mergeStatValue(current, candidate) {
+    const left = LC.parser.normalizeStatValue(current);
+    const right = LC.parser.normalizeStatValue(candidate);
+    const leftKnown = Number.isFinite(left.num);
+    const rightKnown = Number.isFinite(right.num);
+    if (!rightKnown && leftKnown) return left;
+    if (rightKnown && !leftKnown) return right;
+    if (leftKnown && rightKnown && left.num === right.num) {
+      return right.raw.length > left.raw.length || (left.source === 'legacy' && right.source !== 'legacy') ? right : left;
     }
-    return stats;
+    return right;
+  }
+
+  function mergeStats(current, candidate) {
+    const merged = {};
+    for (const key of new Set([...Object.keys(current || {}), ...Object.keys(candidate || {})])) {
+      const hasCandidate = Object.prototype.hasOwnProperty.call(candidate || {}, key);
+      const hasCurrent = Object.prototype.hasOwnProperty.call(current || {}, key);
+      merged[key] = hasCandidate && hasCurrent
+        ? mergeStatValue(current[key], candidate[key])
+        : LC.parser.normalizeStatValue((candidate || {})[key] ?? (current || {})[key]);
+    }
+    return merged;
   }
 
   function wishlistSlot(item) {
@@ -160,8 +170,8 @@
 
   function normalizeWishlistEntry(item, existing) {
     const current = existing || {};
-    const candidateStats = wishlistStats(item);
-    const currentStats = wishlistStats(current);
+    const candidateStats = LC.parser.normalizeStats(item && item.stats || {});
+    const currentStats = LC.parser.normalizeStats(current.stats || {});
     const candidateEffects = LC.parser.normalizeEffects(item && item.effects || []);
     const currentEffects = LC.parser.normalizeEffects(current.effects || []);
     return {
@@ -172,8 +182,9 @@
       slot: String(item && item.slot || current.slot || '').trim(),
       isAugment: !!(item && item.isAugment || current.isAugment),
       augmentTypes: [...new Set([...(current.augmentTypes || []), ...(item && item.augmentTypes || [])].map(String))],
-      stats: { ...currentStats, ...candidateStats },
-      effects: candidateEffects.length >= currentEffects.length ? candidateEffects : currentEffects,
+      stats: mergeStats(currentStats, candidateStats),
+      effects: item && item.effectsKnown === true ? candidateEffects : LC.parser.normalizeEffects([...currentEffects, ...candidateEffects]),
+      effectsKnown: item && item.effectsKnown === true || (!candidateEffects.length && current.effectsKnown === true),
       addedAt: Number(current.addedAt || item && item.addedAt) || Date.now(),
     };
   }
@@ -201,6 +212,7 @@
       ...entry,
       id: entry.raidlootId || entry.opendkpId || '',
       effects: entry.effects || [],
+      effectsKnown: entry.effectsKnown === true,
       stats: entry.stats || {},
     });
   }
@@ -388,7 +400,7 @@
   }
   async function getFormula() {
     const key = await getScoreFormulaKey();
-    return LC.diff.SCORE_FORMULAS.find((f) => f.key === key) || LC.diff.SCORE_FORMULAS[0];
+    return LC.diff.resolveFormula(null, key);
   }
 
   async function loadAndCacheProfile() {
@@ -407,6 +419,17 @@
     LC.currentProfiles = profiles;
     LC.currentBadgeLayout = badgeLayout;
     if (profiles.length) LC.currentFormula = formula;
+  }
+
+  async function getCharacterProjection(cand, profile, worn, confirmed, mode = 'reference') {
+    const targetIndex = profile && profile.items ? profile.items.indexOf(worn) : -1;
+    if (!profile || !profile.id || targetIndex < 0) return { ok: false, error: 'Choose an equipped comparison target.' };
+    try {
+      return await chrome.runtime.sendMessage({ type: 'GET_CHARACTER_PROJECTION', profileId: profile.id, targetIndex,
+        expected: { id: worn.id || '', name: worn.name || '', slot: worn.slot || '' },
+        item: storageItem(cand), classes: cand.classes || [], requiredLevel: LC.parser.itemRequiredLevel(cand),
+        confirmed: confirmed === true, mode });
+    } catch (error) { return { ok: false, error: 'Projection unavailable: ' + error.message }; }
   }
 
   LC.state = {
@@ -440,5 +463,6 @@
     toggleWishlist,
     enrichWishlistEntry,
     equipItem,
+    getCharacterProjection,
   };
 })();

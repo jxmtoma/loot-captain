@@ -5,6 +5,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'PARSE_PROFILE') value = parseProfileHtml(msg.html, msg.profileId);
     if (msg.type === 'PARSE_ITEM') value = parseItemPage(msg.html, msg.expectedId);
     if (msg.type === 'PARSE_SEARCH_ITEM') value = parseSearchItem(msg.html, msg.name);
+    if (msg.type === 'PARSE_AA_CATALOG') value = parseAACatalog(msg.html, msg.cls, msg.level, msg.expansion);
     if (msg.type === 'PARSE_ITEM_SET') value = parseItemSet(msg.html);
     sendResponse({ ok: true, value });
   } catch (e) {

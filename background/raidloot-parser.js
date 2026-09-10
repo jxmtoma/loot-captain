@@ -7,7 +7,9 @@ const PARSER_EQUIPMENT_SLOTS = new Set([
 ]);
 const PARSER_PAIRED_SLOTS = new Set(['ear', 'wrist', 'finger']);
 const PARSER_HEROIC_STATS = { STR: 'HStr', STA: 'HSta', AGI: 'HAgi', DEX: 'HDex', INT: 'HInt', WIS: 'HWis', CHA: 'HCha' };
-const PARSER_NON_NUMERIC_LABEL = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
+const PARSER_NON_NUMERIC_LABEL = /^(?:slot|class|race|type|deity|skill|effect|click|worn|proc|focus|tools|required|restriction|lore|aug)/i;
+const PARSER_STAT_SOURCES = new Set(['raidloot', 'opendkp', 'manual', 'legacy']);
+const PARSER_MAX_STAT_RAW_LENGTH = 512;
 const PARSER_CLASS_ALIASES = {
   all: 'ALL', warrior: 'WAR', war: 'WAR', cleric: 'CLR', clr: 'CLR', paladin: 'PAL', pal: 'PAL',
   ranger: 'RNG', rng: 'RNG', shadowknight: 'SHD', shd: 'SHD', druid: 'DRU', dru: 'DRU',
@@ -21,6 +23,9 @@ function parserCanonicalEffectType(raw) {
   const key = String(raw || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
   if (/^(?:spell)?focus(?:effect)?s?$/.test(key)) return 'focus';
   if (/^(?:weapon)?proc(?:effect)?s?$/.test(key)) return 'proc';
+  if (/^worn(?:effect)?s?$/.test(key)) return 'worn';
+  if (/^click(?:effect)?s?$/.test(key)) return 'click';
+  if (/^(?:effect|unknown)s?$/.test(key)) return 'unknown';
   return '';
 }
 
@@ -62,7 +67,8 @@ function parserEffectName(raw) {
 function parserNormalizeEffect(value, defaultType) {
   const object = value && typeof value === 'object' ? value : null;
   const raw = String(object ? (object.raw ?? object.description ?? object.text ?? object.name ?? '') : value || '').trim();
-  const type = parserCanonicalEffectType(object && (object.type || object.kind || object.category)) ||
+  const declaredType = object && (object.type || object.kind || object.category);
+  const type = parserCanonicalEffectType(declaredType) || (declaredType ? 'unknown' : '') ||
     parserCanonicalEffectType(defaultType) || parserCanonicalEffectType(raw.match(/^\s*([^:]+):/)?.[1]);
   if (!type || !raw) return null;
   const name = parserEffectName(String(object && object.name || raw));
@@ -71,16 +77,21 @@ function parserNormalizeEffect(value, defaultType) {
   const key = object && object.key ? String(object.key) :
     (explicitId != null && String(explicitId).trim() ? type + ':id:' + String(explicitId).trim() : type + ':' + (normalized || 'unknown'));
   const rank = object && object.rank != null ? String(object.rank) : parserEffectRank(raw);
-  return { type, name: name || raw, key, rank, raw };
+  return { type, name: name || raw, key, rank, raw,
+    ...(type === 'unknown' && (object && object.kind || declaredType && declaredType !== 'unknown') ?
+      { kind: String(object && object.kind || declaredType).slice(0, 80) } : {}),
+    provenance: object && ['raidloot', 'opendkp', 'legacy'].includes(object.provenance) ? object.provenance : 'legacy' };
 }
 
 function parserNormalizeEffects(effects) {
+  if (!Array.isArray(effects)) return [];
   const out = [];
   const seen = new Map();
   for (const effect of effects || []) {
-    const normalized = parserNormalizeEffect(effect);
+    const normalized = parserNormalizeEffect(effect, 'unknown');
     if (!normalized) continue;
-    const identity = normalized.type + '|' + normalized.key;
+    const identity = normalized.type + '|' + normalized.key +
+      (['focus', 'proc'].includes(normalized.type) ? '' : '|' + normalized.rank + '|' + (normalized.kind || '') + '|' + normalized.raw);
     const index = seen.get(identity);
     if (index == null) {
       seen.set(identity, out.length);
@@ -116,7 +127,7 @@ function parserParseEffectLines(text) {
   const effects = [];
   const lines = String(text || '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
   for (let index = 0; index < lines.length; index++) {
-    const match = lines[index].match(/^\s*(Focus(?: Effect)?|Spell Focus|Proc(?: Effect)?|Weapon Proc|Procs|Effect)\s*:\s*(.+)$/i);
+    const match = lines[index].match(/^\s*(Focus(?: Effect)?|Spell Focus|Proc(?: Effect)?|Weapon Proc|Procs|Worn(?: Effect)?|Click(?: Effect)?|Effects?)\s*:\s*(.+)$/i);
     if (!match) continue;
     const type = parserCanonicalEffectType(match[1]);
     const name = match[2].trim();
@@ -127,6 +138,25 @@ function parserParseEffectLines(text) {
     effects.push(...parserParseStructuredEffects({ type, name, raw: [name, ...details].join('\n') }, type));
   }
   return parserNormalizeEffects(effects);
+}
+
+function parserFiniteStatNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || !value.trim() || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parserNormalizeStatValue(value, source) {
+  const object = value && typeof value === 'object' ? value : null;
+  const hasNum = !!object && Object.prototype.hasOwnProperty.call(object, 'num');
+  const rawValue = object && Object.prototype.hasOwnProperty.call(object, 'raw')
+    ? object.raw : object && Object.prototype.hasOwnProperty.call(object, 'num') ? object.num : value;
+  const raw = rawValue == null ? '' : String(rawValue);
+  const num = hasNum ? parserFiniteStatNumber(object.num) : parserFiniteStatNumber(value);
+  const candidateSource = object && object.source || source || 'legacy';
+  return { raw: raw.slice(0, PARSER_MAX_STAT_RAW_LENGTH), num,
+    source: PARSER_STAT_SOURCES.has(candidateSource) ? candidateSource : 'legacy' };
 }
 
 function sameItemName(a, b) {
@@ -307,7 +337,7 @@ function parseItemNode(node) {
   const effects = [];
   node.querySelectorAll('label').forEach((lbl) => {
     const key = lbl.textContent.replace(/:\s*$/, '').trim();
-    if (!key) return;
+    if (!key || ['__proto__', 'constructor', 'prototype'].includes(key)) return;
     let valTxt = '';
     let cur = lbl.nextSibling;
     while (cur) {
@@ -323,10 +353,10 @@ function parseItemNode(node) {
     }
     valTxt = valTxt.replace(/\s+/g, ' ').trim();
     effects.push(...parserParseStructuredEffects(valTxt, parserCanonicalEffectType(key)));
-    const num = valTxt.match(/-?\d+(\.\d+)?/);
-    stats[key] = { raw: valTxt, num: PARSER_NON_NUMERIC_LABEL.test(key) ? null : (num ? parseFloat(num[0]) : null) };
+    const num = valTxt.match(/^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?=$|[\s+%/])/);
+    stats[key] = { raw: valTxt, num: PARSER_NON_NUMERIC_LABEL.test(key) ? null : (num ? Number(num[0].replace(/,/g, '')) : null), source: 'raidloot' };
     const heroic = valTxt.match(/\+\s*(-?\d+(?:\.\d+)?)/);
-    if (heroic && PARSER_HEROIC_STATS[key]) stats[PARSER_HEROIC_STATS[key]] = { raw: heroic[0], num: parseFloat(heroic[1]) };
+    if (heroic && PARSER_HEROIC_STATS[key]) stats[PARSER_HEROIC_STATS[key]] = { raw: heroic[0], num: parseFloat(heroic[1]), source: 'raidloot' };
   });
   effects.push(...parserParseEffectLines(node.innerText || node.textContent));
   const regenMap = { HP: 'Regen', MANA: 'ManaRegen', END: 'EndRegen' };
@@ -335,7 +365,7 @@ function parseItemNode(node) {
     const raw = statKey && stats[statKey].raw;
     if (!raw) continue;
     const m = raw.match(/\+\s*(-?\d+(?:\.\d+)?)\s*\/\s*tick/i);
-    if (m) stats[regenMap[src]] = { raw: m[0], num: parseFloat(m[1]) };
+    if (m) stats[regenMap[src]] = { raw: m[0], num: parseFloat(m[1]), source: 'raidloot' };
   }
   let slot = null;
   if (node.classList) {
@@ -357,5 +387,55 @@ function parseItemNode(node) {
   const setQuery = setMatch ? setMatch[1].trim() : '';
   const isWishlist = !!node.querySelector('.wish-remove');
   const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects), setQuery, isAugment, augmentTypes, augSlot: isAugment ? parserAugmentSlot(node, node.textContent) : '', isWishlist, isTotalsRow };
+  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects).map((effect) => ({ ...effect, provenance: 'raidloot' })), effectsKnown: false, setQuery, isAugment, augmentTypes, augSlot: isAugment ? parserAugmentSlot(node, node.textContent) : '', isWishlist, isTotalsRow };
+}
+
+// AA definitions are catalog data, not the character's purchased ranks.
+const PARSER_AA_ERAS = [
+  ['Original', 'EQ'], ['Ruins of Kunark', 'RoK'], ['Shadows of Luclin', 'SoL'], ['Planes of Power', 'PoP'],
+  ['Gates of Discord', 'GoD'], ['Omens of War', 'OoW'], ['Dragons of Norrath', 'DoN'],
+  ['Depths of Darkhollow', 'DoD'], ['Prophecy of Ro', 'PoR'], ['The Serpents Spine', 'TSS'],
+  ['The Buried Sea', 'TBS'], ['Secrets of Faydwer', 'SoF'], ['Seeds of Destruction', 'SoD'],
+  ['Underfoot', 'UF'], ['House of Thule', 'HoT'], ['Veil of Alaris', 'VoA'], ['Rain of Fear', 'RoF'],
+  ['Call of the Forsaken', 'CotF'], ['The Darkened Sea', 'TDS'], ['The Broken Mirror', 'TBM'],
+  ['Empires of Kunark', 'EoK'], ['Ring of Scale', 'RoS'], ['The Burning Lands', 'TBL'],
+  ['Torment of Velious', 'ToV'], ['Claws of Veeshan', 'CoV'], ['Terror of Luclin', 'ToL'],
+  ['Night of Shadows', 'NoS'], ['Laurions Song', 'LS'], ['The Outer Brood', 'TOB'], ['Shattering of Ro', 'SoR'],
+];
+function parseAACatalog(html, cls, level, expansion) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const requestedClass = parserNormalizeClass(cls);
+  const selectedClass = parserNormalizeClass(doc.querySelector('#Class')?.value);
+  if (!requestedClass || selectedClass !== requestedClass || !doc.querySelector('#aas')) throw new Error('Could not verify the AA catalog class');
+  const era = PARSER_AA_ERAS.findIndex(([name]) => name === expansion);
+  if (era < 0) throw new Error('Choose an expansion from the catalog list');
+  const byName = new Map();
+  for (const row of doc.querySelectorAll('#aas tr.aa')) {
+    const cells = [...row.querySelectorAll(':scope > td')];
+    if (cells.length < 6) continue;
+    const title = cells[1].textContent.trim().match(/^(.+?)\s*\((\d+)\)$/);
+    const info = cells[2].textContent.trim();
+    const requiredLevel = Number(info.match(/^\d+/)?.[0]);
+    const classes = parserParseClasses(info);
+    const rowEra = PARSER_AA_ERAS.findIndex(([, code]) => new RegExp('\\b' + code + '\\b', 'i').test(info));
+    if (!title || !Number.isInteger(requiredLevel) || requiredLevel < 1 || requiredLevel > level || rowEra < 0 || rowEra > era) continue;
+    if (classes.length && !classes.includes('ALL') && !classes.includes(requestedClass)) continue;
+    if (!/^[-–—]$/.test(cells[4].textContent.trim())) continue; // Passive definitions only.
+    const description = cells[5].textContent.replace(/\s+/g, ' ').trim();
+    if (!/max (?:hp|mana|endurance)|base stat|(?:str|sta|agi|dex|wis|int|cha) cap|strength|stamina|agility|dexterity|wisdom|intelligence|charisma|\bATK\b|accuracy|avoid|shield|regen|soft cap/i.test(description)) continue;
+    const entry = { name: title[1].slice(0, 200), rank: Number(title[2]), requiredLevel,
+      classMask: classes.length ? classes.join(', ') : requestedClass,
+      expansion: PARSER_AA_ERAS[rowEra][0], description: description.slice(0, 4000) };
+    if (!Number.isInteger(entry.rank) || entry.rank < 1 || entry.rank > 100000) continue;
+    const key = entry.name.toLowerCase();
+    const ranks = byName.get(key) || new Map();
+    ranks.set(entry.rank, entry); byName.set(key, ranks);
+  }
+  const entries = [...byName.values()].map((values) => {
+    const ranks = [...values.values()].sort((a, b) => a.rank - b.rank);
+    return { ...ranks[ranks.length - 1], ranks };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  if (!entries.length || entries.length > 128) throw new Error('No supported passive stat AAs were found for this class, level and expansion');
+  const catalogVersion = (doc.querySelector('p.more')?.textContent || '').match(/AA list updated[^()]*/)?.[0].trim() || 'Unspecified catalog version';
+  return { entries, expansion, cls, level, catalogVersion };
 }

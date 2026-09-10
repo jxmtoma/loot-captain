@@ -22,6 +22,7 @@
     regen: 'Regen', 'hp regen': 'Regen', manaregen: 'ManaRegen', 'mana regen': 'ManaRegen',
     endregen: 'EndRegen', 'end regen': 'EndRegen',
   };
+  const KNOWN_STAT_KEYS = new Set(Object.values(STAT_ALIASES));
   const CLASS_ALIASES = {
     all: 'ALL', warrior: 'WAR', war: 'WAR', cleric: 'CLR', clr: 'CLR',
     paladin: 'PAL', pal: 'PAL', ranger: 'RNG', rng: 'RNG', shadowknight: 'SHD', shd: 'SHD',
@@ -32,13 +33,16 @@
   };
 
   const HEROIC_STATS = { STR: 'HStr', STA: 'HSta', AGI: 'HAgi', DEX: 'HDex', INT: 'HInt', WIS: 'HWis', CHA: 'HCha' };
-  const NON_NUMERIC_LABEL = /^(?:slot|class|race|type|deity|skill|effect|click|focus|tools|required|restriction|lore|aug)/i;
+  const NON_NUMERIC_LABEL = /^(?:slot|class|race|type|deity|skill|effect|click|worn|proc|focus|tools|required|restriction|lore|aug)/i;
   const EFFECT_STOP_WORDS = new Set(['a', 'an', 'and', 'beneficial', 'detrimental', 'effect', 'focus', 'for', 'of', 'on', 'proc', 'procs', 'spell', 'the', 'to', 'weapon', 'with']);
 
   function canonicalEffectType(raw) {
     const key = String(raw || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
     if (/^(?:spell)?focus(?:effect)?s?$/.test(key)) return 'focus';
     if (/^(?:weapon)?proc(?:effect)?s?$/.test(key)) return 'proc';
+    if (/^worn(?:effect)?s?$/.test(key)) return 'worn';
+    if (/^click(?:effect)?s?$/.test(key)) return 'click';
+    if (/^(?:effect|unknown)s?$/.test(key)) return 'unknown';
     return '';
   }
 
@@ -81,7 +85,8 @@
     const object = value && typeof value === 'object' ? value : null;
     const field = (name) => object && getField(object, name);
     const raw = String(object ? (field('raw') ?? field('description') ?? field('text') ?? field('name') ?? '') : value || '').trim();
-    const type = canonicalEffectType(object && (field('type') || field('kind') || field('category'))) ||
+    const declaredType = object && (field('type') || field('kind') || field('category'));
+    const type = canonicalEffectType(declaredType) || (declaredType ? 'unknown' : '') ||
       canonicalEffectType(defaultType) || canonicalEffectType(raw.match(/^\s*([^:]+):/)?.[1]);
     if (!type || !raw) return null;
     const name = effectName(String(field('name') || raw));
@@ -90,16 +95,21 @@
     const key = field('key') ? String(field('key')) :
       (explicitId != null && String(explicitId).trim() ? type + ':id:' + String(explicitId).trim() : type + ':' + (normalized || 'unknown'));
     const rank = field('rank') != null ? String(field('rank')) : effectRank(raw);
-    return { type, name: name || raw, key, rank, raw };
+    return { type, name: name || raw, key, rank, raw,
+      ...(type === 'unknown' && (field('kind') || declaredType && declaredType !== 'unknown') ?
+        { kind: String(field('kind') || declaredType).slice(0, 80) } : {}),
+      provenance: ['raidloot', 'opendkp', 'legacy'].includes(field('provenance')) ? field('provenance') : 'legacy' };
   }
 
   function normalizeEffects(effects) {
+    if (!Array.isArray(effects)) return [];
     const out = [];
     const seen = new Map();
     for (const effect of effects || []) {
-      const normalized = normalizeEffect(effect);
+      const normalized = normalizeEffect(effect, 'unknown');
       if (!normalized) continue;
-      const identity = normalized.type + '|' + normalized.key;
+      const identity = normalized.type + '|' + normalized.key +
+      (['focus', 'proc'].includes(normalized.type) ? '' : '|' + normalized.rank + '|' + (normalized.kind || '') + '|' + normalized.raw);
       const index = seen.get(identity);
       if (index == null) {
         seen.set(identity, out.length);
@@ -136,7 +146,7 @@
     const lines = String(text || '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     for (let index = 0; index < lines.length; index++) {
       const line = lines[index];
-      const match = line.match(/^\s*(Focus(?: Effect)?|Spell Focus|Proc(?: Effect)?|Weapon Proc|Procs|Effect)\s*:\s*(.+)$/i);
+      const match = line.match(/^\s*(Focus(?: Effect)?|Spell Focus|Proc(?: Effect)?|Weapon Proc|Procs|Worn(?: Effect)?|Click(?: Effect)?|Effects?)\s*:\s*(.+)$/i);
       if (!match) continue;
       const type = canonicalEffectType(match[1]);
       const name = match[2].trim();
@@ -162,12 +172,44 @@
 
   function canonicalStat(raw) {
     const key = String(raw || '').replace(/:\s*$/, '').trim().replace(/\s+/g, ' ');
-    return STAT_ALIASES[key.toLowerCase()] || key;
+    return Object.prototype.hasOwnProperty.call(STAT_ALIASES, key.toLowerCase()) ? STAT_ALIASES[key.toLowerCase()] : key;
   }
 
-  function normalizeStats(stats) {
+  const STAT_SOURCES = new Set(['raidloot', 'opendkp', 'manual', 'legacy']);
+  const MAX_STAT_RAW_LENGTH = 512;
+
+  function finiteStatNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string' || !value.trim() || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())) return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  // Keep unknown values and their source text. An explicit `num: null` is
+  // authoritative; parsing its raw text would turn a failed parse into a
+  // falsely known stat.
+  function normalizeStatValue(value, source) {
+    const object = value && typeof value === 'object' ? value : null;
+    const hasNum = !!object && Object.prototype.hasOwnProperty.call(object, 'num');
+    const rawValue = object && Object.prototype.hasOwnProperty.call(object, 'raw')
+      ? object.raw : object && Object.prototype.hasOwnProperty.call(object, 'num') ? object.num : value;
+    const raw = rawValue == null ? '' : String(rawValue);
+    const num = hasNum ? finiteStatNumber(object.num) : finiteStatNumber(value);
+    const candidateSource = object && object.source || source || 'legacy';
+    return {
+      raw: raw.slice(0, MAX_STAT_RAW_LENGTH),
+      num,
+      source: STAT_SOURCES.has(candidateSource) ? candidateSource : 'legacy',
+    };
+  }
+
+  function normalizeStats(stats, source) {
     const out = {};
-    for (const key of Object.keys(stats || {})) out[canonicalStat(key)] = stats[key];
+    for (const key of Object.keys(stats || {})) {
+      const canonical = canonicalStat(key);
+      if (['__proto__', 'constructor', 'prototype'].includes(canonical)) continue;
+      out[canonical] = normalizeStatValue(stats[key], source);
+    }
     return out;
   }
 
@@ -252,7 +294,7 @@
     const effects = [];
     node.querySelectorAll('label').forEach((lbl) => {
       const key = canonicalStat(lbl.textContent);
-      if (!key) return;
+      if (!key || ['__proto__', 'constructor', 'prototype'].includes(key)) return;
       let valTxt = '';
       let cur = lbl.nextSibling;
       while (cur) {
@@ -268,10 +310,10 @@
       }
       valTxt = valTxt.replace(/\s+/g, ' ').trim();
       effects.push(...parseStructuredEffects(valTxt, canonicalEffectType(key)));
-      const num = valTxt.match(/-?\d+(\.\d+)?/);
-      stats[key] = { raw: valTxt, num: NON_NUMERIC_LABEL.test(key) ? null : (num ? parseFloat(num[0]) : null) };
+      const num = valTxt.match(/^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?=$|[\s+%/])/);
+      stats[key] = { raw: valTxt, num: NON_NUMERIC_LABEL.test(key) ? null : (num ? Number(num[0].replace(/,/g, '')) : null), source: 'raidloot' };
       const heroic = valTxt.match(/\+\s*(-?\d+(?:\.\d+)?)/);
-      if (heroic && HEROIC_STATS[key]) stats[HEROIC_STATS[key]] = { raw: heroic[0], num: parseFloat(heroic[1]) };
+      if (heroic && HEROIC_STATS[key]) stats[HEROIC_STATS[key]] = { raw: heroic[0], num: parseFloat(heroic[1]), source: 'raidloot' };
     });
     effects.push(...parseEffectLines(node.innerText || node.textContent));
     // Derive regen stats from "+ N/tick" suffix on HP/MANA/END.
@@ -280,7 +322,7 @@
       const raw = stats[src] && stats[src].raw;
       if (!raw) continue;
       const m = raw.match(/\+\s*(-?\d+(?:\.\d+)?)\s*\/\s*tick/i);
-      if (m) stats[REGEN_MAP[src]] = { raw: m[0], num: parseFloat(m[1]) };
+      if (m) stats[REGEN_MAP[src]] = { raw: m[0], num: parseFloat(m[1]), source: 'raidloot' };
     }
     let slot = null;
     if (node.classList) {
@@ -300,7 +342,7 @@
     const augmentTypes = parseAugmentTypes(node.textContent);
     const isWishlist = !!node.querySelector('.wish-remove');
     const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), classes, stats, effects: normalizeEffects(effects), isAugment, augmentTypes, isWishlist, isTotalsRow };
+    return { id, name, slot, slotKey: LC.slots.canonicalSlot(slot), classes, stats, effects: normalizeEffects(effects).map((effect) => ({ ...effect, provenance: 'raidloot' })), effectsKnown: false, isAugment, augmentTypes, isWishlist, isTotalsRow };
   }
 
   // ---------- openDKP JSON parsing ----------
@@ -340,24 +382,27 @@
     };
     for (const f of statFields) {
       const v = getField(obj, f);
-      if (v == null) continue;
+      if (v === undefined) continue;
       const label = canonicalStat(statLabels[f] || f);
-      stats[label] = { raw: String(v), num: parseFloat(v) };
+      if (['__proto__', 'constructor', 'prototype'].includes(label)) continue;
+      stats[label] = normalizeStatValue(v, 'opendkp');
     }
     for (const [key, value] of Object.entries(obj)) {
-      effects.push(...parseStructuredEffects(value, canonicalEffectType(key)));
+      const type = canonicalEffectType(key);
+      if (type) effects.push(...parseStructuredEffects(value, type));
     }
     // openDKP may nest stats under an object.
     if (nestedStats && typeof nestedStats === 'object') {
       for (const k of Object.keys(nestedStats)) {
         const v = nestedStats[k];
-        if (v == null) continue;
+        if (v === undefined) continue;
         if (canonicalEffectType(k)) {
           effects.push(...parseStructuredEffects(v, canonicalEffectType(k)));
           continue;
         }
-        const label = canonicalStat(statLabels[k.toLowerCase()] || k);
-        stats[label] = { raw: String(v), num: parseFloat(v) };
+        const label = canonicalStat(Object.prototype.hasOwnProperty.call(statLabels, k.toLowerCase()) ? statLabels[k.toLowerCase()] : k);
+        if (['__proto__', 'constructor', 'prototype'].includes(label)) continue;
+        stats[label] = normalizeStatValue(v, 'opendkp');
       }
     }
     const name = getField(obj, 'name') || getField(obj, 'itemName') || getField(obj, 'item_name') || '';
@@ -379,7 +424,9 @@
       slotKey: LC.slots.canonicalSlot(slot),
       classes,
       stats,
-      effects: normalizeEffects(effects),
+      effects: normalizeEffects(effects).map((effect) => ({ ...effect, provenance: 'opendkp' })),
+      effectsKnown: Array.isArray(getField(obj, 'effects')) &&
+        getField(obj, 'effects').every((effect) => parseStructuredEffects(effect, 'unknown').length > 0),
       isAugment,
       augmentTypes,
       isWishlist: false,
@@ -410,15 +457,25 @@
     const effects = parseEffectLines(text);
     const classes = classesFromText(text);
     // Look for "Label: value [+heroic]" patterns from the EQ-style hover card.
-    const labelRe = /([A-Za-z][A-Za-z ]{1,30}?):\s*(-?\d+(?:\.\d+)?)(?:\s+([+-]\d+(?:\.\d+)?))?/g;
+    const labelRe = /([A-Za-z][A-Za-z ]{1,30}?):\s*([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?=$|[\s+%/])(?:\s+([+-]\d+(?:\.\d+)?))?/g;
     let m;
     while ((m = labelRe.exec(text)) !== null) {
       const key = canonicalStat(m[1]);
-      const num = parseFloat(m[2]);
-      stats[key] = { raw: m[0], num };
+      if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;
+      const num = Number(m[2].replace(/,/g, ''));
+      stats[key] = { raw: m[0], num, source: 'opendkp' };
       if (m[3] && HEROIC_STATS[key]) {
-        stats[HEROIC_STATS[key]] = { raw: m[3], num: parseFloat(m[3]) };
+        stats[HEROIC_STATS[key]] = { raw: m[3], num: parseFloat(m[3]), source: 'opendkp' };
       }
+    }
+    // Preserve recognized labels whose value did not parse. Metadata labels
+    // such as Class and Slot are intentionally outside KNOWN_STAT_KEYS.
+    for (const line of lines) {
+      const label = line.match(/^([A-Za-z][A-Za-z ]{1,30}?):\s*(.*)$/);
+      if (!label) continue;
+      const key = canonicalStat(label[1]);
+      if (['__proto__', 'constructor', 'prototype'].includes(key) || !KNOWN_STAT_KEYS.has(key) || Object.prototype.hasOwnProperty.call(stats, key)) continue;
+      stats[key] = { raw: label[0], num: null, source: 'opendkp' };
     }
     // Slot detection from common patterns and the plain slot line in hover cards.
     let slot = '';
@@ -444,7 +501,8 @@
       slotKey: LC.slots.canonicalSlot(slot),
       classes,
       stats,
-      effects,
+      effects: effects.map((effect) => ({ ...effect, provenance: 'opendkp' })),
+      effectsKnown: false,
       isAugment,
       augmentTypes,
       isWishlist: false,
@@ -468,6 +526,7 @@
     parseAugmentTypes,
     canonicalStat,
     normalizeStats,
+    normalizeStatValue,
     normalizeClass,
     parseClasses,
     classMatches,

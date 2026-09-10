@@ -122,22 +122,12 @@
   }
 
   function normalizeResolvedStats(stats) {
-    const out = {};
-    for (const [key, value] of Object.entries(LC.parser.normalizeStats(stats || {}))) {
-      if (value && typeof value === 'object' && 'num' in value) {
-        out[key] = value;
-        continue;
-      }
-      const num = parseFloat(value);
-      out[key] = { raw: String(value), num: Number.isNaN(num) ? null : num };
-    }
-    return out;
+    return LC.parser.normalizeStats(stats || {}, 'raidloot');
   }
 
   function candidateHasData(item) {
     return Object.values(item && item.stats || {}).some((value) => {
-      const num = value && typeof value === 'object' && 'num' in value ? value.num : parseFloat(value);
-      return num != null && !Number.isNaN(num);
+      return Number.isFinite(LC.parser.normalizeStatValue(value).num);
     }) || !!(item && Array.isArray(item.effects) && item.effects.length);
   }
 
@@ -158,6 +148,7 @@
       opendkpSourceName: source.opendkpSourceName || source.name || '',
       stats: normalizeResolvedStats(resolved && resolved.stats),
       effects: LC.parser.normalizeEffects(resolved && resolved.effects || []),
+      effectsKnown: resolved && resolved.effectsKnown === true,
     };
     candidate.slotKey = candidate.slotKey || LC.slots.canonicalSlot(candidate.slot);
     return candidate;
@@ -308,11 +299,19 @@
         return badges;
       }
       if (!multi.best) {
+        const partial = LC.ui.buildMultiComparisonBadges(multi, selected, f, compact);
+        if (partial.length) {
+          for (const rowBadge of partial) {
+            rowBadge.dataset.lcRow = 'multi';
+            if (onBadge) onBadge(rowBadge, null, 0, null, multi);
+          }
+          return partial;
+        }
         badge.textContent = '?';
-        badge.title = 'Item stats are unresolved; no comparison is available';
+        badge.title = 'Score unavailable; item stats are unresolved';
         return [badge];
       }
-      if (multi.best.empty) {
+      if (multi.best.empty && multi.results.every((result) => result.empty)) {
         badge.dataset.state = 'empty';
         badge.textContent = 'empty slot';
         badge.title = 'No worn item in slot ' + selected.slotKey.key + ' for any compared character';
@@ -343,7 +342,7 @@
     const badges = [];
     for (const [index, row] of comparison.rows.entries()) {
       if (selected.isAugment && index) break;
-      if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+      if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
       for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact)) {
         if (onBadge) onBadge(rowBadge, row, index, comparison);
         badges.push(rowBadge);

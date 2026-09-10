@@ -17,6 +17,12 @@
 
   // ---------- Styles ----------
   const CSS = [
+    '.lc-projection{margin-top:12px;padding-top:10px;border-top:1px solid #657382;white-space:normal;text-align:left;}',
+    '.lc-projection > summary{cursor:pointer;color:#ecd38b;font-weight:bold;}',
+    '.lc-projection a{color:#ecd38b !important;text-decoration:underline;}',
+    '.lc-projection [hidden]{display:none !important;}',
+    '.lc-projection p,.lc-projection label{display:block;margin:8px 0;white-space:normal;}',
+    '.lc-projection input[type="checkbox"]{width:auto;margin-right:8px;}',
     '.lc-badge{display:inline-block;padding:2px 6px;margin:0 4px;border:1px solid rgba(224,190,112,.55);border-radius:3px;font:10px/1.2 sans-serif;font-weight:bold;cursor:pointer;vertical-align:middle;user-select:none;box-shadow:0 1px 2px rgba(0,0,0,.25);}',
     '.lc-badge[data-state="upgrade"]{background:#315c4a;color:#eff8db;}',
     '.lc-badge[data-state="downgrade"]{background:#673c36;color:#ffe3d0;}',
@@ -111,7 +117,7 @@
     return v.toFixed(2);
   }
   function fmtDelta(d) {
-    if (d == null) return '';
+    if (d == null) return '—';
     const sign = d > 0 ? '+' : '';
     return sign + (Number.isInteger(d) ? d.toLocaleString() : d.toFixed(2));
   }
@@ -140,6 +146,46 @@
 
   function effectStatus(status) {
     return { added: 'added', removed: 'removed', changed: 'changed', covered: 'covered', different: 'different', same: 'same' }[status] || status;
+  }
+
+  function buildOtherEffects(group) {
+    if (!group || !group.rows.length) return null;
+    const details = document.createElement('details');
+    details.className = 'lc-effect-details';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Worn, click and additional effects (informational; not scored)';
+    details.appendChild(summary);
+    if (!group.complete) {
+      const note = document.createElement('p');
+      note.textContent = 'Effect lists may be incomplete; unresolved does not mean added or removed.';
+      details.appendChild(note);
+    }
+    const table = document.createElement('table');
+    const header = document.createElement('tr');
+    for (const label of ['type', 'change', 'current', 'candidate']) {
+      const cell = document.createElement('th'); cell.textContent = label; header.appendChild(cell);
+    }
+    table.appendChild(header);
+    for (const entry of group.rows) {
+      const row = document.createElement('tr');
+      for (const value of [entry.type, entry.status, entry.current, entry.candidate]) {
+        const cell = document.createElement('td');
+        cell.textContent = value && typeof value === 'object' ?
+          (value.raw || value.name) + (value.rank ? ' [rank ' + value.rank + ']' : '') : value || (['added', 'removed'].includes(entry.status) ? 'None' : 'Unknown');
+        if (value && typeof value === 'object') cell.title = 'Source: ' + (value.provenance || 'legacy');
+        row.appendChild(cell);
+      }
+      table.appendChild(row);
+    }
+    details.appendChild(table);
+    return details;
+  }
+
+  function buildOtherBadge(rows) {
+    if (!rows.length) return null;
+    const badge = buildBadge('nomatch', 'compare', 'Compare item stats and effects; score unavailable');
+    badge.dataset.lcView = 'stats';
+    return badge;
   }
 
   function buildEffectDetails(label, group) {
@@ -269,6 +315,93 @@
     return span;
   }
 
+  function buildProjectionPanel(cand, profile, worn) {
+    const panel = document.createElement('details'); panel.className = 'lc-projection';
+    const title = document.createElement('summary'); title.textContent = 'Character projection'; panel.appendChild(title);
+    const scope = document.createElement('p'); scope.textContent = 'Reference estimates use the same model for both items; calibration is optional. These are not measured game totals.'; panel.appendChild(scope);
+    const body = document.createElement('div'); body.setAttribute('aria-live', 'polite'); panel.appendChild(body);
+    const confirmation = document.createElement('label'); confirmation.hidden = true;
+    const check = document.createElement('input'); check.type = 'checkbox'; confirmation.appendChild(check);
+    confirmation.appendChild(document.createTextNode('For this comparison, I verified wearability, unchanged augment transfers, other effects and power-source conditions.'));
+    panel.appendChild(confirmation);
+    const manage = document.createElement('a'); manage.textContent = 'Manage character inputs and rule validation';
+    manage.href = chrome.runtime.getURL('options/options.html'); manage.target = '_blank'; manage.rel = 'noopener'; panel.appendChild(manage);
+    const modeLabel = document.createElement('label'); modeLabel.textContent = 'Comparison model ';
+    const mode = document.createElement('select');
+    for (const [value, label] of [['reference', 'Reference estimate (no calibration)'], ['calibrated', 'Calibrated Accuracy only']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label; mode.appendChild(option);
+    }
+    modeLabel.appendChild(mode); panel.appendChild(modeLabel);
+    let generation = 0;
+    const render = async () => {
+      const request = ++generation;
+      scope.textContent = mode.value === 'reference' ? 'Consistent reference estimates, not measured game totals. No calibration required.' : 'Optional calibrated Accuracy check; a current snapshot and approved observation are required.';
+      body.textContent = mode.value === 'reference' ? 'Calculating reference estimates…' : 'Checking snapshot and calibrated rules…'; check.disabled = true;
+      const response = await LC.state.getCharacterProjection(cand, profile, worn, check.checked, mode.value);
+      if (request !== generation || panel.isConnected === false) return;
+      check.disabled = false;
+      if (!response || !response.ok || !response.projection) { title.textContent = 'Character projection · unavailable'; body.textContent = response && response.error || 'Projection unavailable.'; return; }
+      const projection = response.projection;
+      confirmation.hidden = !projection.needsConfirmation;
+      if (projection.reason) { title.textContent = (projection.mode === 'reference' ? 'Estimate · unavailable' : 'Character projection · setup needed'); body.textContent = projection.reason; return; }
+      if (projection.mode === 'reference') {
+        const label = (metric) => metric;
+        const range = (low, high, signed = true) => {
+          const format = signed ? fmtDelta : fmtStat;
+          return low === high ? format(low) : format(low) + ' to ' + format(high);
+        };
+        title.textContent = 'Estimate · ' + (projection.outputs.filter((output) => output.available).map((output) => label(output.metric) + ' ' + range(output.deltaLow, output.deltaHigh)).join(' · ') || 'unavailable');
+        body.replaceChildren();
+        for (const output of projection.outputs) {
+          const row = document.createElement('p');
+          row.textContent = output.available ? label(output.metric) + ': ' + range(output.deltaLow, output.deltaHigh) +
+            (output.current == null ? (output.metric === 'AC' ? ' (before soft caps; change only)' : ' (change only)') : '; snapshot ' + fmtStat(output.current) + ' → reference ' + range(output.projectedLow, output.projectedHigh, false)) :
+            label(output.metric) + ': unavailable — ' + output.reason;
+          body.appendChild(row);
+        }
+        const details = document.createElement('details');
+        const summary = document.createElement('summary'); summary.textContent = 'Calculation, assumptions and sources'; details.appendChild(summary);
+        for (const output of projection.outputs.filter((output) => output.available)) {
+          const part = output.components, row = document.createElement('p');
+          const attribute = part.attribute ? range(part.attribute[0], part.attribute[1]) : '?';
+          row.textContent = label(output.metric) + ': item ' + fmtDelta(part.item) + '; attributes ' + attribute +
+            (part.heroic == null ? '' : '; heroics ' + fmtDelta(part.heroic)) +
+            (part.scaledItem == null ? '' : '; scaled item AC ' + fmtDelta(part.scaledItem) + ' (×4/3, rounded)') +
+            (part.multiplier == null ? '' : '; HP multiplier ×' + part.multiplier) +
+            (part.cappedItem == null ? '' : '; capped item ATK ' + fmtDelta(part.cappedItem) + ' ×1.342, cap ' + part.itemCap);
+          details.appendChild(row);
+        }
+        for (const assumption of projection.assumptions) { const row = document.createElement('p'); row.textContent = assumption; details.appendChild(row); }
+        for (const source of projection.rule.sources) {
+          const link = document.createElement('a'); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = source.label;
+          const row = document.createElement('p'); row.appendChild(link); details.appendChild(row);
+        }
+        body.appendChild(details);
+        return;
+      }
+      const available = projection.outputs.find((output) => output.available);
+      title.textContent = available ? 'Accuracy ' + fmtStat(available.current) + ' → ' + fmtStat(available.projected) + ' (Δ ' + fmtDelta(available.delta) + ') · Derived' :
+        'Character projection · ' + (projection.needsConfirmation ? 'confirm conditions' : 'unavailable');
+      body.replaceChildren();
+      for (const output of projection.outputs) {
+        const row = document.createElement('p');
+        if (output.available) {
+          row.textContent = output.metric + ': ' + fmtStat(output.current) + ' → ' + fmtStat(output.projected) +
+            ' (Δ ' + fmtDelta(output.delta) + ' points) — ' + output.confidence + '.';
+          body.appendChild(row);
+          const explanation = document.createElement('p');
+          explanation.textContent = 'Heroic DEX ' + output.heroicBefore + ' → ' + output.heroicAfter +
+            '; approved interval ' + output.approvedRange.join('–') + '. ' + output.assumption;
+          body.appendChild(explanation);
+        } else { row.textContent = output.metric + ': unavailable — ' + output.reason; body.appendChild(row); }
+      }
+      const source = document.createElement('a'); source.href = projection.rule.source; source.target = '_blank'; source.rel = 'noopener noreferrer';
+      source.textContent = 'Rule ' + projection.rule.key + ' v' + projection.rule.version + ' · developer source'; body.appendChild(source);
+    };
+    check.addEventListener('change', render); mode.addEventListener('change', render); render();
+    return panel;
+  }
+
   function buildComparePanel(cand, worn, diff, slotLabel, alternatives, selectedIndex = 0, view = 'stats', baselineLabel = 'worn', profile = null) {
     const div = document.createElement('div');
     div.className = 'lc-compare-panel';
@@ -277,15 +410,9 @@
     const head = document.createElement('div');
     head.className = 'lc-head';
     const equip = buildEquipAction(cand, worn, slotLabel, view, baselineLabel, profile);
-    if (!worn) {
-      head.textContent = 'No worn item in ' + (slotLabel || ((cand.slotKey && cand.slotKey.key) || '?')) + '.';
-      if (equip) head.appendChild(equip);
-      div.appendChild(head);
-      return div;
-    }
     // Comparing an item with itself only ever yields a table of zeroes, which
     // is what an equipped item compares against once it is in the profile.
-    if (sameStoredItem(worn, cand)) {
+    if (worn && sameStoredItem(worn, cand)) {
       head.textContent = 'Already equipped in ' + (slotLabel || ((cand.slotKey && cand.slotKey.key) || 'this slot')) + '.';
       if (equip) head.appendChild(equip);
       div.appendChild(head);
@@ -318,7 +445,10 @@
       ]) {
         const cell = document.createElement(tag);
         cell.textContent = value;
-        if (className) cell.className = className;
+        if (className) {
+          cell.className = className;
+          cell.title = d.delta == null ? 'Unavailable: a stat is unknown' : 'Exact item delta';
+        }
         row.appendChild(cell);
       }
       tbody.appendChild(row);
@@ -328,9 +458,9 @@
     title.className = 'lc-compare-title';
     title.appendChild(document.createTextNode(
       (view === 'focus' ? 'Spell focus: ' : view === 'proc' ? 'Proc: ' : '') + (slotLabel ? slotLabel + ': ' : '') +
-      (worn.name || ('#' + worn.id)) + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
+      (worn ? (worn.name || ('#' + worn.id)) : 'empty slot') + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
     ));
-    if (view === 'stats' && diff.comparable) {
+    if (view === 'stats' && diff.numericScoreAvailable) {
       const scoreCls = diff.score > 0 ? 'lc-pos' : (diff.score < 0 ? 'lc-neg' : 'lc-zero');
       const fLabel = (diff.formula && diff.formula.label) || 'score';
       const ratio = diff.weaponRatioDelta == null ? '' : '; Weapon ratio delta: ' + fmtDelta(diff.weaponRatioDelta);
@@ -338,8 +468,16 @@
       score.className = scoreCls;
       score.textContent = '(' + fLabel + ' delta: ' + fmtDelta(diff.score) + ratio + ')';
       title.appendChild(score);
+    } else if (view === 'stats' && diff.hasData) {
+      const missing = (diff.missingScoreStats || []).join(', ');
+      title.appendChild(document.createTextNode('(score unavailable' + (missing ? ': missing ' + missing : '') + ')'));
     } else if (view === 'stats' && diff.effectsComparable) {
       title.appendChild(document.createTextNode('(effects only; not scored)'));
+    }
+    if (diff.formula) {
+      const identity = diff.formula.key + ' v' + diff.formula.version;
+      title.appendChild(document.createTextNode(' [' + identity + ']'));
+      if (diff.formula.warning) title.appendChild(document.createTextNode(' ' + diff.formula.warning));
     }
     head.appendChild(title);
     if (view === 'stats' && alternatives && alternatives.length > 1) {
@@ -369,7 +507,12 @@
     }
     if (equip) head.appendChild(equip);
     div.appendChild(head);
-    if (view === 'stats' && diff.comparable) div.appendChild(table);
+    if (view === 'stats' && baselineLabel === 'worn' && profile && LC.state && LC.state.getCharacterProjection) {
+      div.appendChild(buildProjectionPanel(cand, profile, worn));
+    }
+    if (view === 'stats' && diff.hasData) div.appendChild(table);
+    const otherDetails = buildOtherEffects(diff.effects && diff.effects.other);
+    if (view === 'stats' && otherDetails) div.appendChild(otherDetails);
     const focusDetails = buildEffectDetails('Spell focus', diff.effects && diff.effects.focus);
     const procDetails = buildEffectDetails('Proc', diff.effects && diff.effects.proc);
     if (view === 'focus' && focusDetails) {
@@ -380,7 +523,7 @@
       procDetails.open = true;
       div.appendChild(procDetails);
     }
-    if (view === 'stats' && baselineLabel === 'wishlist') {
+    if (view === 'stats') {
       if (focusDetails) div.appendChild(focusDetails);
       if (procDetails) div.appendChild(procDetails);
     }
@@ -504,12 +647,10 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-compare';
-    const directions = (pairs || []).map((pair) =>
-      LC.diff.compareItemPair(cand, pair.target, formula, pair.profile && pair.profile.level))
-      .filter((diff) => diff.comparable)
-      .map((diff) => Math.sign(diff.score));
-    const direction = directions.length && directions.every((value) => value > 0) ? 1
-      : directions.length && directions.every((value) => value < 0) ? -1 : 0;
+    const comparisons = (pairs || []).map((pair) =>
+      LC.diff.compareItemPair(cand, pair.target, formula, pair.profile && pair.profile.level, pair.profile));
+    const direction = comparisons.length && comparisons.every((diff) => diff.numericScoreAvailable && diff.score > 0) ? 1
+      : comparisons.length && comparisons.every((diff) => diff.numericScoreAvailable && diff.score < 0) ? -1 : 0;
     const arrow = direction > 0 ? ' ↑' : direction < 0 ? ' ↓' : '';
     button.dataset.state = direction > 0 ? 'upgrade' : direction < 0 ? 'downgrade' : 'sidegrade';
     button.textContent = 'vs wishlist' + arrow + (pairs.length > 1 ? ' (' + pairs.length + ')' : '');
@@ -537,8 +678,8 @@
         loading.textContent = 'Wishlist item uses an incompatible slot or weapon layout.';
         return;
       }
-      const diff = LC.diff.compareItemPair(cand, resolved, formula, owner && owner.level);
-      if (!diff.comparable && !diff.effectsComparable) {
+      const diff = LC.diff.compareItemPair(cand, resolved, formula, owner && owner.level, owner);
+      if (!diff.comparable && !diff.hasData && !diff.effectsComparable) {
         loading.textContent = 'Wishlist item stats unavailable.';
         return;
       }
@@ -581,7 +722,8 @@
 
   function comparisonBadgeText(row, formula, compact) {
     const diff = row.diff;
-    if (!diff.comparable && diff.effectsComparable) return [slotShort(row.slotKey), 'effects'].filter(Boolean).join(' ');
+    if (!diff.numericScoreAvailable && diff.effectsComparable && !diff.hasData) return [slotShort(row.slotKey), 'effects'].filter(Boolean).join(' ');
+    if (!diff.numericScoreAvailable) return [slotShort(row.slotKey), 'score ?'].filter(Boolean).join(' ');
     const arrow = diff.score > 0 ? 'up' : diff.score < 0 ? 'dn' : 'eq';
     const slot = slotShort(row.slotKey);
     if (row.isAugment) return 'aug ' + arrow + ' ' + fmtDelta(diff.score);
@@ -595,21 +737,22 @@
 
   function comparisonBadgeTitle(row, formula) {
     const slot = row.slotKey && row.slotKey.key;
-    const ratio = row.diff.weaponRatioDelta == null ? '' : '; weapon ratio delta ' + fmtDelta(row.diff.weaponRatioDelta);
+    const identity = row.diff.formula ? '; ' + row.diff.formula.key + ' v' + row.diff.formula.version : '';
+    const ratio = identity + (row.diff.weaponRatioDelta == null ? '' : '; weapon ratio delta ' + fmtDelta(row.diff.weaponRatioDelta));
     if (row.isAugment) {
       const compatible = (row.compatibleSlots || []).join(', ');
       return 'Augment; fits ' + compatible + '; ' + (slot || '?') + ': vs ' +
         (row.target && (row.target.name || ('#' + row.target.id)) || 'worn augment') +
-        ' (delta ' + fmtDelta(row.diff.score) + ') -- click for full diff';
+        ' (' + (row.diff.numericScoreAvailable ? 'delta ' + fmtDelta(row.diff.score) : 'score unavailable') + identity + ') -- click for full diff';
     }
     return (slot ? slot + ': ' : '') + 'vs ' + (row.target && (row.target.name || ('#' + row.target.id)) || 'worn item') +
-      ' (delta ' + fmtDelta(row.diff.score) + ratio + ') -- click for full diff';
+      ' (' + (row.diff.numericScoreAvailable ? 'delta ' + fmtDelta(row.diff.score) : 'score unavailable') + ratio + ') -- click for full diff';
   }
 
   function buildComparisonBadge(row, formula, compact) {
-    const effectOnly = !row.diff.comparable && row.diff.effectsComparable;
+    const effectOnly = !row.diff.numericScoreAvailable && row.diff.effectsComparable && !row.diff.hasData;
     const badge = buildBadge(
-      effectOnly ? 'sidegrade' : (row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade'),
+      effectOnly ? 'sidegrade' : !row.diff.numericScoreAvailable ? 'nomatch' : (row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade'),
       comparisonBadgeText(row, formula, compact), comparisonBadgeTitle(row, formula));
     badge.dataset.lcView = 'stats';
     return badge;
@@ -696,7 +839,10 @@
   }
 
   function buildComparisonBadges(row, formula, compact) {
-    const main = row.diff.comparable ? buildComparisonBadge(row, formula, compact) : null;
+    const main = row.diff.numericScoreAvailable ? buildComparisonBadge(row, formula, compact) :
+      row.diff.hasData ? buildBadge('nomatch', comparisonBadgeText(row, formula, compact), comparisonBadgeTitle(row, formula)) :
+      buildOtherBadge(row.diff.effects && row.diff.effects.other && row.diff.effects.other.rows || []);
+    if (main) main.dataset.lcView = 'stats';
     return [main, buildFocusBadge(row), buildProcBadge(row)].filter(Boolean);
   }
 
@@ -705,9 +851,9 @@
   function multiResultSummary(result) {
     const name = (result.profile && result.profile.name) || 'Unnamed';
     if (result.empty) return name + ': empty slot';
-    const row = result.summary.rows.find((entry) => entry.diff && entry.diff.comparable) || result.summary.rows[0];
+    const row = result.summary.rows.find((entry) => entry.diff && entry.diff.numericScoreAvailable) || result.summary.rows[0];
     const worn = row && row.target;
-    return name + ': ' + fmtDelta(result.summary.score) + (worn ? ' vs ' + (worn.name || ('#' + worn.id)) : '');
+    return name + ': ' + (result.summary.numericScoreAvailable ? fmtDelta(result.summary.score) : 'score unavailable') + (worn ? ' vs ' + (worn.name || ('#' + worn.id)) : '');
   }
 
   function multiComparisonSummary(multi) {
@@ -785,22 +931,36 @@
   // main badge, every character listed in its tooltip, and focus/proc
   // aggregated across all characters.
   function buildMultiComparisonBadges(multi, cand, formula, compact) {
+    if (multi && multi.mixedFormulas) {
+      const badge = buildBadge('nomatch', 'Different formulas · ' + multi.results.length,
+        'Character scores use different formulas or an unsupported version; click to compare separately');
+      badge.dataset.lcView = 'stats';
+      return [badge, buildMultiFocusBadge(multi), buildMultiProcBadge(multi)].filter(Boolean);
+    }
     const best = multi && multi.best;
-    if (!best) return [];
+    const basis = (best && !best.empty ? best : null) ||
+      (multi && multi.results || []).find((result) => result.summary.comparable && !result.empty) ||
+      best || (multi && multi.results || []).find((result) => result.summary.comparable);
+    if (!basis) return [buildMultiFocusBadge(multi), buildMultiProcBadge(multi),
+        buildOtherBadge(multi.results.flatMap((result) => resultEffectRows(result, 'other')))].filter(Boolean);
     const badges = [];
-    for (const [index, row] of best.comparison.rows.entries()) {
+    for (const [index, row] of basis.comparison.rows.entries()) {
       if (cand.isAugment && index) break;
-      if (!row.diff || !row.diff.comparable) continue;
+      if (!row.diff || (!row.diff.numericScoreAvailable && !row.diff.hasData)) continue;
       badges.push(buildComparisonBadge(row, formula, compact));
     }
     const focusBadge = buildMultiFocusBadge(multi);
     if (focusBadge) badges.push(focusBadge);
+    const otherBadge = buildOtherBadge(multi.results.flatMap((result) => resultEffectRows(result, 'other')));
+    if (otherBadge && !badges.some((badge) => !badge.dataset.lcView || badge.dataset.lcView === 'stats')) badges.unshift(otherBadge);
     const procBadge = buildMultiProcBadge(multi);
     if (procBadge) badges.push(procBadge);
-    if (multi.results.length > 1 && badges.length) {
+    if (best && multi.results.length > 1 && badges.length) {
       const main = badges[0];
       main.textContent += ' · ' + multi.results.length;
-      main.title = 'Best of ' + multi.results.length + ' characters: ' +
+      const scoredCount = multi.results.filter((result) => result.summary.numericScoreAvailable).length;
+      main.title = (basis === best ? 'Best among ' + scoredCount + ' scored characters' : 'Partial comparison') +
+        (scoredCount < multi.results.length ? '; other scores unavailable' : '') + ': ' +
         multiComparisonSummary(multi) + ' -- click for full diff';
     }
     return badges;
@@ -816,7 +976,8 @@
       const profileId = String((result.profile && result.profile.id) || '');
       if (result.empty) {
         const badge = buildBadge('empty', name + ' empty',
-          name + ': no worn item in slot ' + (cand.slotKey ? cand.slotKey.key : '?') + '. Score is the raw item value.');
+          name + ': no worn item in slot ' + (cand.slotKey ? cand.slotKey.key : '?') +
+          (result.summary.numericScoreAvailable ? '. Score uses a zero baseline.' : '; score unavailable.'));
         badge.dataset.lcView = 'stats';
         badge.dataset.lcProfile = profileId;
         badge.dataset.lcRow = '0';
@@ -834,7 +995,7 @@
       }
       for (const [index, row] of result.comparison.rows.entries()) {
         if (cand.isAugment && index) break;
-        if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+        if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
         for (const badge of buildComparisonBadges(row, formula, compact)) {
           if (badge.dataset.lcView === 'stats') badge.textContent = name + ' ' + badge.textContent;
           badge.title = name + ': ' + badge.title;
@@ -864,7 +1025,7 @@
       const panels = [];
       for (const [index, row] of result.comparison.rows.entries()) {
         if (cand.isAugment && index) break;
-        if (!row.diff || (!row.diff.comparable && !row.diff.effectsComparable)) continue;
+        if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
         panels.push(buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
           row.isAugment ? result.comparison.rows : null, index, view, 'worn', result.profile));
       }
@@ -882,8 +1043,10 @@
       chip.className = 'lc-compare-chip';
       chip.dataset.lcProfileId = (result.profile && result.profile.id) || '';
       chip.dataset.state = result.empty ? 'empty'
+        : !result.summary.numericScoreAvailable ? 'nomatch'
         : result.summary.score > 0 ? 'upgrade' : result.summary.score < 0 ? 'downgrade' : 'sidegrade';
-      chip.textContent = (((result.profile && result.profile.name) || 'Unnamed') + ' ' + fmtDelta(result.summary.score)).trim();
+      chip.textContent = (((result.profile && result.profile.name) || 'Unnamed') + ' ' +
+        (result.summary.numericScoreAvailable ? fmtDelta(result.summary.score) : 'score ?')).trim();
       chip.title = multiResultSummary(result);
       chip.addEventListener('click', (event) => {
         event.preventDefault();
@@ -905,7 +1068,7 @@
     container.querySelectorAll('.lc-stat-indicator').forEach((el) => el.remove());
     if (!profile || !cand || !cand.slotKey) return;
     const comparison = LC.diff.compareCandidate(profile, cand, formula);
-    const row = comparison.rows.find((item) => item.diff && item.diff.comparable);
+    const row = comparison.rows.find((item) => item.diff && (item.diff.comparable || item.diff.hasData));
     if (!comparison.eligible || !row) return;
     const worn = row.target;
     const diff = row.diff;
@@ -913,28 +1076,23 @@
     for (const line of lines) {
       const lbl = line.querySelector(':scope > label');
       if (!lbl) continue;
-      const key = lbl.textContent.replace(/:\s*$/, '').trim();
+      const key = LC.parser.canonicalStat(lbl.textContent);
       if (!key || NON_STAT_LABELS.has(key)) continue;
-      const cs = cand.stats && cand.stats[key];
-      const ws = worn.stats && worn.stats[key];
-      if (!cs && !ws) continue;
-      const cv = cs && cs.num;
-      const wv = ws && ws.num;
-      if (cv == null && wv == null) continue;
-      const delta = (cv || 0) - (wv || 0);
-      const positive = LC.diff.POSITIVE_STATS.has(key);
+      const entry = diff.diffs[key];
+      if (!entry || entry.delta == null) continue;
+      const { delta, positive, worn: wv } = entry;
       const ind = document.createElement('span');
       ind.className = 'lc-stat-indicator';
       if (delta === 0) {
         ind.dataset.dir = 'zero';
         ind.textContent = '=';
-        ind.title = 'Same as ' + (worn.name || 'worn');
+        ind.title = 'Same as ' + (worn && worn.name || 'empty slot');
       } else {
         const isUp = (delta > 0) === positive;
         ind.dataset.dir = isUp ? 'up' : 'down';
         const sign = delta > 0 ? '+' : '';
         ind.textContent = sign + fmtStat(delta);
-        ind.title = 'Worn (' + (worn.name || 'item') + '): ' + fmtStat(wv == null ? 0 : wv);
+        ind.title = 'Worn (' + (worn && worn.name || 'item') + '): ' + fmtStat(wv);
       }
       line.appendChild(ind);
     }
