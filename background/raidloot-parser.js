@@ -53,7 +53,7 @@ function parserEffectRank(raw) {
   const text = String(raw || '');
   const level = text.match(/\bL\s*(\d+)\b/i);
   if (level) return level[1];
-  const rank = text.match(/\b(?:rank|level|tier|version|v)\s*([ivxlcdm]+|\d+)\b/i);
+  const rank = text.match(/\b(?:rank|level|tier|version|v)(?=[^a-z]|$)\s*([ivxlcdm]+|\d+)\b/i);
   if (rank) return rank[1];
   const percent = text.match(/([+-]?\d+(?:\.\d+)?)\s*%/);
   return percent ? percent[1] + '%' : null;

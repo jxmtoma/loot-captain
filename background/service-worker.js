@@ -11,9 +11,10 @@ const MAX_RAIDLOOT_CACHE_ENTRIES = 256;
 const MAX_RAIDLOOT_CACHE_BYTES = 2 * 1024 * 1024;
 const MAX_WISHLIST_ITEM_BYTES = 128 * 1024;
 const MAX_PROFILE_MUTATION_BYTES = 4 * 1024 * 1024;
+const DPS_SCENARIOS_KEY = 'dpsScenariosByProfile';
 let profileMutationQueue = Promise.resolve();
 
-importScripts('raidloot-parser.js', 'armor-token-catalog.js', '../content/shared/diff.js', '../content/shared/character-data.js', '../content/shared/projection.js', '../content/shared/reference-stats.js');
+importScripts('raidloot-parser.js', 'armor-token-catalog.js', '../content/shared/diff.js', '../content/shared/character-data.js', '../content/shared/projection.js', '../content/shared/reference-stats.js', '../content/shared/dps.js', '../content/shared/damage-catalog.js', '../content/shared/player-damage.js');
 
 const ARMOR_CLASS_NAMES = {
   WAR: 'Warrior', CLR: 'Cleric', PAL: 'Paladin', RNG: 'Ranger', SHD: 'ShadowKnight',
@@ -32,6 +33,10 @@ let raidlootCacheMutationQueue = Promise.resolve();
 
 function normalizedLookupName(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function normalizedEquipmentValue(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function validArmorTokenRecord(value) {
@@ -385,6 +390,7 @@ function allowedSender(type, sender) {
   if (type === 'EQUIP_ITEM') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'UNDO_EQUIP') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'GET_CHARACTER_PROJECTION') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (type === 'SET_DPS_SCENARIO') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'GET_AA_CATALOG') return isExtensionPage(sender);
   if (type === 'SAVE_CHARACTER_DATA') return isExtensionPage(sender);
   if (type === 'SET_PROFILE_FORMULA') return isExtensionPage(sender);
@@ -709,7 +715,7 @@ function undoEquip(profileId) {
 }
 
 // All profile writes keep invalidation sticky, including a later Undo to the original gear.
-async function writeProfiles(profiles) {
+async function writeProfiles(profiles, extraStorage) {
   for (const profile of Object.values(profiles)) {
     const data = profile.characterData;
     if (data && data.version === 1 && data.snapshot && !data.snapshot.invalidatedAt &&
@@ -718,7 +724,7 @@ async function writeProfiles(profiles) {
         invalidatedAt: Date.now(), invalidationReason: 'equipment or character context changed' } };
     }
   }
-  await chrome.storage.local.set({ profiles });
+  await chrome.storage.local.set({ profiles, ...(extraStorage || {}) });
 }
 
 function saveCharacterData(msg) {
@@ -787,10 +793,53 @@ function saveProfiles(records, deletedIds, expectedRecords) {
           ? profiles[id].wishlist : (Array.isArray(profile.wishlist) ? profile.wishlist : []),
       };
     }
-    for (const id of deletedIds || []) delete profiles[String(id)];
-    await writeProfiles(profiles);
+    const deleted = (deletedIds || []).map((id) => String(id));
+    for (const id of deleted) delete profiles[id];
+    if (deleted.length) {
+      const scenarios = await storageGet(DPS_SCENARIOS_KEY, {});
+      const nextScenarios = scenarios && typeof scenarios === 'object' ? { ...scenarios } : {};
+      for (const id of deleted) delete nextScenarios[id];
+      await writeProfiles(profiles, { [DPS_SCENARIOS_KEY]: nextScenarios });
+    } else await writeProfiles(profiles);
     return profiles;
   });
+}
+
+function saveDpsScenario(msg) {
+  return queueProfileMutation(async () => {
+    if (JSON.stringify(msg).length > 16 * 1024) throw new Error('DPS scenario is too large');
+    const profileId = cleanWishlistId(msg.profileId, 100);
+    if (!profileId) throw new Error('Character profile is required');
+    if (!Number.isSafeInteger(msg.expectedRevision) || msg.expectedRevision < 0) throw new Error('DPS scenario revision is required');
+    const profiles = await storageGet('profiles', {});
+    if (!profiles || !Object.prototype.hasOwnProperty.call(profiles, profileId)) throw new Error('Character no longer exists');
+    const scenarios = await storageGet(DPS_SCENARIOS_KEY, {});
+    const current = scenarios && typeof scenarios === 'object' ? scenarios[profileId] : undefined;
+    const currentRevision = current == null ? 0 : current.revision;
+    if (!Number.isSafeInteger(currentRevision) || currentRevision < 0) throw new Error('Stored DPS scenario is invalid');
+    if (msg.expectedRevision !== currentRevision) throw new Error('DPS scenario changed in another tab. Reload it before saving.');
+    if (current) LootCaptain.dps.validateScenario(current);
+    if (!msg.scenario || typeof msg.scenario !== 'object' || Array.isArray(msg.scenario)) throw new Error('DPS scenario is required');
+    if (msg.scenario.revision !== undefined && msg.scenario.revision !== currentRevision) throw new Error('DPS scenario revision is stale');
+    const normalized = LootCaptain.dps.validateScenario({ ...msg.scenario, revision: currentRevision });
+    if (currentRevision >= Number.MAX_SAFE_INTEGER) throw new Error('DPS scenario revision cannot be incremented');
+    const saved = { ...normalized, revision: currentRevision + 1 };
+    const nextScenarios = { ...(scenarios && typeof scenarios === 'object' ? scenarios : {}), [profileId]: saved };
+    await chrome.storage.local.set({ [DPS_SCENARIOS_KEY]: nextScenarios });
+    return saved;
+  });
+}
+
+async function dpsComparisonBinding(profile, candidate, scenario) {
+  if (!globalThis.crypto || !globalThis.crypto.subtle || !LootCaptain.characterData ||
+      typeof LootCaptain.characterData.fingerprint !== 'function' || typeof LootCaptain.characterData.serialize !== 'function') {
+    throw new Error('DPS comparison binding is unavailable');
+  }
+  const physical = await LootCaptain.characterData.fingerprint(profile);
+  const effectCoverage = (profile.items || []).map((item) => item && item.effectsKnown === true);
+  const payload = physical + '|' + LootCaptain.characterData.serialize({ candidate, scenario, effectCoverage });
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 // ---------- Message handling ----------
@@ -816,6 +865,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!Number.isInteger(index) || index < 0 || index >= profile.items.length) throw new Error('Choose an equipped comparison target');
         const worn = profile.items[index];
         if (!msg.expected || ['id', 'name', 'slot'].some((key) => String(worn[key] || '') !== String(msg.expected[key] || ''))) throw new Error('Comparison target changed; reopen the comparison');
+        if ((msg.mode === 'dps-reference') || (msg.mode === 'dps' && msg.assumptions && msg.assumptions.scope === 'equipped-weapons')) {
+          const snapshot = profile.items.map((item, itemIndex) => {
+            const slot = parserCanonicalSlot(item && item.slot);
+            const keys = slot && (slot.keys || [slot.key]);
+            return item && !item.isAugment && keys && keys.some((key) => key === 'primary' || key === 'secondary')
+              ? { index: itemIndex, id: item.id || '', name: item.name || '', slot: item.slot || '' } : null;
+          }).filter(Boolean);
+          const expectedWeapons = Array.isArray(msg.expectedWeapons) ? msg.expectedWeapons : [];
+          if (expectedWeapons.length !== snapshot.length || expectedWeapons.some((expected, itemIndex) => {
+            return !expected || !Number.isInteger(expected.index) || ['id', 'name', 'slot'].some((key) => String(expected[key] || '') !== String(snapshot[itemIndex][key] || '')) || expected.index !== snapshot[itemIndex].index;
+          })) throw new Error('Weapon equipment changed; reopen the comparison');
+        }
+        if (msg.mode === 'dps-reference') {
+          const expectedEquipment = Array.isArray(msg.expectedEquipment) ? msg.expectedEquipment : [];
+          if (expectedEquipment.length !== profile.items.length || expectedEquipment.some((expected, itemIndex) => {
+            const actual = profile.items[itemIndex];
+            return !expected || expected.index !== itemIndex || ['id', 'name', 'slot'].some((key) =>
+              normalizedEquipmentValue(expected[key]) !== normalizedEquipmentValue(actual && actual[key])) || !!expected.isAugment !== !!(actual && actual.isAugment);
+          })) throw new Error('Equipment changed; reopen the comparison');
+        }
         const candidate = sanitizeProfileItem(msg.item);
         const oldSlot = parserCanonicalSlot(worn.slot), newSlot = parserCanonicalSlot(candidate.slot);
         if (!oldSlot || !newSlot || !(oldSlot.keys || [oldSlot.key]).some((key) => (newSlot.keys || [newSlot.key]).includes(key)) || !!worn.isAugment !== !!candidate.isAugment) throw new Error('Incompatible replacement slot');
@@ -823,10 +892,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const classes = parserParseClasses(msg.classes);
         if (classes.length && !classes.includes('ALL') && !classes.includes(parserNormalizeClass(profile.cls))) throw new Error('This character cannot wear the candidate');
         if (msg.requiredLevel != null && (!Number.isInteger(msg.requiredLevel) || msg.requiredLevel < 1 || msg.requiredLevel > Number(profile.level))) throw new Error('Candidate level requirement is incompatible');
-        if (msg.mode != null && !['reference', 'calibrated'].includes(msg.mode)) throw new Error('Unknown projection mode');
+        if (msg.mode != null && !['reference', 'calibrated', 'dps', 'dps-reference'].includes(msg.mode)) throw new Error('Unknown projection mode');
+        const dpsScenarios = msg.mode === 'dps-reference' ? await storageGet(DPS_SCENARIOS_KEY, {}) : null;
+        const dpsScenario = msg.mode === 'dps-reference' && dpsScenarios && typeof dpsScenarios === 'object'
+          ? dpsScenarios[msg.profileId] : undefined;
+        let dpsScenarioResolved = null;
+        let dpsBinding = null;
+        if (msg.mode === 'dps-reference') {
+          const reference = LootCaptain.dps && typeof LootCaptain.dps.referenceScenario === 'function'
+            ? LootCaptain.dps.referenceScenario({ ...profile, id: msg.profileId }, dpsScenario) : { scenario: dpsScenario };
+          dpsScenarioResolved = reference.scenario;
+          dpsBinding = await dpsComparisonBinding(profile, candidate, dpsScenarioResolved);
+          const requested = msg.confirmation;
+          const wantsConfirmation = requested && (requested.effectsComplete === true || requested.weaponProcsComplete === true || requested.spellFocusComplete === true);
+          if (wantsConfirmation && requested.binding !== dpsBinding) throw new Error('DPS comparison changed; reopen the comparison');
+        }
         const projection = msg.mode === 'calibrated'
           ? await LootCaptain.projection.project({ ...profile, id: msg.profileId }, candidate, worn, msg.confirmed === true)
+          : msg.mode === 'dps-reference'
+            ? LootCaptain.dps.referenceProject({ ...profile, id: msg.profileId }, candidate, worn, dpsScenario, msg.confirmation || {})
+          : msg.mode === 'dps'
+            ? LootCaptain.dps.project({ ...profile, id: msg.profileId }, candidate, worn, msg.assumptions)
           : await LootCaptain.referenceStats.project({ ...profile, id: msg.profileId }, candidate, worn);
+        if (msg.mode === 'dps-reference' && projection && projection.scenario && LootCaptain.dps &&
+            Number(projection.scenario.version) < Number(LootCaptain.dps.SCENARIO_VERSION) &&
+            typeof LootCaptain.dps.upgradeScenario === 'function') {
+          projection.upgradeScenario = LootCaptain.dps.upgradeScenario(projection.scenario);
+        }
+        if (msg.mode === 'dps-reference' && projection) projection.comparisonBinding = dpsBinding;
         sendResponse({ ok: true, projection });
         break;
       }
@@ -1005,6 +1098,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'SAVE_PROFILES': {
         const profiles = await saveProfiles(msg.profiles, Array.isArray(msg.deletedIds) ? msg.deletedIds : [], msg.expectedProfiles);
         sendResponse({ ok: true, profiles });
+        break;
+      }
+      case 'SET_DPS_SCENARIO': {
+        const scenario = await saveDpsScenario(msg);
+        sendResponse({ ok: true, scenario });
         break;
       }
       default:

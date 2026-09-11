@@ -105,7 +105,11 @@ function renderCharacterFormula() {
     return option;
   }));
   select.value = resolved.key;
-  $('#character-formula-status').textContent = resolved.warning || '';
+  const suggestion = scoring.suggestedFormula && scoring.suggestedFormula(editingProfile);
+  $('#character-formula-status').textContent = resolved.warning ||
+    (suggestion && !editingProfile.scoreFormula
+      ? 'Suggested for ' + (editingProfile.cls || 'this class') + ': ' + suggestion.label + '. Choose any preference.'
+      : '');
   select.onchange = async () => {
     const id = editingId;
     const formula = SCORE_FORMULAS.find((entry) => entry.key === select.value);

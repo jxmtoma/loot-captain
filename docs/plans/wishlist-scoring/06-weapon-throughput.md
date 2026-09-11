@@ -2,7 +2,15 @@
 
 Roadmap: [Wishlist and scoring roadmap](../../wishlist-and-scoring-roadmap.md)
 
-Status: Research gate; no full DPS implementation
+Status: Explicit-assumption calculator accepted; automatic live-DPS prediction unsupported.
+See [06A](06a-dps-estimates.md) for the contribution plan, evidence limits, worked
+arithmetic and first level-100 Beastlord melee/proc increment.
+See [06B](06b-equipped-weapon-dps.md) for the optional equipped-weapon subtotal using
+separate explicit assumptions per hand.
+
+The original feasibility criteria below remain the gate for automatically derived combat
+rules. No combat-log sample is claimed. The narrower calculator makes every combat input
+explicit and compares weapon contributions under one shared scenario.
 
 ## Objective
 

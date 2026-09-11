@@ -8,6 +8,48 @@ const core = { console }; core.window = core;
 for (const file of ['slots', 'parser', 'diff']) vm.runInNewContext(read('content/shared/' + file + '.js'), core);
 const LC = core.LootCaptain;
 const choice = (key, version = 1) => ({ key, version });
+const preset = (key) => LC.diff.SCORE_FORMULAS.find((formula) => formula.key === key);
+assert.equal(JSON.stringify(preset('role-tank').terms), JSON.stringify({ HP: 1, AC: 10, HSta: 20 }));
+assert.equal(JSON.stringify(preset('role-melee').terms), JSON.stringify({ HP: 1, ATK: 5, HDex: 20 }));
+assert.equal(JSON.stringify(preset('role-caster').terms), JSON.stringify({ MANA: 1, 'Spell Dmg': 10 }));
+assert.equal(preset('role-melee').label, 'Melee stat preference');
+assert.equal(preset('role-caster').label, 'Caster stat preference');
+assert.equal(JSON.stringify(preset('role-healer').terms), JSON.stringify({ MANA: 1, 'Heal Amount': 10 }));
+assert.equal(JSON.stringify(preset('role-raw').terms), '{}');
+assert.equal(LC.diff.suggestedFormula({ cls: 'Beastlord' }).key, 'role-melee');
+assert.equal(LC.diff.suggestedFormula({ cls: 'BST' }).key, 'role-melee');
+assert.equal(LC.diff.suggestedFormula({ cls: 'Bard' }).key, 'role-raw');
+const melee = preset('role-melee');
+const meleeDiff = LC.diff.diffItems(
+  { stats: { HP: 130, ATK: 40, HDex: 3 } },
+  { stats: { HP: 100, ATK: 10, HDex: 2 } }, melee);
+assert.equal(meleeDiff.score, 200);
+assert.deepEqual(Array.from(meleeDiff.breakdown, (row) => [row.key, row.delta, row.weight, row.contribution]), [
+  ['HP', 30, 1, 30],
+  ['ATK', 30, 5, 150],
+  ['HDex', 1, 20, 20],
+]);
+const incompleteMelee = LC.diff.diffItems({ stats: { HP: 130, ATK: 40 } }, { stats: { HP: 100, ATK: 10 } }, melee);
+assert.equal(incompleteMelee.score, null);
+assert.equal(incompleteMelee.breakdown.find((row) => row.key === 'ATK').contribution, 150);
+assert.equal(incompleteMelee.breakdown.find((row) => row.key === 'HDex').contribution, null);
+const negativeMelee = LC.diff.diffItems({ stats: { HP: 100, ATK: 0, HDex: 2 } }, { stats: { HP: 100, ATK: 10, HDex: 2 } }, melee);
+assert.equal(negativeMelee.score, -50);
+assert.equal(negativeMelee.breakdown.find((row) => row.key === 'ATK').contribution, -50);
+for (const key of ['role-tank', 'role-melee', 'role-caster', 'role-healer', 'role-raw']) {
+  assert.equal(LC.diff.resolveFormula({ scoreFormula: choice(key) }, 'hp').key, key);
+}
+const rawDiff = LC.diff.diffItems({ stats: { HP: 130 } }, { stats: { HP: 100 } }, preset('role-raw'));
+assert.equal(rawDiff.score, null);
+assert.equal(rawDiff.numericScoreAvailable, false);
+const legacyFormula = preset('netpos');
+assert.equal(LC.diff.wishlistComparisonDirection(
+  { stats: { HP: 150 } }, [{ stats: { HP: 100 } }], legacyFormula), 0);
+const neutralMulti = LC.diff.compareCandidateMulti([
+  { id: 'legacy', cls: 'Warrior', items: [{ name: 'Old', slot: 'Head', stats: { HP: 100, AC: 10 } }] },
+], { name: 'New', slot: 'Head', slotKey: LC.slots.canonicalSlot('Head'), stats: { HP: 150, AC: 20 } }, legacyFormula);
+assert.equal(neutralMulti.best, null);
+assert.equal(neutralMulti.results[0].summary.recommendationAvailable, false);
 const hpProfile = { id: 'hp', cls: 'Warrior', scoreFormula: choice('hp'), items: [
   { name: 'Old Helm', slot: 'Head', stats: { HP: 100, MANA: 100, AC: 10 } },
 ] };
@@ -77,6 +119,11 @@ assert.equal(LC.diff.compareItemPair(effects, { stats: { HP: 100 } }, null, 125,
   assert.equal(storage.profiles.hp.scoreFormula.key, 'mana');
   assert.deepEqual(storage.profiles.hp.items, before.items);
   assert.deepEqual(storage.profiles.hp.wishlist, before.wishlist);
+  for (const key of ['role-tank', 'role-melee', 'role-caster', 'role-healer', 'role-raw']) {
+    assert.equal((await send({ type: 'SET_PROFILE_FORMULA', profileId: 'hp', formula: choice(key) })).ok, true);
+    assert.equal(storage.profiles.hp.scoreFormula.key, key);
+  }
+  assert.equal((await send({ type: 'SET_PROFILE_FORMULA', profileId: 'hp', formula: choice('mana') })).ok, true);
   // An editor opened before the popup mutation must not restore its stale preference.
   assert.equal((await send({ type: 'SAVE_PROFILES', profiles: { hp: before }, deletedIds: [] })).ok, true);
   assert.equal(storage.profiles.hp.scoreFormula.key, 'mana');
@@ -106,13 +153,18 @@ assert.equal(LC.diff.compareItemPair(effects, { stats: { HP: 100 } }, null, 125,
   // Run the popup event handlers against the real mutation handler.
   const element = (tag = 'div') => ({
     tagName: tag.toUpperCase(), children: [], dataset: {}, listeners: {}, value: '', title: '',
+    isConnected: true,
+    attributes: {},
     _text: '', classList: { toggle() {}, remove() {}, add() {} },
     set textContent(value) { this._text = String(value); this.children = []; },
     get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); },
     appendChild(child) { this.children.push(child); return child; },
+    insertBefore(child, before) { const index = this.children.indexOf(before); if (index < 0) this.children.push(child); else this.children.splice(index, 0, child); return child; },
     replaceChildren(...children) { this.children = children; this._text = ''; },
     addEventListener(type, callback) { this.listeners[type] = callback; },
-    setAttribute() {}, querySelector() { return null; },
+    setAttribute(name, value) { this.attributes[name] = String(value); },
+    getAttribute(name) { return this.attributes[name] || null; },
+    querySelector() { return null; },
   });
   const controls = Object.fromEntries(['btn-options', 'compare-list', 'layout-select', 'formula-character',
     'formula-select', 'formula-status', 'status'].map((id) => ['#' + id, element()]));
@@ -146,9 +198,42 @@ assert.equal(LC.diff.compareItemPair(effects, { stats: { HP: 100 } }, null, 125,
 
   core.document = { createElement: element, createTextNode: (text) => ({ textContent: text }) };
   vm.runInNewContext(read('content/shared/ui.js'), core);
+  let dpsProjectionCalls = 0;
+  LC.state = { getCharacterProjection: async () => {
+    dpsProjectionCalls += 1;
+    return { ok: true, projection: { outputs: [
+      { metric: 'Weapon melee DPS', available: true, current: 88, candidate: 69.33, delta: -18.67 },
+    ] } };
+  } };
+  const dpsWorn = { name: 'Worn Claw', slot: 'Primary', slotKey: { key: 'primary', keys: ['primary'] }, stats: { Damage: 100, Delay: 20, HP: 100, ATK: 10, HDex: 2 } };
+  const dpsCandidate = { name: 'Candidate Claw', slot: 'Primary', slotKey: { key: 'primary', keys: ['primary'] }, stats: { Damage: 120, Delay: 30, HP: 100, ATK: 10, HDex: 2 } };
+  const dpsProfile = { id: 'bst100', name: 'bst100', cls: 'Beastlord', level: 100, scoreFormula: choice('role-melee'), items: [dpsWorn] };
+  const dpsDiff = LC.diff.diffItems(dpsCandidate, dpsWorn, melee);
+  const dpsBadge = LC.ui.buildComparisonBadge({ target: dpsWorn, diff: dpsDiff, slotKey: dpsCandidate.slotKey }, melee, false, dpsCandidate, dpsProfile);
+  assert.match(dpsBadge.textContent, /^P Stats /);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(dpsBadge.textContent, /Melee DPS est\. -18\.67/);
+  assert.equal(dpsProjectionCalls, 1);
+  const cachedBadge = LC.ui.buildComparisonBadge({ target: dpsWorn, diff: dpsDiff, slotKey: dpsCandidate.slotKey }, melee, false, dpsCandidate, dpsProfile);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(cachedBadge.textContent, /Melee DPS est\. -18\.67/);
+  assert.equal(dpsProjectionCalls, 1);
+  const perCharacter = LC.ui.buildPerCharacterBadges({ results: [{ profile: dpsProfile, empty: false,
+    summary: { comparable: true, numericScoreAvailable: true, score: dpsDiff.score }, comparison: {
+      rows: [{ target: dpsWorn, diff: dpsDiff, slotKey: { key: 'primary' } }],
+    } }] }, dpsCandidate, melee, false)[0];
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(perCharacter.textContent, /bst100 P Stats .*Melee DPS est\. -18\.67/);
+  const casterBadge = LC.ui.buildComparisonBadge({ target: dpsWorn, diff: dpsDiff, slotKey: dpsCandidate.slotKey }, preset('role-caster'), false, dpsCandidate, { ...dpsProfile, scoreFormula: choice('role-caster') });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(casterBadge.textContent, /Melee DPS est/);
+  assert.match(casterBadge.title, /Includes known melee stats/);
   const badge = LC.ui.buildMultiComparisonBadges(multi, candidate, LC.diff.SCORE_FORMULAS[0], false)[0];
-  assert.match(badge.textContent, /Different formulas/);
+  assert.equal(badge.textContent, 'Compare');
+  assert.equal(badge.tagName, 'BUTTON');
+  assert.equal(badge.type, 'button');
   assert.equal(badge.dataset.state, 'nomatch');
+  assert.match(badge.title, /different formulas/);
   const effectsDiff = LC.diff.compareItemPair(effects, empty, null, 125, hpProfile);
   const effectRow = { target: empty, diff: effectsDiff, slotKey: { key: 'head' } };
   const combined = LC.ui.buildComparisonBadges(effectRow, LC.diff.SCORE_FORMULAS[0], false);
@@ -156,14 +241,101 @@ assert.equal(LC.diff.compareItemPair(effects, { stats: { HP: 100 } }, null, 125,
   assert.ok(combined.every(badge=>!badge.textContent.includes('other effects')));
   const effectOnly = { ...effectRow, diff: { ...effectsDiff, numericScoreAvailable:false, hasData:false } };
   assert.equal(LC.ui.buildComparisonBadges(effectOnly, LC.diff.SCORE_FORMULAS[0], false).filter(badge=>badge.dataset.lcView==='stats').length,1);
+  const procOnlyCandidate = LC.parser.parseOpenDkpJson({ name: 'Proc only', slot: 'Primary', effects: [{ type: 'proc', name: 'Fire Strike', raw: 'Fire Strike' }] });
+  const procOnlyWorn = LC.parser.parseOpenDkpJson({ name: 'Old proc', slot: 'Primary', effects: [] });
+  const procOnlyDiff = LC.diff.compareItemPair(procOnlyCandidate, procOnlyWorn, null, 100, { items: [procOnlyWorn] });
+  const procOnlyBadges = LC.ui.buildComparisonBadges({ target: procOnlyWorn, diff: procOnlyDiff, slotKey: { key: 'primary' } }, preset('role-melee'), false);
+  assert.equal(procOnlyBadges.length, 1);
+  assert.equal(procOnlyBadges[0].textContent, 'Compare primary');
+  assert.equal(procOnlyBadges[0].tagName, 'BUTTON');
+  const focusOnlyCandidate = LC.parser.parseOpenDkpJson({ name: 'Focus only', slot: 'Head', effects: [{ type: 'focus', name: 'Ferocity 10 L100', raw: 'Ferocity 10 L100' }] });
+  const focusOnlyWorn = LC.parser.parseOpenDkpJson({ name: 'Old focus', slot: 'Head', effects: [] });
+  const focusOnlyDiff = LC.diff.compareItemPair(focusOnlyCandidate, focusOnlyWorn, null, 100, { items: [focusOnlyWorn] });
+  const focusOnlyBadges = LC.ui.buildComparisonBadges({ target: focusOnlyWorn, diff: focusOnlyDiff, slotKey: { key: 'head' } }, preset('role-melee'), false);
+  assert.equal(focusOnlyBadges.length, 1);
+  assert.equal(focusOnlyBadges[0].textContent, 'Compare');
+  assert.equal(focusOnlyBadges[0].tagName, 'BUTTON');
+  assert.match(LC.ui.buildComparePanel(procOnlyCandidate, procOnlyWorn, procOnlyDiff, 'primary').textContent, /Effects.*Proc/);
+  assert.match(LC.ui.buildComparePanel(focusOnlyCandidate, focusOnlyWorn, focusOnlyDiff, 'head').textContent, /Effects.*Spell focus/);
   const panel = LC.ui.buildComparePanel(effects, empty, effectsDiff, 'head');
+  assert.match(panel.textContent, /head: Empty → Effect Helm/);
+  assert.match(panel.textContent, /All item stats/);
+  assert.match(panel.textContent, /Effects/);
   assert.match(panel.textContent, /informational; not scored/);
   assert.match(panel.textContent, /hp v1/);
   assert.match(panel.textContent, /Strange Aura|Unknown stacking/);
+  const rawPanel = LC.ui.buildComparePanel({ name: 'Raw candidate', stats: { HP: 150 } },
+    { name: 'Raw worn', stats: { HP: 100 } }, rawDiff, 'head');
+  assert.match(rawPanel.textContent, /no aggregate score/);
+  const breakdownPanel = LC.ui.buildComparePanel({ name: 'Melee candidate', stats: { HP: 130, ATK: 40, HDex: 3 } },
+    { name: 'Melee worn', stats: { HP: 100, ATK: 10, HDex: 2 } }, meleeDiff, 'head');
+  assert.match(breakdownPanel.textContent, /Preference score \(not DPS\)/);
+  assert.match(breakdownPanel.textContent, /Melee stat preference.*role-melee v1/);
+  assert.match(breakdownPanel.textContent, /ATK.*150/);
+  const weaponWorn = { name: 'Fearbrand', slot: 'Primary', slotKey: { key: 'primary', keys: ['primary'] }, stats: { Damage: 116, Delay: 18, HP: 100, ATK: 10, HDex: 2 } };
+  const weaponCandidate = { name: 'Tolvak', slot: 'Primary', slotKey: { key: 'primary', keys: ['primary'] }, stats: { Damage: 110, Delay: 19, HP: 115, ATK: 10, HDex: 3 } };
+  const weaponDiff = LC.diff.diffItems(weaponCandidate, weaponWorn, melee);
+  assert.equal(weaponDiff.score, 35);
+  const weaponRow = { target: weaponWorn, diff: weaponDiff, slotKey: weaponCandidate.slotKey };
+  const weaponBadge = LC.ui.buildComparisonBadges(weaponRow, melee, false)[0];
+  assert.equal(weaponBadge.textContent, 'P Stats +35');
+  assert.equal(weaponBadge.dataset.state, 'upgrade');
+  assert.match(weaponBadge.title, /Higher stat preference score; not a DPS estimate/);
+  assert.match(weaponBadge.getAttribute('aria-label'), /Higher stat preference score/);
+  assert.equal(weaponBadge.tagName, 'BUTTON');
+  const weaponPanel = LC.ui.buildComparePanel(weaponCandidate, weaponWorn, weaponDiff, 'primary');
+  assert.match(weaponPanel.textContent, /Stats \+35/);
+  assert.match(weaponPanel.textContent, /Preference score \(not DPS\)/);
   const ownerButton = LC.ui.buildWishlistCompareButton(candidate, [
     { target: hpProfile.items[0], profile: hpProfile },
     { target: manaProfile.items[0], profile: manaProfile },
   ], null);
   assert.doesNotMatch(ownerButton.textContent, /↑|↓/);
+  const mixedOwnerButton = LC.ui.buildWishlistCompareButton(candidate, [
+    { target: { ...hpProfile.items[0], stats: { HP: 100, MANA: 100 } }, profile: { ...hpProfile, scoreFormula: choice('hp') } },
+    { target: { ...hpProfile.items[0], stats: { HP: 100, MANA: 100 } }, profile: { ...hpProfile, scoreFormula: choice('mana') } },
+  ], null);
+  assert.equal(mixedOwnerButton.dataset.state, 'nomatch');
+  assert.doesNotMatch(mixedOwnerButton.textContent, /↑|↓/);
+  const positiveMixedButton = LC.ui.buildWishlistCompareButton(
+    { name: 'Positive candidate', stats: { HP: 150, MANA: 150 } }, [
+      { target: { name: 'HP target', stats: { HP: 100, MANA: 100 } }, profile: { ...hpProfile, scoreFormula: choice('hp') } },
+      { target: { name: 'Mana target', stats: { HP: 100, MANA: 100 } }, profile: { ...manaProfile, scoreFormula: choice('mana') } },
+    ], null);
+  assert.equal(positiveMixedButton.dataset.state, 'nomatch');
+  assert.doesNotMatch(positiveMixedButton.textContent, /↑|↓/);
+  const unsupportedButton = LC.ui.buildWishlistCompareButton(
+    { name: 'Unsupported candidate', stats: { HP: 150, AC: 2 } }, [
+      { target: { name: 'Supported target', stats: { HP: 100, AC: 1 } }, profile: { ...hpProfile, scoreFormula: choice('hp', 99) } },
+    ], null);
+  assert.equal(unsupportedButton.dataset.state, 'nomatch');
+  assert.doesNotMatch(unsupportedButton.textContent, /↑|↓/);
+
+  const verdictRow = (score, extra = {}) => ({ target: weaponWorn, slotKey: weaponCandidate.slotKey,
+    diff: { numericScoreAvailable: true, score, formula: melee, comparable: true, hasData: true, ...extra } });
+  assert.equal(LC.ui.buildComparisonBadge(verdictRow(1), melee, false).dataset.state, 'upgrade');
+  assert.equal(LC.ui.buildComparisonBadge(verdictRow(-1), melee, false).dataset.state, 'downgrade');
+  assert.equal(LC.ui.buildComparisonBadge(verdictRow(0), melee, false).dataset.state, 'sidegrade');
+  for (const score of [NaN, Infinity, -Infinity]) {
+    const unknown = LC.ui.buildComparisonBadge(verdictRow(score), melee, false);
+    assert.equal(unknown.dataset.state, 'nomatch');
+    assert.match(unknown.title, /score is unavailable/);
+  }
+  assert.equal(LC.ui.buildComparisonBadge(verdictRow(1, { numericScoreAvailable: false }), melee, false).dataset.state, 'nomatch');
+  assert.equal(LC.ui.buildComparisonBadge(verdictRow(1, { formula: preset('role-raw') }), preset('role-raw'), false).dataset.state, 'nomatch');
+  assert.equal(LC.ui.buildComparisonBadge(verdictRow(1, { formula: { ...melee, warning: 'unsupported' } }), melee, false).dataset.state, 'nomatch');
+
+  const mixedRows = {
+    results: [{ profile: hpProfile, empty: false, summary: { numericScoreAvailable: false, recommendationAvailable: true, score: null }, comparison: {
+      rows: [verdictRow(1), verdictRow(null, { numericScoreAvailable: false })],
+    } }],
+    mixedFormulas: false,
+  };
+  assert.equal(LC.ui.buildMultiComparisonBadges(mixedRows, candidate, melee, false)[0].dataset.state, 'nomatch');
+  const uiSource = read('content/shared/ui.js');
+  assert.match(uiSource, /\.lc-badge\{[^}]*background:#16212b/);
+  assert.match(uiSource, /\.lc-dps-metric\[data-state="upgrade"\][^}]*color:#86d99a/);
+  assert.match(uiSource, /\.lc-dps-metric\[data-state="downgrade"\][^}]*color:#ffaaa0/);
+  assert.doesNotMatch(uiSource, /\.lc-(?:badge|wishlist-compare|compare-chip)\[data-state="(?:upgrade|downgrade|sidegrade)"\]\{background:linear-gradient/);
   console.log('profile scoring and informational effects: ok');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

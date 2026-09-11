@@ -58,10 +58,14 @@ async function load() {
   characterSelect.value = formulaProfileId;
   characterSelect.disabled = !formulaProfileId;
   const resolved = scoring.resolveFormula(profiles[formulaProfileId], res[SCORE_KEY]);
-  $('#formula-status').textContent = resolved.warning || (formulaProfileId ? resolved.key + ' v' + resolved.version : 'Add a character first');
+  const suggestion = formulaProfileId && scoring.suggestedFormula(profiles[formulaProfileId]);
+  const suggestionText = suggestion && !profiles[formulaProfileId].scoreFormula
+    ? ' · Suggested for ' + (profiles[formulaProfileId].cls || 'this class') + ': ' + suggestion.label
+    : '';
+  $('#formula-status').textContent = resolved.warning || (formulaProfileId ? resolved.key + ' v' + resolved.version + suggestionText : 'Add a character first');
   // Formula select
   const formulaSel = $('#formula-select');
-  formulaSel.innerHTML = SCORE_FORMULAS.map((f) => '<option value="' + f.key + '">' + f.label + '</option>').join('');
+  formulaSel.innerHTML = SCORE_FORMULAS.map((f) => '<option value="' + f.key + '">' + f.label + ' v' + f.version + '</option>').join('');
   formulaSel.value = resolved.key;
   formulaSel.disabled = !formulaProfileId;
 

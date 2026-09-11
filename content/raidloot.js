@@ -185,7 +185,7 @@
     for (const [index, row] of comparison.rows.entries()) {
       if (cand.isAugment && index) break;
       if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
-      for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact)) {
+      for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact, cand, LC.currentProfile)) {
         rowBadge.dataset.lcRow = index;
         if (attachPanel) rowBadge.addEventListener('click', (ev) => {
           ev.preventDefault();
@@ -315,7 +315,6 @@
     if (!cand) return;
     annotateItemElement(div, cand);
     LC.ui.statifyItemDetail(div);
-    LC.ui.addStatIndicators(div, cand, LC.currentProfile, LC.currentFormula);
   }
 
   // ---------- Wishlist ----------
@@ -431,7 +430,7 @@
             rows.push({ icon, sortKey });
             continue;
           }
-          sortKey = emptyDiff.numericScoreAvailable ? emptyDiff.score : -Infinity;
+          sortKey = emptyDiff.numericScoreAvailable && emptyDiff.formula.recommendation !== false ? emptyDiff.score : -Infinity;
           badge.dataset.state = hasEffects && !emptyDiff.comparable ? 'sidegrade' : 'empty';
           const emptyRow = { slotKey: cand.slotKey, diff: comparison.rows[0].diff };
           badge.textContent = emptyDiff.numericScoreAvailable ? 'empty ' + LC.ui.comparisonBadgeText(emptyRow, f, LC.diff.weaponType(cand) != null) : (hasEffects ? 'effects' : 'score ?');
@@ -445,11 +444,11 @@
             rows.push({ icon, sortKey });
             continue;
           }
-          sortKey = summary.numericScoreAvailable ? summary.score : -Infinity;
+          sortKey = summary.numericScoreAvailable && summary.recommendationAvailable ? summary.score : -Infinity;
           const compact = (!cand.isAugment && comparison.rows.length > 1) || LC.diff.weaponType(cand) != null;
           for (const [index, row] of comparison.rows.entries()) {
             if (cand.isAugment && index) break;
-            meta.append(...LC.ui.buildComparisonBadges(row, f, compact));
+            meta.append(...LC.ui.buildComparisonBadges(row, f, compact, cand, LC.currentProfile));
           }
           rows.push({ icon, sortKey });
           continue;
@@ -488,7 +487,7 @@
       return;
     }
     if (!started) return;
-    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula'].some((k) => changes[k]);
+    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula', 'dpsScenariosByProfile'].some((k) => changes[k]);
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     rerunPageAnnotations(true);

@@ -23,18 +23,20 @@
     '.lc-projection [hidden]{display:none !important;}',
     '.lc-projection p,.lc-projection label{display:block;margin:8px 0;white-space:normal;}',
     '.lc-projection input[type="checkbox"]{width:auto;margin-right:8px;}',
-    '.lc-badge{display:inline-block;padding:2px 6px;margin:0 4px;border:1px solid rgba(224,190,112,.55);border-radius:3px;font:10px/1.2 sans-serif;font-weight:bold;cursor:pointer;vertical-align:middle;user-select:none;box-shadow:0 1px 2px rgba(0,0,0,.25);}',
-    '.lc-badge[data-state="upgrade"]{background:#315c4a;color:#eff8db;}',
-    '.lc-badge[data-state="downgrade"]{background:#673c36;color:#ffe3d0;}',
-    '.lc-badge[data-state="sidegrade"]{background:#655735;color:#fff1c8;}',
-    '.lc-badge[data-state="empty"]{background:#315369;color:#e0f2f0;}',
-    '.lc-badge[data-state="nomatch"]{background:#30393a;color:#d4cfbb;}',
-    '.lc-wishlist-toggle,.lc-wishlist-compare{display:inline-block;padding:2px 6px;margin:0 4px;border:1px solid #9d8248;border-radius:3px;background:#252d2e;color:#ead69c;font:10px/1.2 Tahoma,sans-serif;font-weight:bold;cursor:pointer;vertical-align:middle;user-select:none;box-shadow:inset 0 1px rgba(255,255,255,.12),0 1px 2px rgba(0,0,0,.25);}',
+    '.lc-badge{display:inline-block;padding:2px 6px;margin:0 4px;border:1px solid #64717e;border-radius:3px;background:#16212b;color:#c7cdd4;font:10px/1.2 sans-serif;font-weight:bold;cursor:pointer;vertical-align:middle;user-select:none;box-shadow:none;appearance:none;text-align:center;text-shadow:none;}',
+    '.lc-badge[data-state="upgrade"]{background:#16212b;color:#86d99a;}',
+    '.lc-badge[data-state="downgrade"]{background:#16212b;color:#ffaaa0;}',
+    '.lc-badge[data-state="sidegrade"]{background:#16212b;color:#f3d775;}',
+    '.lc-badge[data-state="empty"]{background:#16212b;color:#90c8f4;}',
+    '.lc-badge[data-state="nomatch"]{background:#16212b;color:#c7cdd4;}',
+    '.lc-wishlist-toggle,.lc-wishlist-compare{display:inline-block;padding:2px 6px;margin:0 4px;border:1px solid #64717e;border-radius:3px;background:#16212b;color:#c7cdd4;font:10px/1.2 Tahoma,sans-serif;font-weight:bold;cursor:pointer;vertical-align:middle;user-select:none;box-shadow:none;}',
     '.lc-wishlist-toggle{display:inline-block !important;width:auto !important;min-width:0 !important;max-width:none !important;height:auto !important;min-height:0 !important;padding:0 !important;margin:0 4px !important;border:0 !important;border-radius:0 !important;background:transparent !important;color:#b7974f !important;box-shadow:none !important;text-shadow:none !important;font:16px/1 sans-serif !important;appearance:none !important;}',
     '.lc-wishlist-toggle[aria-pressed="true"]{background:transparent !important;color:#e0b95f !important;border:0 !important;}',
     '.lc-wishlist-toggle:focus-visible{outline:1px solid #e0b95f !important;outline-offset:2px;}',
-    '.lc-wishlist-compare[data-state="upgrade"]{background:linear-gradient(#3f765d,#244d3d);color:#d9f4d6;border-color:#c8a85a;}',
-    '.lc-wishlist-compare[data-state="downgrade"]{background:linear-gradient(#804942,#4e2d2b);color:#ffe0d6;border-color:#b78162;}',
+    '.lc-wishlist-compare[data-state="upgrade"]{background:#16212b;color:#86d99a;border-color:#64717e;}',
+    '.lc-wishlist-compare[data-state="downgrade"]{background:#16212b;color:#ffaaa0;border-color:#64717e;}',
+    '.lc-wishlist-compare[data-state="sidegrade"]{background:#16212b;color:#f3d775;border-color:#64717e;}',
+    '.lc-wishlist-compare[data-state="nomatch"]{background:#16212b;color:#c7cdd4;border-color:#64717e;}',
     '.lc-wishlist-toggle:disabled{cursor:wait;opacity:.65;}',
     '.lc-wanted:not(tr){outline:2px solid rgba(224,188,104,.8) !important;outline-offset:1px;background-color:rgba(132,101,35,.12) !important;}',
     'tr.lc-wanted > td{background-image:linear-gradient(rgba(132,101,35,.22),rgba(132,101,35,.22)) !important;}',
@@ -43,11 +45,12 @@
     '.lc-wishlist-compare-panel > .lc-compare-panel{margin:6px 0 0;box-shadow:none;}',
     '.lc-multi-compare-panel > .lc-compare-panel{margin:6px 0 0;box-shadow:none;}',
     '.lc-compare-chips{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 6px;}',
-    '.lc-compare-chip{padding:1px 6px;border:1px solid rgba(224,190,112,.55);border-radius:3px;background:#202a2b;color:#dbe3dc;font:10px/1.5 monospace;cursor:pointer;user-select:none;}',
-    '.lc-compare-chip[data-state="upgrade"]{background:#315c4a;color:#eff8db;}',
-    '.lc-compare-chip[data-state="downgrade"]{background:#673c36;color:#ffe3d0;}',
-    '.lc-compare-chip[data-state="sidegrade"]{background:#655735;color:#fff1c8;}',
-    '.lc-compare-chip[data-state="empty"]{background:#315369;color:#e0f2f0;}',
+    '.lc-compare-chip{padding:1px 6px;border:1px solid #64717e;border-radius:3px;background:#16212b;color:#c7cdd4;font:10px/1.5 monospace;cursor:pointer;user-select:none;}',
+    '.lc-compare-chip[data-state="upgrade"]{background:#16212b;color:#86d99a;}',
+    '.lc-compare-chip[data-state="downgrade"]{background:#16212b;color:#ffaaa0;}',
+    '.lc-compare-chip[data-state="sidegrade"]{background:#16212b;color:#f3d775;}',
+    '.lc-compare-chip[data-state="nomatch"]{background:#16212b;color:#c7cdd4;border-color:#64717e;}',
+    '.lc-compare-chip[data-state="empty"]{background:#16212b;color:#90c8f4;}',
     '.lc-compare-chip.lc-active{outline:2px solid #e0b95f;outline-offset:0;}',
     '.lc-wishlist-picker{display:flex;align-items:center;gap:8px;color:#e0b96b;font-weight:bold;}',
     '.lc-wishlist-picker select{max-width:360px;background:#101d2e;color:#f0d18a;border:1px solid #8b7547;font:inherit;padding:2px 4px;}',
@@ -86,12 +89,15 @@
     '.lc-wish-name{flex:1 1 auto;color:#ddd;}',
     '.lc-wish-slot{flex:0 0 auto;color:#888;font-size:11px;text-transform:capitalize;}',
     '.lc-statified > br{display:none;}',
+    '.lc-statified .itemname{display:block;}',
     '.lc-stat-line{display:block;line-height:1.45;margin:1px 0;}',
     '.lc-stat-line > label{display:inline-block;min-width:96px;opacity:.85;}',
-    '.lc-badge{border-radius:2px;font-family:Tahoma,sans-serif;text-shadow:1px 1px rgba(0,0,0,.65);box-shadow:inset 0 1px rgba(255,255,255,.18),0 2px 4px rgba(0,0,0,.35);}',
-    '.lc-badge[data-state="upgrade"]{background:linear-gradient(#3f765d,#244d3d);color:#d9f4d6;border-color:#c8a85a;}',
-    '.lc-badge[data-state="downgrade"]{background:linear-gradient(#804942,#4e2d2b);color:#ffe0d6;border-color:#b78162;}',
-    '.lc-badge[data-state="sidegrade"]{background:linear-gradient(#806b3b,#514324);color:#fff0bd;border-color:#d0aa5b;}',
+    '.lc-badge{border-radius:2px;font-family:Tahoma,sans-serif;text-shadow:none;box-shadow:none;}',
+    '.lc-badge[data-state="upgrade"]{background:#16212b;color:#86d99a;border-color:#64717e;}',
+    '.lc-badge[data-state="downgrade"]{background:#16212b;color:#ffaaa0;border-color:#64717e;}',
+    '.lc-badge[data-state="sidegrade"]{background:#16212b;color:#f3d775;border-color:#64717e;}',
+    '.lc-badge[data-state="nomatch"]{background:#16212b;color:#c7cdd4;border-color:#64717e;}',
+    '.lc-badge[data-state="empty"]{background:#16212b;color:#90c8f4;border-color:#64717e;}',
     '.lc-compare-panel{background:linear-gradient(145deg,#15253a,#0a1422);border-color:#a38348;border-radius:2px;padding:10px 12px;box-shadow:inset 0 1px rgba(255,255,255,.1),inset 0 0 0 1px rgba(0,0,0,.35),0 5px 14px rgba(0,0,0,.4);font-family:Tahoma,monospace;}',
     '.lc-compare-panel table,.lc-compare-panel tr,.lc-compare-panel th,.lc-compare-panel td{background:#101d2e !important;}',
     '.lc-compare-panel tr:nth-child(even) td{background:#14243a !important;}',
@@ -100,6 +106,12 @@
     '.lc-compare-panel .lc-head{color:#f0d18a !important;text-shadow:1px 1px #07101b;}',
     '.lc-effect-details{margin-top:6px;color:#dbe3dc;}',
     '.lc-effect-details summary{cursor:pointer;color:#c6a45e;font-weight:bold;}',
+    '.lc-score-breakdown{margin-top:6px;color:#dbe3dc;}',
+    '.lc-score-breakdown summary{cursor:pointer;color:#c6a45e;font-weight:bold;}',
+    '.lc-dps-metric[data-state="upgrade"],.lc-dps-overview[data-state="upgrade"]{color:#86d99a !important;}',
+    '.lc-dps-metric[data-state="downgrade"],.lc-dps-overview[data-state="downgrade"]{color:#ffaaa0 !important;}',
+    '.lc-dps-metric[data-state="sidegrade"],.lc-dps-overview[data-state="sidegrade"]{color:#f3d775 !important;}',
+    '.lc-dps-metric[data-state="nomatch"],.lc-dps-overview[data-state="nomatch"]{color:#c7cdd4 !important;}',
   ].join('\n');
 
   function injectCSS() {
@@ -122,14 +134,213 @@
     return sign + (Number.isInteger(d) ? d.toLocaleString() : d.toFixed(2));
   }
 
+  // Reference DPS is deliberately a small, per-profile cache. The profile and
+  // item objects are replaced when storage changes, so WeakMap identity also
+  // gives us the invalidation we need after a saved scenario/equipment edit.
+  const dpsReferenceCache = new WeakMap();
+
+  function resolvedProfileFormula(profile, formula) {
+    return LC.diff && LC.diff.resolveFormula
+      ? LC.diff.resolveFormula(profile, formula)
+      : formula;
+  }
+
+  function dpsProfileRole(profile, formula) {
+    const key = resolvedProfileFormula(profile, formula)?.key;
+    return key === 'role-melee' || key === 'role-caster' ? key : '';
+  }
+
+  function dpsEligibility(cand, worn, profile, formula) {
+    const selectedRole = dpsProfileRole(profile, formula);
+    const supportedProfile = profile && ['beastlord', 'bst'].includes(String(profile.cls || '').trim().toLowerCase()) && Number(profile.level) === 100;
+    if (!supportedProfile) return { role: selectedRole, supported: false, kind: 'unsupported', reason: 'Player DPS estimate supports level-100 Beastlords only.' };
+    return { role: selectedRole || 'player-dps', supported: true, reason: '' };
+  }
+
+  function cachedDpsReference(cand, profile, worn) {
+    if (!LC.state || typeof LC.state.getCharacterProjection !== 'function' || !cand || !profile || !worn) {
+      return Promise.resolve(null);
+    }
+    let byCandidate = dpsReferenceCache.get(profile);
+    if (!byCandidate) { byCandidate = new WeakMap(); dpsReferenceCache.set(profile, byCandidate); }
+    let byWorn = byCandidate.get(cand);
+    if (!byWorn) { byWorn = new WeakMap(); byCandidate.set(cand, byWorn); }
+    let request = byWorn.get(worn);
+    if (!request) {
+      request = Promise.resolve(LC.state.getCharacterProjection(cand, profile, worn, false, 'dps-reference'))
+        .catch(() => null);
+      byWorn.set(worn, request);
+    }
+    return request;
+  }
+
+  function dpsOutput(projection) {
+    const outputs = projection && Array.isArray(projection.outputs) ? projection.outputs : [];
+    const order = ['Player DPS', 'Melee + procs DPS', 'Melee DPS', 'Melee stats DPS', 'Spell DPS', 'Spell stats DPS', 'Weapon melee DPS'];
+    return order.map((metric) => outputs.find((output) => output && output.available && output.metric === metric)).find(Boolean) || null;
+  }
+
+  function dpsMetricDescriptor(output) {
+    if (!output) return { label: 'Melee DPS est.', partial: false, scope: 'Reference DPS estimate is unavailable.' };
+    const partial = output.metric === 'Melee stats DPS' || output.partial === true;
+    if (output.metric === 'Player DPS') {
+      const included = Array.isArray(output.includedComponents) ? output.includedComponents.join(', ') : '';
+      const excluded = Array.isArray(output.excludedComponents) ? output.excludedComponents.join(', ') : '';
+      return { label: 'DPS est.', partial, scope: (included ? 'Includes ' + included + '.' : 'Includes the best known player-damage components.') +
+        (excluded ? ' Excludes ' + excluded + '.' : '') };
+    }
+    if (output.metric === 'Spell stats DPS') return { label: 'Spell stats est.', partial: true, scope: 'Unfocused spell reference; focus modifiers excluded.' };
+    if (output.metric === 'Spell DPS') return { label: 'Spell DPS est.', partial, scope: 'Includes the shared spell rotation and known spell stats/focus; melee and pets remain excluded.' };
+    if (output.metric === 'Melee + procs DPS') return { label: 'Melee + procs DPS est.', partial, scope: 'Includes known melee stats, worn effects and cataloged weapon procs; spell focus and pets remain unmodeled.' };
+    if (output.metric === 'Melee stats DPS') return { label: 'Melee stats est.', partial: true, scope: 'Includes known melee stats only; worn effects and weapon procs remain unresolved; spell focus and pets remain unmodeled.' };
+    return { label: 'Melee DPS est.', partial, scope: 'Includes known melee stats and worn effects; weapon procs may remain unresolved; spell focus and pets remain unmodeled.' };
+  }
+
+  function dpsState(delta) {
+    return Number.isFinite(delta) ? (delta > 0 ? 'upgrade' : delta < 0 ? 'downgrade' : 'sidegrade') : 'nomatch';
+  }
+
+  function dpsMetricLabel(projection, eligibility) {
+    const output = dpsOutput(projection);
+    if (output) {
+      const descriptor = dpsMetricDescriptor(output);
+      return { text: ' · ' + descriptor.label + ' ' + fmtDelta(output.delta) + (descriptor.partial ? ' (partial)' : ''), state: dpsState(output.delta) };
+    }
+    return { text: ' · ' + (eligibility && eligibility.kind === 'unsupported' ? 'DPS not modeled' : 'DPS unavailable'), state: 'nomatch' };
+  }
+
+  function setDpsMetric(metric, projection, eligibility) {
+    const value = dpsMetricLabel(projection, eligibility);
+    metric.dataset.state = value.state;
+    metric.textContent = value.text;
+  }
+
+  function prependBadgeText(badge, text) {
+    const metric = badge.__lcDpsMetric;
+    if (metric && typeof badge.insertBefore === 'function') {
+      // The test DOM stores the original text separately; real DOM nodes do not.
+      if (Object.prototype.hasOwnProperty.call(badge, '_text')) badge._text = text + badge._text;
+      else badge.insertBefore(document.createTextNode(text), badge.firstChild || metric);
+    } else {
+      badge.textContent = text + badge.textContent;
+    }
+  }
+
+  function dpsMetricReason(projection, fallback) {
+    const output = projection && Array.isArray(projection.outputs)
+      ? projection.outputs.find((entry) => entry && /dps/i.test(String(entry.metric || '')))
+      : null;
+    return (output && output.reason) || (projection && projection.reason) || fallback || 'Reference DPS scenario is unavailable.';
+  }
+
+  function appendDpsMetric(badge, cand, worn, profile, formula) {
+    const eligibility = dpsEligibility(cand, worn, profile, formula);
+    if (!profile || !eligibility.role) return;
+    const metric = document.createElement('span');
+    metric.className = 'lc-dps-metric';
+    badge.appendChild(metric);
+    badge.__lcDpsMetric = metric;
+    const apply = (projection, asynchronous = false) => {
+      if (asynchronous && !badge.isConnected) return;
+      setDpsMetric(metric, eligibility.supported ? projection : null, eligibility);
+      const currentTitle = badge.title || '';
+      const scenarioBasis = projection
+        ? projection.scenarioDefault ? 'Illustrative default reference scenario.' : 'Saved character reference scenario.' : '';
+      const selectedOutput = dpsOutput(projection);
+      const reason = eligibility.supported && selectedOutput
+        ? (scenarioBasis ? scenarioBasis + ' ' : '') + dpsMetricDescriptor(selectedOutput).scope
+        : eligibility.supported ? (scenarioBasis ? scenarioBasis + ' ' : '') + dpsMetricReason(projection, 'Reference melee DPS is unavailable.') : eligibility.reason;
+      badge.title = currentTitle + '; ' + reason;
+      badge.setAttribute('aria-label', badge.title);
+    };
+    if (!eligibility.supported) { apply(null); return; }
+    metric.dataset.state = 'nomatch';
+    metric.textContent = ' · DPS est. loading…';
+    badge.dataset.lcDps = 'pending';
+    cachedDpsReference(cand, profile, worn).then((response) => {
+      if (!response || !response.ok || !response.projection) apply(null, true);
+      else apply(response.projection, true);
+      delete badge.dataset.lcDps;
+    });
+  }
+
+  function invalidateDpsReference(profile) {
+    if (profile) dpsReferenceCache.delete(profile);
+  }
+
   // ---------- Badge ----------
   function buildBadge(state, text, title) {
     const badge = document.createElement('span');
     badge.className = 'lc-badge';
     badge.dataset.state = state;
     badge.textContent = text;
-    if (title) badge.title = title;
+    if (title) { badge.title = title; badge.setAttribute('aria-label', title); }
     return badge;
+  }
+
+  function buildCompareButton(state, text, title) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lc-badge';
+    button.dataset.state = state;
+    button.textContent = text;
+    if (title) { button.title = title; button.setAttribute('aria-label', title); }
+    return button;
+  }
+
+  function formulaSignature(formula) {
+    return formula && formula.key != null ? String(formula.key) + ':' + String(formula.version || '') : '';
+  }
+
+  function comparisonVerdict(diff, formula) {
+    const resolved = diff && diff.formula || formula;
+    if (!diff || diff.numericScoreAvailable !== true || !Number.isFinite(diff.score) ||
+        !resolved || resolved.recommendation === false || resolved.warning) {
+      const explanation = resolved && resolved.recommendation === false
+        ? 'No recommendation is available for this comparison'
+        : resolved && resolved.warning
+          ? 'Comparison unavailable; formula is unsupported'
+          : 'Comparison score is unavailable';
+      return { state: 'nomatch', explanation };
+    }
+    if (diff.score > 0) return { state: 'upgrade', explanation: 'Higher stat preference score; not a DPS estimate' };
+    if (diff.score < 0) return { state: 'downgrade', explanation: 'Lower stat preference score; not a DPS estimate' };
+    return { state: 'sidegrade', explanation: 'Equal stat preference score' };
+  }
+
+  function relevantRows(result) {
+    return (result && result.comparison && result.comparison.rows || []).filter((row) =>
+      row.diff && (row.diff.comparable || row.diff.hasData || row.diff.effectsComparable));
+  }
+
+  function resultVerdict(result, formula) {
+    const resolved = LC.diff && LC.diff.resolveFormula
+      ? LC.diff.resolveFormula(result && result.profile, formula)
+      : formula;
+    if (result && result.empty) return { state: 'empty', explanation: 'No worn item in this slot' };
+    if (!result || !result.summary || !result.summary.numericScoreAvailable ||
+        result.summary.recommendationAvailable === false || !Number.isFinite(result.summary.score) ||
+        !resolved || resolved.recommendation === false || resolved.warning) {
+      return { state: 'nomatch', explanation: comparisonVerdict(null, resolved).explanation };
+    }
+    const states = relevantRows(result).map((row) => comparisonVerdict(row.diff, resolved).state);
+    if (!states.length || states.some((state) => state === 'nomatch' || state === 'empty') || new Set(states).size > 1) {
+      return { state: 'nomatch', explanation: 'Comparison unavailable; mixed comparisons; open each character' };
+    }
+    const summaryState = result.summary.score > 0 ? 'upgrade' : result.summary.score < 0 ? 'downgrade' : 'sidegrade';
+    if (summaryState !== states[0]) return { state: 'nomatch', explanation: 'Comparison unavailable; mixed comparisons; open each character' };
+    return comparisonVerdict({ numericScoreAvailable: true, score: result.summary.score, formula: resolved }, resolved);
+  }
+
+  function multiVerdict(multi, formula) {
+    if (!multi || !multi.results || !multi.results.length) return comparisonVerdict(null, formula);
+    if (multi.mixedFormulas) return { state: 'nomatch', explanation: 'Comparison unavailable; character scores use different formulas; open each character' };
+    const results = multi.results.map((result) => resultVerdict(result, formula));
+    const states = results.map((result) => result.state);
+    if (states.includes('nomatch') || new Set(states).size > 1) {
+      return { state: 'nomatch', explanation: 'Comparison unavailable; mixed comparisons; open each character' };
+    }
+    return results[0];
   }
 
   // ---------- Compare panel ----------
@@ -183,9 +394,100 @@
 
   function buildOtherBadge(rows) {
     if (!rows.length) return null;
-    const badge = buildBadge('nomatch', 'compare', 'Compare item stats and effects; score unavailable');
+    const title = 'Compare item stats and effects; comparison score is unavailable';
+    const badge = buildCompareButton('nomatch', 'Compare', title);
     badge.dataset.lcView = 'stats';
     return badge;
+  }
+
+  function buildScoreBreakdown(diff) {
+    if (!diff || !diff.formula) return null;
+    const details = document.createElement('details');
+    details.className = 'lc-score-breakdown';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Preference score (not DPS)';
+    details.appendChild(summary);
+    const formula = document.createElement('p');
+    formula.textContent = 'Formula: ' + (diff.formula.label || diff.formula.key || 'unknown') +
+      ' (' + String(diff.formula.key || '?') + ' v' + String(diff.formula.version || '?') + ')';
+    details.appendChild(formula);
+    if (diff.formula.warning) {
+      const warning = document.createElement('p');
+      warning.textContent = diff.formula.warning;
+      details.appendChild(warning);
+    }
+    if (diff.scoreReason === 'raw') {
+      const note = document.createElement('p');
+      note.textContent = 'General / raw comparison; no aggregate score.';
+      details.appendChild(note);
+      return details;
+    }
+    const table = document.createElement('table');
+    const header = document.createElement('tr');
+    for (const label of ['term', 'delta', 'weight', 'contribution']) {
+      const cell = document.createElement('th'); cell.textContent = label; header.appendChild(cell);
+    }
+    table.appendChild(header);
+    for (const entry of diff.breakdown || []) {
+      const row = document.createElement('tr');
+      for (const value of [entry.key, fmtDelta(entry.delta), fmtStat(entry.weight), fmtDelta(entry.contribution)]) {
+        const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+      }
+      table.appendChild(row);
+    }
+    details.appendChild(table);
+    const total = document.createElement('p');
+    total.textContent = diff.numericScoreAvailable
+      ? 'Total: ' + fmtDelta(diff.score)
+      : 'Total unavailable' + (diff.missingScoreStats.length ? ': missing ' + diff.missingScoreStats.join(', ') : '');
+    details.appendChild(total);
+    return details;
+  }
+
+  function buildStatsOverview(cand, worn, diff, profile = null, formula = null) {
+    const overview = document.createElement('div');
+    overview.className = 'lc-compare-overview';
+    const stats = document.createElement('p');
+    stats.textContent = diff && diff.scoreReason === 'raw' ? 'Compare'
+      : diff && diff.formula && diff.formula.recommendation === false
+        ? 'Legacy' + (diff.numericScoreAvailable === true && Number.isFinite(diff.score) ? ' ' + fmtDelta(diff.score) : '')
+        : diff && diff.numericScoreAvailable === true && Number.isFinite(diff.score) ? 'Stats ' + fmtDelta(diff.score) : 'Stats ?';
+    stats.title = 'Stat preference score; this number is separate from DPS.';
+    overview.appendChild(stats);
+    if (!diff || diff.numericScoreAvailable !== true) {
+      const caveat = document.createElement('p');
+      caveat.textContent = 'Stat score unavailable; see All item stats.';
+      overview.appendChild(caveat);
+    }
+    const eligibility = dpsEligibility(cand, worn, profile, formula);
+    if (profile && eligibility.role) {
+      const dps = document.createElement('p');
+      dps.className = 'lc-dps-overview';
+      dps.dataset.state = 'nomatch';
+      dps.textContent = eligibility.supported ? 'DPS est. loading…' :
+        (eligibility.kind === 'unsupported' ? 'DPS not modeled' : 'DPS unavailable');
+      dps.title = eligibility.supported ? 'DPS contribution estimate is loading.' : eligibility.reason;
+      overview.appendChild(dps);
+      if (eligibility.supported) {
+        cachedDpsReference(cand, profile, worn).then((response) => {
+          if (!dps.isConnected) return;
+          if (!response || !response.ok || !response.projection) {
+            dps.textContent = 'DPS unavailable';
+            dps.dataset.state = 'nomatch';
+            dps.title = dpsMetricReason(null, 'Reference DPS scenario is unavailable.');
+            return;
+          }
+          const output = dpsOutput(response.projection);
+          const descriptor = dpsMetricDescriptor(output);
+          dps.textContent = output
+            ? descriptor.label + ' ' + fmtStat(output.current) + ' → ' + fmtStat(output.candidate) + ' (Δ ' + fmtDelta(output.delta) + ')' + (descriptor.partial ? ' (partial)' : '')
+            : 'DPS unavailable';
+          dps.dataset.state = output ? dpsState(output.delta) : 'nomatch';
+          dps.title = output ? descriptor.scope : dpsMetricReason(response.projection, 'Reference melee DPS is unavailable.');
+        });
+      }
+    }
+    return overview;
   }
 
   function buildEffectDetails(label, group) {
@@ -315,43 +617,500 @@
     return span;
   }
 
+  function buildDpsScenarioEditor(cand, profile, worn) {
+    const details = document.createElement('details');
+    details.className = 'lc-dps-scenario';
+    const summary = document.createElement('summary');
+    summary.textContent = 'DPS assumptions';
+    details.appendChild(summary);
+    const status = document.createElement('p');
+    status.textContent = 'Open to load this character\'s shared reference scenario.';
+    details.appendChild(status);
+    const body = document.createElement('div');
+    details.appendChild(body);
+    const supportedProfile = profile && ['beastlord', 'bst'].includes(String(profile.cls || '').trim().toLowerCase()) && Number(profile.level) === 100;
+    if (!supportedProfile) {
+      status.textContent = 'Editable Player DPS assumptions support level-100 Beastlords only.';
+      return details;
+    }
+    const fieldLabels = {
+      hitChance: 'Hit chance (0–1)', mitigationMultiplier: 'Mitigation remaining (0–1)',
+      damageMultiplier: 'Base coefficient', damageBonus: 'Damage bonus/landed strike', attacksPerRound: 'Attacks/round',
+    };
+    const inputByKey = {};
+    let revision = null;
+    let loaded = false;
+    let loading = false;
+    let currentScenario = null;
+    const combatKeys = ['baseStrength', 'baseDexterity', 'strengthCap', 'dexterityCap', 'offenseBase', 'attackScale', 'attackCap',
+      'targetMitigation', 'criticalDifficulty', 'otherCriticalBonusPct', 'criticalDamageMultiplier', 'doubleAttackSkill',
+      'grantedDoubleAttackPct', 'otherDoubleAttackBonusPct'];
+    const procKeys = ['primaryPpm', 'secondaryPpm', 'landingMultiplier'];
+    const number = (parent, key, label, value) => {
+      const field = document.createElement('label'); field.textContent = label + ' ';
+      const input = document.createElement('input'); input.type = 'number'; input.step = 'any'; input.value = value == null ? '' : String(value);
+      field.appendChild(input); parent.appendChild(field); inputByKey[key] = input; return input;
+    };
+    const select = (parent, key, label, value) => {
+      const field = document.createElement('label'); field.textContent = label + ' ';
+      const input = document.createElement('select');
+      const blank = document.createElement('option'); blank.value = ''; blank.textContent = 'Select…'; input.appendChild(blank);
+      for (const optionValue of ['dual-wield', 'two-hand', 'one-hand-shield']) {
+        const option = document.createElement('option'); option.value = optionValue; option.textContent = optionValue;
+        input.appendChild(option);
+      }
+      input.value = value == null ? '' : value; field.appendChild(input); parent.appendChild(field); inputByKey[key] = input; return input;
+    };
+    const render = (projection) => {
+      const values = projection && projection.scenario;
+      if (!values || typeof values !== 'object') { status.textContent = 'DPS assumptions are unavailable.'; return; }
+      currentScenario = values;
+      revision = projection && projection.scenarioRevision != null ? projection.scenarioRevision : values.revision;
+      body.replaceChildren();
+      const note = document.createElement('p');
+      note.textContent = projection.scenarioDefault
+        ? 'Illustrative reference defaults — not measured combat values. These shared inputs apply to every comparison for this character.'
+        : 'Saved shared reference scenario — still an illustrative estimate, not measured combat values.';
+      body.appendChild(note);
+      select(body, 'layout', 'Layout', values.layout);
+      number(body, 'hastePercent', 'Shared haste (%)', values.hastePercent);
+      for (const hand of ['primary', 'secondary']) {
+        const heading = document.createElement('p'); heading.textContent = hand[0].toUpperCase() + hand.slice(1) + ' hand'; body.appendChild(heading);
+        for (const key of Object.keys(fieldLabels)) number(body, hand + '.' + key, fieldLabels[key], values[hand][key]);
+      }
+      if (values.version >= 2) {
+        const combat = document.createElement('details'); combat.open = false;
+        const combatSummary = document.createElement('summary'); combatSummary.textContent = 'Combat stats and caps'; combat.appendChild(combatSummary);
+        const combatLabels = {
+          baseStrength: ['Base strength', 'points'], baseDexterity: ['Base dexterity', 'points'],
+          strengthCap: ['Strength cap', 'points'], dexterityCap: ['Dexterity cap', 'points'],
+          offenseBase: ['Base offense', 'points'], attackScale: ['Attack scale', 'per point'], attackCap: ['Attack cap', 'points'],
+          targetMitigation: ['Target mitigation', 'points'], criticalDifficulty: ['Critical difficulty', 'points'],
+          otherCriticalBonusPct: ['Other critical bonus', '%'], criticalDamageMultiplier: ['Critical damage multiplier', '×'],
+          doubleAttackSkill: ['Double attack skill', 'points'], grantedDoubleAttackPct: ['Granted double attack', '%'],
+          otherDoubleAttackBonusPct: ['Other double attack bonus', '%'],
+        };
+        const combatValue = values.combat || {};
+        for (const [key, [label, unit]] of Object.entries(combatLabels)) number(combat, 'combat.' + key, label + ' (' + unit + ')', combatValue[key]);
+        body.appendChild(combat);
+        const procs = document.createElement('details'); procs.open = false;
+        const procSummary = document.createElement('summary'); procSummary.textContent = 'Weapon proc rates'; procs.appendChild(procSummary);
+        const procValue = values.procs || {};
+        for (const [key, label, unit] of [['primaryPpm', 'Primary proc rate', 'procs/min'], ['secondaryPpm', 'Secondary proc rate', 'procs/min'], ['landingMultiplier', 'Proc landing multiplier', '×']]) number(procs, 'procs.' + key, label + ' (' + unit + ')', procValue[key]);
+        body.appendChild(procs);
+      }
+      const upgradeDraft = projection && projection.upgradeScenario;
+      if (upgradeDraft && typeof upgradeDraft === 'object' && Number(upgradeDraft.version) > Number(values.version)) {
+        const upgrade = document.createElement('button'); upgrade.type = 'button'; upgrade.textContent = 'Enable gear stats and procs';
+        if (values.version >= 2) upgrade.textContent = 'Enable spell rotation';
+        upgrade.title = 'Drafts the latest DPS scenario, including spell rotation; save explicitly before it changes comparisons.';
+        upgrade.addEventListener('click', (event) => {
+          event.preventDefault(); event.stopPropagation();
+          const next = JSON.parse(JSON.stringify(upgradeDraft));
+          render({ ...projection, scenario: next, scenarioDefault: false });
+          status.textContent = 'v' + next.version + ' draft ready. Save explicitly to apply the new DPS components.';
+        });
+        body.appendChild(upgrade);
+      }
+      if (values.version >= 3) {
+        const spells = document.createElement('details'); spells.open = false;
+        const spellSummary = document.createElement('summary'); spellSummary.textContent = 'Spell rotation'; spells.appendChild(spellSummary);
+        const spellValue = values.spells || {};
+        const spellRank = document.createElement('label'); spellRank.textContent = 'Spell rank (1–3) ';
+        const rankInput = document.createElement('select');
+        for (const rank of [1, 2, 3]) { const option = document.createElement('option'); option.value = String(rank); option.textContent = 'Rank ' + rank; rankInput.appendChild(option); }
+        rankInput.value = spellValue.rank == null ? '' : String(spellValue.rank); spellRank.appendChild(rankInput); spells.appendChild(spellRank); inputByKey['spells.rank'] = rankInput;
+        const spellLabels = [
+          ['cycleSeconds', 'Rotation cycle', 'seconds'], ['landingMultiplier', 'Spell landing multiplier', '×'],
+          ['criticalChance', 'Spell critical chance', 'fraction 0–1'], ['criticalMultiplier', 'Spell critical multiplier', '×'],
+          ['manaPerSecond', 'Available mana budget', 'mana/second'], ['meleeDuringCast', 'Melee during cast', 'fraction 0–1'],
+        ];
+        for (const [key, label, unit] of spellLabels) number(spells, 'spells.' + key, label + ' (' + unit + ')', spellValue[key]);
+        const explanation = document.createElement('p'); explanation.textContent = 'Fixed shared rotation: one Poantaar\'s Bite and one Kromrif Lance per cycle. Low mana budget scales rotation uptime; spell casts also reduce melee according to Melee during cast. Spell focus is evaluated from each loadout; pet damage remains excluded.'; spells.appendChild(explanation);
+        body.appendChild(spells);
+      }
+      const save = document.createElement('button'); save.type = 'button'; save.textContent = 'Save for this character';
+      save.addEventListener('click', async (event) => {
+        event.preventDefault(); event.stopPropagation();
+        if (!LC.state || typeof LC.state.saveDpsScenario !== 'function') { status.textContent = 'Saving DPS assumptions is unavailable.'; return; }
+        save.disabled = true; status.textContent = 'Saving DPS assumptions…';
+        const scenario = {
+          version: currentScenario.version,
+          revision,
+          layout: inputByKey.layout.value || null,
+          hastePercent: String(inputByKey.hastePercent.value || '').trim() ? Number(inputByKey.hastePercent.value) : null,
+          primary: {}, secondary: {},
+        };
+        for (const hand of ['primary', 'secondary']) for (const key of Object.keys(fieldLabels)) {
+          const input = inputByKey[hand + '.' + key];
+          scenario[hand][key] = String(input.value || '').trim() ? Number(input.value) : null;
+        }
+        if (currentScenario.version >= 2) {
+          scenario.version = currentScenario.version;
+          scenario.combat = {};
+          for (const key of combatKeys) {
+            const input = inputByKey['combat.' + key];
+            scenario.combat[key] = String(input && input.value || '').trim() ? Number(input.value) : null;
+          }
+          scenario.procs = {};
+          for (const key of procKeys) {
+            const input = inputByKey['procs.' + key];
+            scenario.procs[key] = String(input && input.value || '').trim() ? Number(input.value) : null;
+          }
+        }
+        if (currentScenario.version >= 3) {
+          scenario.spells = {};
+          for (const key of ['rank', 'cycleSeconds', 'landingMultiplier', 'criticalChance', 'criticalMultiplier', 'manaPerSecond', 'meleeDuringCast']) {
+            const input = inputByKey['spells.' + key];
+            scenario.spells[key] = String(input && input.value || '').trim() ? Number(input.value) : null;
+          }
+        }
+        const result = await LC.state.saveDpsScenario(profile.id, scenario, revision);
+        save.disabled = false;
+        if (!result || result.ok === false) {
+          status.textContent = result && result.error ? result.error : 'Could not save DPS assumptions.';
+          return;
+        }
+        const saved = result.scenario;
+        if (saved && typeof saved === 'object') { currentScenario = saved; revision = saved.revision; }
+        invalidateDpsReference(profile);
+        status.textContent = 'Saved for ' + (profile.name || 'this character') + '.';
+      });
+      body.appendChild(save);
+      const summary = document.createElement('p');
+      summary.textContent = 'Current reference values are used for the compact DPS estimate above.';
+      body.appendChild(summary);
+      status.textContent = values.version + ' · revision ' + revision + (projection.scenarioDefault ? ' · illustrative default' : ' · saved scenario');
+    };
+    const load = async () => {
+      if (loaded || loading) return;
+      loading = true; status.textContent = 'Loading DPS assumptions…';
+      const response = await cachedDpsReference(cand, profile, worn);
+      loading = false; loaded = true;
+      if (!response || !response.ok || !response.projection) { status.textContent = response && response.error || 'DPS assumptions are unavailable.'; return; }
+      render(response.projection);
+    };
+    summary.addEventListener('click', load);
+    details.addEventListener('toggle', () => { if (details.open) load(); });
+    return details;
+  }
+
   function buildProjectionPanel(cand, profile, worn) {
     const panel = document.createElement('details'); panel.className = 'lc-projection';
-    const title = document.createElement('summary'); title.textContent = 'Character projection'; panel.appendChild(title);
+    const title = document.createElement('summary'); title.textContent = 'Stat estimates and experimental DPS'; panel.appendChild(title);
     const scope = document.createElement('p'); scope.textContent = 'Reference estimates use the same model for both items; calibration is optional. These are not measured game totals.'; panel.appendChild(scope);
     const body = document.createElement('div'); body.setAttribute('aria-live', 'polite'); panel.appendChild(body);
+    const result = document.createElement('p'); body.appendChild(result);
     const confirmation = document.createElement('label'); confirmation.hidden = true;
     const check = document.createElement('input'); check.type = 'checkbox'; confirmation.appendChild(check);
     confirmation.appendChild(document.createTextNode('For this comparison, I verified wearability, unchanged augment transfers, other effects and power-source conditions.'));
     panel.appendChild(confirmation);
     const manage = document.createElement('a'); manage.textContent = 'Manage character inputs and rule validation';
     manage.href = chrome.runtime.getURL('options/options.html'); manage.target = '_blank'; manage.rel = 'noopener'; panel.appendChild(manage);
+    const damageDetails = document.createElement('details'); damageDetails.className = 'lc-damage-contributions';
+    const damageSummary = document.createElement('summary'); damageSummary.textContent = 'Damage contributions'; damageDetails.appendChild(damageSummary);
+    const damageBody = document.createElement('div'); damageDetails.appendChild(damageBody);
+    const effectsConfirm = document.createElement('label'); const effectsCheck = document.createElement('input'); effectsCheck.type = 'checkbox'; effectsCheck.disabled = true;
+    const effectsText = document.createTextNode(' Worn-effect source review unavailable until loaded.');
+    effectsConfirm.appendChild(effectsCheck); effectsConfirm.appendChild(effectsText); damageBody.appendChild(effectsConfirm);
+    const procConfirm = document.createElement('label'); const procCheck = document.createElement('input'); procCheck.type = 'checkbox'; procCheck.disabled = true;
+    const procText = document.createTextNode(' Weapon-proc source review unavailable until loaded.');
+    procConfirm.appendChild(procCheck); procConfirm.appendChild(procText); damageBody.appendChild(procConfirm);
+    const focusConfirm = document.createElement('label'); const focusCheck = document.createElement('input'); focusCheck.type = 'checkbox'; focusCheck.disabled = true;
+    const focusText = document.createTextNode(' Spell-focus source review unavailable until loaded.');
+    focusConfirm.appendChild(focusCheck); focusConfirm.appendChild(focusText); damageBody.appendChild(focusConfirm);
+    const damageStatus = document.createElement('p'); damageStatus.textContent = 'Open to calculate known melee, proc and spell contributions.'; damageBody.appendChild(damageStatus);
+    let damageLoaded = false; let damageLoading = false; let damageBinding = null; let damageGeneration = 0;
+    const renderDamage = (projection) => {
+      damageBody.replaceChildren(effectsConfirm, procConfirm, focusConfirm, damageStatus);
+      damageBinding = projection && (projection.comparisonBinding || projection.binding) || damageBinding;
+      const sourcePairs = (value) => value && typeof value === 'object' && Array.isArray(value.current) && Array.isArray(value.candidate);
+      const reviewablePairs = (value) => sourcePairs(value) && [...value.current, ...value.candidate].every((entry) => entry &&
+        typeof entry.itemName === 'string' && typeof entry.slot === 'string' && Array.isArray(entry.effects) && typeof entry.effectsKnown === 'boolean');
+      const effectSourceData = projection && projection.effectSources;
+      const procSourceData = projection && (projection.procSources || projection.weaponProcSources || projection.weaponEffectSources || projection.effectSources);
+      const focusSourceData = projection && (projection.spellFocusSources || projection.focusSources || projection.effectSources);
+      const effectsReviewable = !!damageBinding && reviewablePairs(effectSourceData);
+      const procsReviewable = !!damageBinding && reviewablePairs(procSourceData);
+      const focusReviewable = !!damageBinding && reviewablePairs(focusSourceData);
+      effectsCheck.disabled = !effectsReviewable; procCheck.disabled = !procsReviewable; focusCheck.disabled = !focusReviewable;
+      effectsText.nodeValue = effectsReviewable ? ' I verified imported worn effects are complete for both gear sets.' : ' Worn-effect source review unavailable; leave unchecked.';
+      procText.nodeValue = procsReviewable ? ' I verified weapon proc lists are complete for both gear sets.' : ' Weapon-proc source review unavailable; leave unchecked.';
+      focusText.nodeValue = focusReviewable ? ' I verified spell-focus sources are complete for both gear sets.' : ' Spell-focus source review unavailable; leave unchecked.';
+      if (effectsCheck.disabled) effectsCheck.checked = false;
+      if (procCheck.disabled) procCheck.checked = false;
+      if (focusCheck.disabled) focusCheck.checked = false;
+      const outputs = projection && Array.isArray(projection.outputs) ? projection.outputs : [];
+      damageStatus.textContent = projection && projection.scenarioDefault
+        ? 'Illustrative defaults for melee, procs and spells; values are estimates, not measured combat.' : 'Same melee, proc and spell scenario applied to current and candidate.';
+      for (const output of outputs) {
+        const row = document.createElement('p');
+        const reasons = output && (output.unresolvedReasons || output.reasons);
+        const reason = Array.isArray(reasons) ? reasons.join('; ') : output && output.reason;
+        const outputNote = output && (output.reason || output.note);
+        row.textContent = output && output.available
+          ? output.metric + ': current ' + fmtStat(output.current) + ' → candidate ' + fmtStat(output.candidate) + ' (Δ ' + fmtDelta(output.delta) + ')' + (output.partial ? ' (partial)' : '') + (outputNote ? ' — ' + outputNote : '')
+          : (output && output.metric || 'Contribution') + ': unavailable — ' + (reason || 'required data is unknown.');
+        damageBody.appendChild(row);
+        const sources = output && (output.sources || (projection.rule && projection.rule.sources));
+        if (Array.isArray(sources) && sources.length) {
+          const sourceRow = document.createElement('p');
+          sourceRow.textContent = 'Sources: ';
+          sources.forEach((source, index) => {
+            if (index) sourceRow.appendChild(document.createTextNode(', '));
+            const link = document.createElement('a'); const value = typeof source === 'string' ? source : source.url;
+            link.href = value || '#'; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = typeof source === 'string' ? source : (source.label || value || 'source'); sourceRow.appendChild(link);
+          });
+          damageBody.appendChild(sourceRow);
+        }
+      }
+      const effectSources = projection && projection.effectSources;
+      if (effectSources && sourcePairs(effectSources)) {
+        const effectText = (effect) => [effect && effect.type, effect && effect.name, effect && effect.rank, effect && effect.raw].filter(Boolean).join(' · ') || '(unnamed effect)';
+        for (const [label, entries] of [['Current loadout', effectSources.current], ['Candidate loadout', effectSources.candidate]]) {
+          const heading = document.createElement('p'); heading.textContent = label + ' imported effects'; damageBody.appendChild(heading);
+          for (const entry of entries) {
+            const row = document.createElement('p');
+            const effects = Array.isArray(entry.effects) ? entry.effects.map(effectText).join('; ') : '(effects unavailable)';
+            row.textContent = (entry.itemName || '(unnamed item)') + ' [' + (entry.slot || '?') + '] · effects ' + (entry.effectsKnown === true ? 'known' : 'unresolved') + ': ' + (effects || '(none listed)');
+            damageBody.appendChild(row);
+          }
+        }
+      }
+      const focusSources = projection && (projection.spellFocusSources || projection.focusSources);
+      if (focusSources && sourcePairs(focusSources)) {
+        for (const [label, entries] of [['Current loadout', focusSources.current], ['Candidate loadout', focusSources.candidate]]) {
+          const heading = document.createElement('p'); heading.textContent = label + ' spell-focus sources'; damageBody.appendChild(heading);
+          for (const entry of entries) {
+            const row = document.createElement('p');
+            const effects = Array.isArray(entry.effects) ? entry.effects.map((effect) => [effect && effect.type, effect && effect.name, effect && effect.rank, effect && effect.raw].filter(Boolean).join(' · ') || '(unnamed effect)').join('; ') : '(effects unavailable)';
+            row.textContent = (entry.itemName || '(unnamed item)') + ' [' + (entry.slot || '?') + '] · effects ' + (entry.effectsKnown === true ? 'known' : 'unresolved') + ': ' + (effects || '(none listed)');
+            damageBody.appendChild(row);
+          }
+        }
+      }
+      const citations = projection && Array.isArray(projection.sources) ? projection.sources : [];
+      if (citations.length) {
+        const heading = document.createElement('p'); heading.textContent = 'Sources'; damageBody.appendChild(heading);
+        citations.forEach((source, index) => {
+          const row = document.createElement('p'); if (index) row.appendChild(document.createTextNode(''));
+          if (source && typeof source === 'object' && source.url) { const link = document.createElement('a'); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = source.label || source.url; row.appendChild(link); }
+          else row.appendChild(document.createTextNode(typeof source === 'string' ? source : String(source && (source.label || source.key) || 'source')));
+          damageBody.appendChild(row);
+        });
+      }
+    };
+    const loadDamage = async () => {
+      if (damageLoading) return;
+      const request = ++damageGeneration;
+      damageLoading = true; damageStatus.textContent = 'Loading damage contributions…';
+      const confirmationValue = (effectsCheck.checked || procCheck.checked || focusCheck.checked) && damageBinding
+        ? { effectsComplete: effectsCheck.checked, weaponProcsComplete: procCheck.checked, spellFocusComplete: focusCheck.checked, binding: damageBinding } : undefined;
+      const response = await LC.state.getCharacterProjection(cand, profile, worn, false, 'dps-reference', undefined, confirmationValue);
+      damageLoading = false; damageLoaded = true;
+      if (request !== damageGeneration) return;
+      if (!response || !response.ok || !response.projection) { damageStatus.textContent = response && response.error || 'Damage contributions unavailable.'; return; }
+      renderDamage(response.projection);
+    };
+    damageSummary.addEventListener('click', loadDamage);
+    damageDetails.addEventListener('toggle', () => { if (damageDetails.open) loadDamage(); });
+    const reloadConfirmed = () => { if (damageLoaded) { ++damageGeneration; loadDamage(); } };
+    effectsCheck.addEventListener('change', reloadConfirmed); procCheck.addEventListener('change', reloadConfirmed); focusCheck.addEventListener('change', reloadConfirmed);
+    panel.appendChild(damageDetails);
+    panel.appendChild(buildDpsScenarioEditor(cand, profile, worn));
     const modeLabel = document.createElement('label'); modeLabel.textContent = 'Comparison model ';
     const mode = document.createElement('select');
-    for (const [value, label] of [['reference', 'Reference estimate (no calibration)'], ['calibrated', 'Calibrated Accuracy only']]) {
+    for (const [value, label] of [['reference', 'Reference estimate (no calibration)'], ['calibrated', 'Calibrated Accuracy only'], ['dps', 'Manual DPS estimate (melee and procs)']]) {
       const option = document.createElement('option'); option.value = value; option.textContent = label; mode.appendChild(option);
     }
     modeLabel.appendChild(mode); panel.appendChild(modeLabel);
+    const dpsControls = document.createElement('div'); dpsControls.hidden = true; panel.appendChild(dpsControls);
+    const dpsInputs = {};
+    const addDpsSelect = (key, label, options) => {
+      const field = document.createElement('label'); field.textContent = label + ' ';
+      const input = document.createElement('select'); input.required = true;
+      const blank = document.createElement('option'); blank.value = ''; blank.textContent = 'Select…'; input.appendChild(blank);
+      for (const [value, text] of options) { const option = document.createElement('option'); option.value = value; option.textContent = text; input.appendChild(option); }
+      field.appendChild(input); dpsControls.appendChild(field); dpsInputs[key] = input;
+    };
+    const addNumber = (parent, key, label, unit, target) => {
+      const field = document.createElement('label'); field.textContent = label + ' (' + unit + ') ';
+      const input = document.createElement('input'); input.type = 'number'; input.required = true; input.step = 'any';
+      field.appendChild(input); parent.appendChild(field); target[key] = input;
+    };
+    const addDpsNumber = (key, label, unit) => addNumber(dpsControls, key, label, unit, dpsInputs);
+    const procKeysFor = (effects) => [...new Set((effects || []).filter((effect) => effect && effect.type === 'proc')
+      .map((effect) => effect.key == null ? '' : String(effect.key).trim()))];
+    const procNames = (effects) => (effects || []).filter((effect) => effect && effect.type === 'proc')
+      .map((effect) => String(effect.name || effect.raw || effect.key || '(missing proc key)')).join('; ') || '(none listed)';
+    const buildProcControls = (parent, effects, label, target, description) => {
+      const procInputs = document.createElement('div');
+      const procEffects = (effects || []).filter((effect) => effect && effect.type === 'proc');
+      const procConfirmation = document.createElement('label');
+      const procCheck = document.createElement('input'); procCheck.type = 'checkbox'; procCheck.checked = false;
+      procConfirmation.appendChild(procCheck);
+      const procDescriptions = description || procNames(procEffects);
+      procConfirmation.appendChild(document.createTextNode('I verified the listed ' + label + ' weapon procs are complete for both items (including any item with none): ' + procDescriptions));
+      procInputs.appendChild(procConfirmation); target.procListsConfirmed = procCheck;
+      target.procAssumptions = [];
+      const procKeys = procKeysFor(effects);
+      if (procKeys.length) {
+        const heading = document.createElement('p'); heading.textContent = label + ' proc assumptions (same for both gear sets; expected damage includes resists/crits).'; procInputs.appendChild(heading);
+        for (const key of procKeys) {
+          const row = document.createElement('div'); row.textContent = (key || '(missing proc key)') + ': ';
+          const frequency = document.createElement('input'); frequency.type = 'number'; frequency.required = true; frequency.step = 'any'; frequency.setAttribute('aria-label', label + ' ' + key + ' procs per minute');
+          const damage = document.createElement('input'); damage.type = 'number'; damage.required = true; damage.step = 'any'; damage.setAttribute('aria-label', label + ' ' + key + ' damage per proc');
+          row.appendChild(frequency); row.appendChild(document.createTextNode(' procs/min; ')); row.appendChild(damage); row.appendChild(document.createTextNode(' damage/proc')); procInputs.appendChild(row);
+          target.procAssumptions.push({ key, frequency, damage });
+        }
+      }
+      parent.appendChild(procInputs);
+      return procInputs;
+    };
+    const findHandItem = (hand) => {
+      if (!profile || !Array.isArray(profile.items) || !hand) return null;
+      return profile.items.find((item) => {
+        if (!item || item.isAugment || item === worn) return false;
+        const slot = LC.slots && LC.slots.canonicalSlot ? LC.slots.canonicalSlot(item.slot) : item.slotKey;
+        const keys = slot && (slot.keys || [slot.key]);
+        return keys && keys.length === 1 && keys[0] === hand;
+      }) || null;
+    };
+    const handAssumptionKeys = ['hitChance', 'mitigationMultiplier', 'damageMultiplier', 'damageBonus', 'attacksPerRound'];
+    const handLabels = {
+      hitChance: ['Hit chance', 'fraction 0–1'], mitigationMultiplier: ['Mitigation remaining', 'fraction'],
+      damageMultiplier: ['Landed base coefficient', 'multiplier'], damageBonus: ['Damage bonus', 'damage/strike'],
+      attacksPerRound: ['Attacks', 'attacks/round'],
+    };
+    const scopeLabel = document.createElement('label'); scopeLabel.textContent = 'DPS scope ';
+    const scopeSelect = document.createElement('select');
+    for (const [value, text] of [['selected-hand', 'Selected weapon hand'], ['equipped-weapons', 'Both equipped weapon hands']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = text; scopeSelect.appendChild(option);
+    }
+    scopeSelect.value = 'selected-hand';
+    scopeLabel.appendChild(scopeSelect); dpsControls.appendChild(scopeLabel); dpsInputs.scope = scopeSelect;
+    addDpsSelect('hand', 'Hand', [['primary', 'Primary'], ['secondary', 'Secondary']]);
+    addDpsSelect('layout', 'Layout for both weapons', [['dual-wield', 'Dual-wield'], ['two-hand', 'Two-hand'], ['one-hand-shield', 'One-hand + shield']]);
+    addDpsNumber('hastePercent', 'Haste', '%');
+    const selectedHeading = document.createElement('p'); selectedHeading.textContent = 'Selected-hand assumptions'; dpsControls.appendChild(selectedHeading);
+    addDpsNumber('hitChance', 'Hit chance', 'fraction 0–1');
+    addDpsNumber('mitigationMultiplier', 'Mitigation remaining', 'fraction');
+    addDpsNumber('damageMultiplier', 'Landed base coefficient', 'multiplier');
+    addDpsNumber('damageBonus', 'Damage bonus', 'damage/strike');
+    addDpsNumber('attacksPerRound', 'Attacks', 'attacks/round');
+    const procEffects = [...(cand && cand.effects || []), ...(worn && worn.effects || [])].filter((effect) => effect && effect.type === 'proc');
+    const selectedProcDescription = 'Current: ' + procNames(worn && worn.effects) + '; candidate: ' + procNames(cand && cand.effects);
+    buildProcControls(dpsControls, procEffects, 'selected-hand', dpsInputs, selectedProcDescription);
+    const otherSection = document.createElement('details'); otherSection.hidden = true; dpsControls.appendChild(otherSection);
+    const otherHeading = document.createElement('summary'); otherHeading.textContent = 'Other equipped hand assumptions'; otherSection.appendChild(otherHeading);
+    const otherSource = document.createElement('p'); otherSection.appendChild(otherSource);
+    const otherInputs = {};
+    for (const key of handAssumptionKeys) addNumber(otherSection, key, handLabels[key][0], handLabels[key][1], otherInputs);
+    const otherProcHost = document.createElement('div'); otherSection.appendChild(otherProcHost);
+    const otherHand = () => dpsInputs.hand.value === 'primary' ? 'secondary' : 'primary';
+    const otherSourceItem = () => findHandItem(otherHand());
+    let bindDpsInput = () => {};
+    let renderedOtherSource = {};
+    const setOtherRequired = (required) => {
+      for (const key of handAssumptionKeys) if (otherInputs[key]) otherInputs[key].required = required;
+      for (const entry of otherInputs.procAssumptions || []) { entry.frequency.required = required; entry.damage.required = required; }
+    };
+    const updateOtherHand = () => {
+      const show = dpsInputs.scope.value === 'equipped-weapons' && dpsInputs.layout.value === 'dual-wield';
+      otherSection.hidden = !show;
+      setOtherRequired(show);
+      if (!show) return;
+      const item = otherSourceItem();
+      otherSource.textContent = item ? 'Other-hand source: ' + (item.name || ('#' + item.id)) : 'Other-hand source: no equipped weapon found.';
+      if (item !== renderedOtherSource) {
+        renderedOtherSource = item;
+        otherProcHost.replaceChildren();
+        buildProcControls(otherProcHost, item && item.effects || [], 'other-hand', otherInputs,
+          'Unchanged source: ' + procNames(item && item.effects));
+        setOtherRequired(true);
+        for (const entry of otherInputs.procAssumptions || []) bindDpsInput(entry.frequency, entry.damage);
+        bindDpsInput(otherInputs.procListsConfirmed);
+      }
+    };
+    const updateDpsScopeText = () => {
+      scope.textContent = dpsInputs.scope.value === 'equipped-weapons'
+        ? 'DPS estimate for both equipped weapon hands. Spell focus and pet contributions are excluded; identical assumptions are used for both gear sets.'
+        : 'DPS estimate for the selected hand only. Spell focus and pet contributions are excluded; identical assumptions are used for both gear sets.';
+    };
+    const dpsNote = document.createElement('p'); dpsNote.textContent = 'All DPS assumptions apply identically to current and candidate. Choose only when both weapons use the same layout, skill and damage-bonus assumptions; layout changes are unsupported. Haste is the effective post-cap value; multipliers are landed base coefficients, mitigation is the fraction remaining, and damage bonus is per landed strike. This is a weapon subtotal estimate; spell focus, pet damage and augments are excluded.'; dpsControls.appendChild(dpsNote);
+    const calculate = document.createElement('button'); calculate.type = 'button'; calculate.textContent = 'Calculate'; calculate.hidden = true; dpsControls.appendChild(calculate);
     let generation = 0;
+    const dpsAssumptions = () => {
+      const valueOrNull = (input) => {
+        if (!String(input.value || '').trim()) return null;
+        const value = Number(input.value);
+        return Number.isFinite(value) ? value : null;
+      };
+      const assumptions = { scope: dpsInputs.scope.value || null, hand: dpsInputs.hand.value || null, layout: dpsInputs.layout.value || null };
+      for (const key of ['hastePercent', 'hitChance', 'mitigationMultiplier', 'damageMultiplier', 'damageBonus', 'attacksPerRound']) assumptions[key] = valueOrNull(dpsInputs[key]);
+      assumptions.procListsConfirmed = !!dpsInputs.procListsConfirmed.checked;
+      assumptions.procAssumptions = (dpsInputs.procAssumptions || []).map(({ key, frequency, damage }) => {
+        return { key, procsPerMinute: valueOrNull(frequency), damagePerProc: valueOrNull(damage) };
+      });
+      if (assumptions.scope === 'equipped-weapons' && assumptions.layout === 'dual-wield') {
+        assumptions.otherHand = {};
+        for (const key of handAssumptionKeys) assumptions.otherHand[key] = valueOrNull(otherInputs[key]);
+        assumptions.otherHand.procListsConfirmed = !!otherInputs.procListsConfirmed.checked;
+        assumptions.otherHand.procAssumptions = (otherInputs.procAssumptions || []).map(({ key, frequency, damage }) => {
+          return { key, procsPerMinute: valueOrNull(frequency), damagePerProc: valueOrNull(damage) };
+        });
+      }
+      return assumptions;
+    };
+    const renderDps = async () => {
+      const assumptions = dpsAssumptions();
+      if (!assumptions) return;
+      const request = ++generation;
+      result.textContent = 'Calculating DPS estimate…'; calculate.disabled = true;
+      body.replaceChildren(result);
+      const response = await LC.state.getCharacterProjection(cand, profile, worn, false, 'dps', assumptions);
+      if (request !== generation || panel.isConnected === false) return;
+      calculate.disabled = false;
+      if (!response || !response.ok || !response.projection) { result.textContent = response && response.error || 'DPS estimate unavailable.'; body.replaceChildren(result); return; }
+      const projection = response.projection;
+      if (projection.reason) { result.textContent = projection.reason; body.replaceChildren(result); return; }
+      const outputs = Array.isArray(projection.outputs) ? projection.outputs : [];
+      const rule = projection.rule && projection.rule.key ? ' [' + projection.rule.key + ' v' + projection.rule.version + ']' : '';
+      const summaryOutputs = assumptions.scope === 'equipped-weapons'
+        ? outputs.filter((output) => output.available && output.metric === 'Weapon subtotal')
+        : outputs.filter((output) => output.available);
+      const fallbackOutputs = assumptions.scope === 'equipped-weapons' && !summaryOutputs.length
+        ? outputs.filter((output) => output.available && ['Weapon melee DPS', 'Weapon proc DPS'].includes(output.metric)) : summaryOutputs;
+      result.textContent = 'DPS estimate' + rule + ' · ' + (fallbackOutputs.map((output) => output.metric + ' ' + fmtDelta(output.delta)).join(' · ') || 'unavailable');
+      body.replaceChildren(result);
+      for (const output of outputs) {
+        const row = document.createElement('p');
+        row.textContent = output.available ? output.metric + ': current ' + fmtStat(output.current) + ' → candidate ' + fmtStat(output.candidate) + ' (Δ ' + fmtDelta(output.delta) + ')' : output.metric + ': unavailable — ' + (output.reason || 'required input is unknown.');
+        body.appendChild(row);
+      }
+      for (const assumption of projection.assumptions || []) { const row = document.createElement('p'); row.textContent = assumption; body.appendChild(row); }
+    };
     const render = async () => {
+      if (mode.value === 'dps') { ++generation; dpsControls.hidden = false; calculate.hidden = false; calculate.disabled = false; confirmation.hidden = true; updateOtherHand(); updateDpsScopeText(); result.textContent = 'Enter assumptions, then select Calculate.'; body.replaceChildren(result); return; }
+      dpsControls.hidden = true; calculate.hidden = true;
       const request = ++generation;
       scope.textContent = mode.value === 'reference' ? 'Consistent reference estimates, not measured game totals. No calibration required.' : 'Optional calibrated Accuracy check; a current snapshot and approved observation are required.';
-      body.textContent = mode.value === 'reference' ? 'Calculating reference estimates…' : 'Checking snapshot and calibrated rules…'; check.disabled = true;
+      result.textContent = mode.value === 'reference' ? 'Calculating reference estimates…' : 'Checking snapshot and calibrated rules…'; body.replaceChildren(result); check.disabled = true;
       const response = await LC.state.getCharacterProjection(cand, profile, worn, check.checked, mode.value);
       if (request !== generation || panel.isConnected === false) return;
       check.disabled = false;
-      if (!response || !response.ok || !response.projection) { title.textContent = 'Character projection · unavailable'; body.textContent = response && response.error || 'Projection unavailable.'; return; }
+      if (!response || !response.ok || !response.projection) { result.textContent = response && response.error || 'Projection unavailable.'; body.replaceChildren(result); return; }
       const projection = response.projection;
       confirmation.hidden = !projection.needsConfirmation;
-      if (projection.reason) { title.textContent = (projection.mode === 'reference' ? 'Estimate · unavailable' : 'Character projection · setup needed'); body.textContent = projection.reason; return; }
+      if (projection.reason) { result.textContent = projection.reason; body.replaceChildren(result); return; }
       if (projection.mode === 'reference') {
         const label = (metric) => metric;
         const range = (low, high, signed = true) => {
           const format = signed ? fmtDelta : fmtStat;
           return low === high ? format(low) : format(low) + ' to ' + format(high);
         };
-        title.textContent = 'Estimate · ' + (projection.outputs.filter((output) => output.available).map((output) => label(output.metric) + ' ' + range(output.deltaLow, output.deltaHigh)).join(' · ') || 'unavailable');
-        body.replaceChildren();
+        result.textContent = 'Estimate · ' + (projection.outputs.filter((output) => output.available).map((output) => label(output.metric) + ' ' + range(output.deltaLow, output.deltaHigh)).join(' · ') || 'unavailable');
+        body.replaceChildren(result);
         for (const output of projection.outputs) {
           const row = document.createElement('p');
           row.textContent = output.available ? label(output.metric) + ': ' + range(output.deltaLow, output.deltaHigh) +
@@ -380,9 +1139,9 @@
         return;
       }
       const available = projection.outputs.find((output) => output.available);
-      title.textContent = available ? 'Accuracy ' + fmtStat(available.current) + ' → ' + fmtStat(available.projected) + ' (Δ ' + fmtDelta(available.delta) + ') · Derived' :
-        'Character projection · ' + (projection.needsConfirmation ? 'confirm conditions' : 'unavailable');
-      body.replaceChildren();
+      result.textContent = available ? 'Accuracy ' + fmtStat(available.current) + ' → ' + fmtStat(available.projected) + ' (Δ ' + fmtDelta(available.delta) + ') · Derived' :
+        (projection.needsConfirmation ? 'Confirm conditions' : 'Unavailable');
+      body.replaceChildren(result);
       for (const output of projection.outputs) {
         const row = document.createElement('p');
         if (output.available) {
@@ -398,7 +1157,22 @@
       const source = document.createElement('a'); source.href = projection.rule.source; source.target = '_blank'; source.rel = 'noopener noreferrer';
       source.textContent = 'Rule ' + projection.rule.key + ' v' + projection.rule.version + ' · developer source'; body.appendChild(source);
     };
-    check.addEventListener('change', render); mode.addEventListener('change', render); render();
+    const invalidateDps = () => {
+      if (mode.value !== 'dps') return;
+      ++generation; updateOtherHand(); updateDpsScopeText(); calculate.disabled = false; result.textContent = 'Assumptions changed; select Calculate.'; body.replaceChildren(result);
+    };
+    bindDpsInput = (input, ...extra) => {
+      if (!input) return;
+      input.addEventListener('input', invalidateDps); input.addEventListener('change', invalidateDps);
+      for (const additional of extra) { additional.addEventListener('input', invalidateDps); additional.addEventListener('change', invalidateDps); }
+    };
+    for (const input of [dpsInputs.scope, dpsInputs.hand, dpsInputs.layout, dpsInputs.hastePercent, dpsInputs.hitChance, dpsInputs.mitigationMultiplier,
+      dpsInputs.damageMultiplier, dpsInputs.damageBonus, dpsInputs.attacksPerRound, dpsInputs.procListsConfirmed, ...(dpsInputs.procAssumptions || []).flatMap(({ frequency, damage }) => [frequency, damage])]) {
+      bindDpsInput(input);
+    }
+    for (const key of handAssumptionKeys) bindDpsInput(otherInputs[key]);
+    updateOtherHand();
+    check.addEventListener('change', render); mode.addEventListener('change', render); calculate.addEventListener('click', renderDps); render();
     return panel;
   }
 
@@ -458,27 +1232,8 @@
     title.className = 'lc-compare-title';
     title.appendChild(document.createTextNode(
       (view === 'focus' ? 'Spell focus: ' : view === 'proc' ? 'Proc: ' : '') + (slotLabel ? slotLabel + ': ' : '') +
-      (worn ? (worn.name || ('#' + worn.id)) : 'empty slot') + ' -> ' + (cand.name || ('#' + cand.id)) + ' '
+      (worn ? (worn.name || ('#' + worn.id)) : 'empty slot') + ' → ' + (cand.name || ('#' + cand.id)) + ' '
     ));
-    if (view === 'stats' && diff.numericScoreAvailable) {
-      const scoreCls = diff.score > 0 ? 'lc-pos' : (diff.score < 0 ? 'lc-neg' : 'lc-zero');
-      const fLabel = (diff.formula && diff.formula.label) || 'score';
-      const ratio = diff.weaponRatioDelta == null ? '' : '; Weapon ratio delta: ' + fmtDelta(diff.weaponRatioDelta);
-      const score = document.createElement('span');
-      score.className = scoreCls;
-      score.textContent = '(' + fLabel + ' delta: ' + fmtDelta(diff.score) + ratio + ')';
-      title.appendChild(score);
-    } else if (view === 'stats' && diff.hasData) {
-      const missing = (diff.missingScoreStats || []).join(', ');
-      title.appendChild(document.createTextNode('(score unavailable' + (missing ? ': missing ' + missing : '') + ')'));
-    } else if (view === 'stats' && diff.effectsComparable) {
-      title.appendChild(document.createTextNode('(effects only; not scored)'));
-    }
-    if (diff.formula) {
-      const identity = diff.formula.key + ' v' + diff.formula.version;
-      title.appendChild(document.createTextNode(' [' + identity + ']'));
-      if (diff.formula.warning) title.appendChild(document.createTextNode(' ' + diff.formula.warning));
-    }
     head.appendChild(title);
     if (view === 'stats' && alternatives && alternatives.length > 1) {
       const nav = document.createElement('span');
@@ -507,12 +1262,20 @@
     }
     if (equip) head.appendChild(equip);
     div.appendChild(head);
-    if (view === 'stats' && baselineLabel === 'worn' && profile && LC.state && LC.state.getCharacterProjection) {
-      div.appendChild(buildProjectionPanel(cand, profile, worn));
+    if (view === 'stats') {
+      div.appendChild(buildStatsOverview(cand, worn, diff, profile, diff && diff.formula));
+      if (diff.hasData) {
+        const allStats = document.createElement('details');
+        const allStatsSummary = document.createElement('summary');
+        allStatsSummary.textContent = 'All item stats';
+        allStats.appendChild(allStatsSummary);
+        allStats.appendChild(table);
+        div.appendChild(allStats);
+      }
+      const breakdown = buildScoreBreakdown(diff);
+      if (breakdown) div.appendChild(breakdown);
     }
-    if (view === 'stats' && diff.hasData) div.appendChild(table);
     const otherDetails = buildOtherEffects(diff.effects && diff.effects.other);
-    if (view === 'stats' && otherDetails) div.appendChild(otherDetails);
     const focusDetails = buildEffectDetails('Spell focus', diff.effects && diff.effects.focus);
     const procDetails = buildEffectDetails('Proc', diff.effects && diff.effects.proc);
     if (view === 'focus' && focusDetails) {
@@ -524,8 +1287,17 @@
       div.appendChild(procDetails);
     }
     if (view === 'stats') {
-      if (focusDetails) div.appendChild(focusDetails);
-      if (procDetails) div.appendChild(procDetails);
+      if (otherDetails || focusDetails || procDetails) {
+        const effects = document.createElement('details');
+        const effectsSummary = document.createElement('summary');
+        effectsSummary.textContent = 'Effects';
+        effects.appendChild(effectsSummary);
+        for (const details of [otherDetails, focusDetails, procDetails]) if (details) effects.appendChild(details);
+        div.appendChild(effects);
+      }
+      if (baselineLabel === 'worn' && profile && LC.state && LC.state.getCharacterProjection) {
+        div.appendChild(buildProjectionPanel(cand, profile, worn));
+      }
     }
     return div;
   }
@@ -644,17 +1416,28 @@
   // pairs: [{ target, profile }] -- wishlist entries paired with the character
   // that wants them, so each comparison uses the owner's level.
   function buildWishlistCompareButton(cand, pairs, formula) {
+    const verdicts = (pairs || []).map((pair) => {
+      const ownerFormula = LC.diff && LC.diff.resolveFormula
+        ? LC.diff.resolveFormula(pair.profile, formula)
+        : formula;
+      const diff = LC.diff && LC.diff.compareItemPair
+        ? LC.diff.compareItemPair(cand, pair.target, ownerFormula,
+          pair.profile && pair.profile.level, pair.profile)
+        : null;
+      return { formula: ownerFormula, verdict: comparisonVerdict(diff, ownerFormula) };
+    });
+    const signatures = new Set(verdicts.map((entry) => formulaSignature(entry.formula)));
+    const states = new Set(verdicts.map((entry) => entry.verdict.state));
+    const verdict = verdicts.length && signatures.size === 1 && states.size === 1 && !states.has('nomatch')
+      ? verdicts[0].verdict
+      : { state: 'nomatch', explanation: signatures.size > 1 ? 'Comparison unavailable; wishlist owners use different formulas; open each character' : 'Comparison unavailable; mixed comparisons; open each character' };
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-compare';
-    const comparisons = (pairs || []).map((pair) =>
-      LC.diff.compareItemPair(cand, pair.target, formula, pair.profile && pair.profile.level, pair.profile));
-    const direction = comparisons.length && comparisons.every((diff) => diff.numericScoreAvailable && diff.score > 0) ? 1
-      : comparisons.length && comparisons.every((diff) => diff.numericScoreAvailable && diff.score < 0) ? -1 : 0;
-    const arrow = direction > 0 ? ' ↑' : direction < 0 ? ' ↓' : '';
-    button.dataset.state = direction > 0 ? 'upgrade' : direction < 0 ? 'downgrade' : 'sidegrade';
-    button.textContent = 'vs wishlist' + arrow + (pairs.length > 1 ? ' (' + pairs.length + ')' : '');
-    button.title = (direction > 0 ? 'Upgrade' : direction < 0 ? 'Downgrade' : 'Compare') + ' versus wishlist';
+    button.dataset.state = verdict.state;
+    button.textContent = 'Compare wishlist' + (pairs.length > 1 ? ' (' + pairs.length + ')' : '');
+    button.title = 'Compare against wishlist items; ' + verdict.explanation;
+    button.setAttribute('aria-label', button.title);
     return button;
   }
 
@@ -716,134 +1499,43 @@
     return wrapper;
   }
 
-  function slotShort(slotKey) {
-    return { primary: 'P', secondary: 'S', range: 'R' }[slotKey && slotKey.key] || '';
-  }
-
   function comparisonBadgeText(row, formula, compact) {
-    const diff = row.diff;
-    if (!diff.numericScoreAvailable && diff.effectsComparable && !diff.hasData) return [slotShort(row.slotKey), 'effects'].filter(Boolean).join(' ');
-    if (!diff.numericScoreAvailable) return [slotShort(row.slotKey), 'score ?'].filter(Boolean).join(' ');
-    const arrow = diff.score > 0 ? 'up' : diff.score < 0 ? 'dn' : 'eq';
-    const slot = slotShort(row.slotKey);
-    if (row.isAugment) return 'aug ' + arrow + ' ' + fmtDelta(diff.score);
-    if (compact) {
-      return [slot, arrow, fmtDelta(diff.score), diff.weaponRatioDelta == null ? '' : 'r ' + fmtDelta(diff.weaponRatioDelta)]
-        .filter(Boolean).join(' ');
+    if (row && row.diff && row.diff.numericScoreAvailable === true && Number.isFinite(row.diff.score)) {
+      const prefix = row.isAugment ? 'Aug' : row.slotKey && row.slotKey.key === 'primary' ? 'P' : row.slotKey && row.slotKey.key === 'secondary' ? 'S' : '';
+      return (prefix ? prefix + ' ' : '') + 'Stats ' + fmtDelta(row.diff.score);
     }
-    return arrow + ' ' + fmtDelta(diff.score) +
-      (diff.weaponRatioDelta == null ? '' : ' · ratio ' + fmtDelta(diff.weaponRatioDelta));
+    if (row.isAugment) return 'Compare augment';
+    const key = row.slotKey && row.slotKey.key;
+    return key === 'primary' ? 'Compare primary' : key === 'secondary' ? 'Compare secondary' : 'Compare';
   }
 
   function comparisonBadgeTitle(row, formula) {
     const slot = row.slotKey && row.slotKey.key;
-    const identity = row.diff.formula ? '; ' + row.diff.formula.key + ' v' + row.diff.formula.version : '';
-    const ratio = identity + (row.diff.weaponRatioDelta == null ? '' : '; weapon ratio delta ' + fmtDelta(row.diff.weaponRatioDelta));
     if (row.isAugment) {
       const compatible = (row.compatibleSlots || []).join(', ');
-      return 'Augment; fits ' + compatible + '; ' + (slot || '?') + ': vs ' +
-        (row.target && (row.target.name || ('#' + row.target.id)) || 'worn augment') +
-        ' (' + (row.diff.numericScoreAvailable ? 'delta ' + fmtDelta(row.diff.score) : 'score unavailable') + identity + ') -- click for full diff';
+      return 'Compare augment; fits ' + compatible + '; click for full stats and effects';
     }
-    return (slot ? slot + ': ' : '') + 'vs ' + (row.target && (row.target.name || ('#' + row.target.id)) || 'worn item') +
-      ' (' + (row.diff.numericScoreAvailable ? 'delta ' + fmtDelta(row.diff.score) : 'score unavailable') + ratio + ') -- click for full diff';
+    return (slot ? slot + ': ' : '') + 'Compare item stats and effects; click for full details';
   }
 
-  function buildComparisonBadge(row, formula, compact) {
-    const effectOnly = !row.diff.numericScoreAvailable && row.diff.effectsComparable && !row.diff.hasData;
-    const badge = buildBadge(
-      effectOnly ? 'sidegrade' : !row.diff.numericScoreAvailable ? 'nomatch' : (row.diff.score > 0 ? 'upgrade' : row.diff.score < 0 ? 'downgrade' : 'sidegrade'),
-      comparisonBadgeText(row, formula, compact), comparisonBadgeTitle(row, formula));
+  function buildComparisonBadge(row, formula, compact, cand = null, profile = null) {
+    const verdict = comparisonVerdict(row && row.diff, formula);
+    const title = comparisonBadgeTitle(row, formula) + '; ' + verdict.explanation;
+    const badge = buildCompareButton(
+      verdict.state,
+      comparisonBadgeText(row, formula, compact), title);
     badge.dataset.lcView = 'stats';
+    if (cand && profile && row && row.target) appendDpsMetric(badge, cand, row.target, profile, formula);
     return badge;
   }
 
-  function focusRankValue(effect) {
-    const raw = String(effect && effect.rank || '');
-    const number = raw.match(/-?\d+(?:\.\d+)?/);
-    if (number) return parseFloat(number[0]);
-    const roman = raw.match(/^[ivxlcdm]+$/i);
-    if (!roman) return null;
-    const values = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
-    return roman[0].toUpperCase().split('').reduce((total, char, index, chars) =>
-      total + (values[char] < (values[chars[index + 1]] || 0) ? -values[char] : values[char]), 0);
-  }
-
-  function focusPositiveNegative(rows) {
-    let positive = false;
-    let negative = false;
-    for (const effectRow of rows || []) {
-      if (effectRow.direction > 0) { positive = true; continue; }
-      if (effectRow.direction < 0) { negative = true; continue; }
-      if (effectRow.status === 'added') positive = true;
-      if (effectRow.status === 'removed') negative = true;
-      if (effectRow.status === 'changed') {
-        const current = focusRankValue(effectRow.current);
-        const candidate = focusRankValue(effectRow.candidate);
-        if (current != null && candidate != null) candidate > current ? (positive = true) : (negative = true);
-        else positive = negative = true;
-      }
-    }
-    return { positive, negative };
-  }
-
-  function focusStateLabel(positive, negative) {
-    return positive && negative ? 'focus change' : positive ? 'focus up' : 'focus dn';
-  }
-
-  function buildFocusBadge(row) {
-    const rows = row.diff.effects && row.diff.effects.focus && row.diff.effects.focus.rows || [];
-    const { positive, negative } = focusPositiveNegative(rows);
-    if (!positive && !negative) return null;
-    const state = positive && negative ? 'sidegrade' : positive ? 'upgrade' : 'downgrade';
-    const text = focusStateLabel(positive, negative);
-    const badge = buildBadge(state, text, 'Spell focus ' + (state === 'sidegrade' ? 'changed' : state) + '; click for details');
-    badge.dataset.lcView = 'focus';
-    return badge;
-  }
-
-  function procPositiveNegative(rows) {
-    let positive = false;
-    let negative = false;
-    let unknown = false;
-    for (const effectRow of rows || []) {
-      if (effectRow.status === 'same') continue;
-      if (effectRow.direction > 0 || effectRow.status === 'added') positive = true;
-      else if (effectRow.direction < 0 || effectRow.status === 'removed') negative = true;
-      else unknown = true;
-    }
-    return { positive, negative, unknown };
-  }
-
-  function procStateText(positive, negative, unknown) {
-    return !unknown && positive !== negative
-      ? (positive ? 'proc up' : 'proc dn') : 'proc change';
-  }
-
-  function buildProcBadge(row) {
-    const rows = row.diff.effects && row.diff.effects.proc && row.diff.effects.proc.rows || [];
-    if (!rows.length) return null;
-    const changed = rows.filter((effectRow) => effectRow.status !== 'same');
-    const slot = slotShort(row.slotKey);
-    if (!changed.length) {
-      const badge = buildBadge('sidegrade', [slot, 'proc eq'].filter(Boolean).join(' '), 'Weapon proc damage is equal; click for proc-only details');
-      badge.dataset.lcView = 'proc';
-      return badge;
-    }
-    const { positive, negative, unknown } = procPositiveNegative(changed);
-    const state = !unknown && positive !== negative ? (positive ? 'upgrade' : 'downgrade') : 'sidegrade';
-    const text = [slot, procStateText(positive, negative, unknown)].filter(Boolean).join(' ');
-    const badge = buildBadge(state, text, 'Weapon proc ' + (state === 'sidegrade' ? 'changed' : state) + '; click for proc-only details');
-    badge.dataset.lcView = 'proc';
-    return badge;
-  }
-
-  function buildComparisonBadges(row, formula, compact) {
-    const main = row.diff.numericScoreAvailable ? buildComparisonBadge(row, formula, compact) :
-      row.diff.hasData ? buildBadge('nomatch', comparisonBadgeText(row, formula, compact), comparisonBadgeTitle(row, formula)) :
+  function buildComparisonBadges(row, formula, compact, cand = null, profile = null) {
+    const effectGroups = row.diff.effects || {};
+    const hasEffects = row.diff.effectsComparable || Object.values(effectGroups).some((group) => group && group.rows && group.rows.length);
+    const main = row.diff.numericScoreAvailable || row.diff.hasData || hasEffects ? buildComparisonBadge(row, formula, compact, cand, profile) :
       buildOtherBadge(row.diff.effects && row.diff.effects.other && row.diff.effects.other.rows || []);
     if (main) main.dataset.lcView = 'stats';
-    return [main, buildFocusBadge(row), buildProcBadge(row)].filter(Boolean);
+    return [main].filter(Boolean);
   }
 
   // ---------- Multi-character badges + panel ----------
@@ -860,110 +1552,45 @@
     return multi.results.map(multiResultSummary).join('; ');
   }
 
-  function resultEffectRows(result, kind) {
-    const rows = [];
-    for (const row of result.comparison.rows) {
-      const group = row.diff && row.diff.effects && row.diff.effects[kind];
-      if (group && group.rows && group.rows.length) rows.push(...group.rows);
-    }
-    return rows;
-  }
-
-  // Aggregate spell-focus badge across every compared character, not just the
-  // best one: focus is character-specific (it depends on each character's worn
-  // item), so one character may gain focus while another loses it.
-  function buildMultiFocusBadge(multi) {
-    let positive = false;
-    let negative = false;
-    const parts = [];
-    for (const result of multi.results) {
-      const { positive: up, negative: down } = focusPositiveNegative(resultEffectRows(result, 'focus'));
-      positive = positive || up;
-      negative = negative || down;
-      parts.push(((result.profile && result.profile.name) || 'Unnamed') + ': ' +
-        (up && down ? 'focus change' : up ? 'focus up' : down ? 'focus dn' : 'focus same'));
-    }
-    if (!positive && !negative) return null;
-    const state = positive && negative ? 'sidegrade' : positive ? 'upgrade' : 'downgrade';
-    const text = focusStateLabel(positive, negative);
-    const badge = buildBadge(state, text,
-      'Spell focus across compared characters (' + parts.join(', ') + '); click for details');
-    badge.dataset.lcView = 'focus';
-    return badge;
-  }
-
-  // Aggregate weapon-proc badge across every compared character.
-  function buildMultiProcBadge(multi) {
-    let hasRows = false;
-    let allSame = true;
-    const parts = [];
-    for (const result of multi.results) {
-      const rows = resultEffectRows(result, 'proc');
-      if (!rows.length) continue;
-      hasRows = true;
-      const changed = rows.some((effectRow) => effectRow.status !== 'same');
-      allSame = allSame && !changed;
-      const { positive, negative, unknown } = procPositiveNegative(rows);
-      parts.push(((result.profile && result.profile.name) || 'Unnamed') + ': ' +
-        (!changed ? 'proc eq' : procStateText(positive, negative, unknown)));
-    }
-    if (!hasRows) return null;
-    let positive = false;
-    let negative = false;
-    let unknown = false;
-    for (const result of multi.results) {
-      const { positive: up, negative: down, unknown: unk } = procPositiveNegative(resultEffectRows(result, 'proc'));
-      positive = positive || up;
-      negative = negative || down;
-      unknown = unknown || unk;
-    }
-    const state = !unknown && positive !== negative ? (positive ? 'upgrade' : 'downgrade') : 'sidegrade';
-    const text = allSame ? 'proc eq' : procStateText(positive, negative, unknown);
-    const badge = buildBadge(state, text, allSame
-      ? 'Weapon proc damage is equal for every compared character; click for proc-only details'
-      : 'Weapon proc across compared characters (' + parts.join(', ') + '); click for proc-only details');
-    badge.dataset.lcView = 'proc';
-    return badge;
-  }
-
-  // Collapsed layout: the best character's badges stand alone so the page
-  // stays uncluttered, with the number of compared characters appended to the
-  // main badge, every character listed in its tooltip, and focus/proc
-  // aggregated across all characters.
+  // Collapsed layout: one neutral comparison action opens every selected character.
   function buildMultiComparisonBadges(multi, cand, formula, compact) {
     if (multi && multi.mixedFormulas) {
-      const badge = buildBadge('nomatch', 'Different formulas · ' + multi.results.length,
-        'Character scores use different formulas or an unsupported version; click to compare separately');
+      const title = 'Comparison unavailable; character scores use different formulas; open each character';
+      const badge = buildCompareButton('nomatch', 'Compare', title);
       badge.dataset.lcView = 'stats';
-      return [badge, buildMultiFocusBadge(multi), buildMultiProcBadge(multi)].filter(Boolean);
+      return [badge];
     }
     const best = multi && multi.best;
     const basis = (best && !best.empty ? best : null) ||
       (multi && multi.results || []).find((result) => result.summary.comparable && !result.empty) ||
       best || (multi && multi.results || []).find((result) => result.summary.comparable);
-    if (!basis) return [buildMultiFocusBadge(multi), buildMultiProcBadge(multi),
-        buildOtherBadge(multi.results.flatMap((result) => resultEffectRows(result, 'other')))].filter(Boolean);
-    const badges = [];
-    for (const [index, row] of basis.comparison.rows.entries()) {
-      if (cand.isAugment && index) break;
-      if (!row.diff || (!row.diff.numericScoreAvailable && !row.diff.hasData)) continue;
-      badges.push(buildComparisonBadge(row, formula, compact));
+    if (!basis) return [buildCompareButton('nomatch', 'Compare',
+      'Compare item stats and effects for the selected characters')];
+    const row = basis.comparison.rows.find((entry) => entry.diff &&
+      (entry.diff.comparable || entry.diff.hasData || entry.diff.effectsComparable));
+    if (!row) return [buildCompareButton('nomatch', 'Compare', 'Compare item stats and effects; comparison score is unavailable')];
+    const verdict = multiVerdict(multi, formula);
+    const badge = buildCompareButton(verdict.state, comparisonBadgeText(row, formula, compact),
+      comparisonBadgeTitle(row, formula) + '; ' + verdict.explanation);
+    badge.dataset.lcView = 'stats';
+    const basisName = multi.results.length > 1 && basis.profile
+      ? (basis.profile.name || basis.profile.id || 'Unnamed') : '';
+    if (basisName) {
+      prependBadgeText(badge, basisName + ' ');
     }
-    const focusBadge = buildMultiFocusBadge(multi);
-    if (focusBadge) badges.push(focusBadge);
-    const otherBadge = buildOtherBadge(multi.results.flatMap((result) => resultEffectRows(result, 'other')));
-    if (otherBadge && !badges.some((badge) => !badge.dataset.lcView || badge.dataset.lcView === 'stats')) badges.unshift(otherBadge);
-    const procBadge = buildMultiProcBadge(multi);
-    if (procBadge) badges.push(procBadge);
-    if (best && multi.results.length > 1 && badges.length) {
-      const main = badges[0];
-      main.textContent += ' · ' + multi.results.length;
+    if (best && multi.results.length > 1) {
       const scoredCount = multi.results.filter((result) => result.summary.numericScoreAvailable).length;
-      main.title = (basis === best ? 'Best among ' + scoredCount + ' scored characters' : 'Partial comparison') +
-        (scoredCount < multi.results.length ? '; other scores unavailable' : '') + ': ' +
-        multiComparisonSummary(multi) + ' -- click for full diff';
+      badge.title = (basis === best ? 'Preference-based ordering among ' + scoredCount + ' scored characters' : 'Partial comparison') +
+        (scoredCount < multi.results.length ? '; other scores unavailable' : '') +
+        '. ' + verdict.explanation + '. Click for each character\'s comparison.';
+      badge.setAttribute('aria-label', badge.title);
     }
-    return badges;
+    if (basisName) {
+      badge.title = 'Character ' + basisName + ': ' + badge.title;
+      badge.setAttribute('aria-label', badge.title);
+    }
+    if (cand && basis.profile && row.target) appendDpsMetric(badge, cand, row.target, basis.profile, formula);
+    return [badge];
   }
 
   // Expanded layout: every compared character gets its own labeled badges
@@ -996,9 +1623,10 @@
       for (const [index, row] of result.comparison.rows.entries()) {
         if (cand.isAugment && index) break;
         if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
-        for (const badge of buildComparisonBadges(row, formula, compact)) {
-          if (badge.dataset.lcView === 'stats') badge.textContent = name + ' ' + badge.textContent;
+        for (const badge of buildComparisonBadges(row, formula, compact, cand, result.profile)) {
+          if (badge.dataset.lcView === 'stats') prependBadgeText(badge, name + ' ');
           badge.title = name + ': ' + badge.title;
+          badge.setAttribute('aria-label', badge.title);
           badge.dataset.lcProfile = profileId;
           badge.dataset.lcRow = String(index);
           badges.push(badge);
@@ -1042,12 +1670,11 @@
       chip.type = 'button';
       chip.className = 'lc-compare-chip';
       chip.dataset.lcProfileId = (result.profile && result.profile.id) || '';
-      chip.dataset.state = result.empty ? 'empty'
-        : !result.summary.numericScoreAvailable ? 'nomatch'
-        : result.summary.score > 0 ? 'upgrade' : result.summary.score < 0 ? 'downgrade' : 'sidegrade';
-      chip.textContent = (((result.profile && result.profile.name) || 'Unnamed') + ' ' +
-        (result.summary.numericScoreAvailable ? fmtDelta(result.summary.score) : 'score ?')).trim();
-      chip.title = multiResultSummary(result);
+      const verdict = resultVerdict(result, formula);
+      chip.dataset.state = verdict.state;
+      chip.textContent = (result.profile && result.profile.name) || 'Unnamed';
+      chip.title = multiResultSummary(result) + '; ' + verdict.explanation;
+      chip.setAttribute('aria-label', chip.title);
       chip.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1138,6 +1765,7 @@
     fmtStat,
     fmtDelta,
     buildBadge,
+    buildScoreBreakdown,
     buildComparePanel,
     buildWishlistToggle,
     buildWishlistCompareButton,

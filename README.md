@@ -1,6 +1,6 @@
 # Loot Captain
 
-Loot Captain is a Manifest V3 Chrome/Edge 109+ extension for comparing EverQuest gear against local character profiles. It adds upgrade, downgrade, and stat-diff badges to RaidLoot and OpenDKP pages.
+Loot Captain is a Manifest V3 Chrome/Edge 109+ extension for comparing EverQuest gear against local character profiles. It adds comparison controls to RaidLoot and OpenDKP pages.
 
 ## Features
 
@@ -14,6 +14,37 @@ Loot Captain is a Manifest V3 Chrome/Edge 109+ extension for comparing EverQuest
 - Enrich missing item stats from public RaidLoot item pages.
 - Resolve statless class-specific armor tokens to real RaidLoot armor, with locally cached set results.
 - Annotate OpenDKP item pages, tables, and tooltips.
+
+## Reading a comparison
+
+Click the character's stat-score button beside an item. It shows the preference-score
+change; melee profiles also show an available **Melee DPS estimate** change under a
+shared character scenario. The panel names the equipped and proposed items and shows
+the current and proposed damage values. An unavailable damage estimate stays marked
+unavailable. A preference score is not itself a damage estimate.
+
+Comparison text colors follow each metric: green means higher, red lower, and yellow
+equal. Gray means unknown, mixed, or not modeled; blue marks an empty slot. Button
+backgrounds remain neutral. Stats color follows the selected preference, while the
+melee estimate has its own direction. Tooltips explain each metric's scope.
+
+Full item stats, effects and preference arithmetic stay collapsed until requested.
+**Stat estimates and experimental DPS** contains the optional reference models and
+assumption-driven weapon calculator. Focus and pet damage are not included in that
+calculator, so the main comparison does not claim a complete DPS improvement.
+Its **DPS assumptions** section lets you edit and explicitly save one shared melee
+scenario per character. Initial values are illustrative reference defaults, not measured
+combat inputs. Merely viewing an estimate does not save settings or change equipment.
+The v2 reference model includes nonweapon ATK, STR/DEX and heroic STR/DEX changes,
+supported Cleave/Ferocity effects, and exact supported weapon procs at shared per-hand
+rates. Incomplete effect data produces a clearly labeled partial melee-stat estimate;
+it is not treated as zero. **Damage contributions** shows the components and any
+unresolved inputs. Saved v1 scenarios keep their previous behavior until you choose
+**Enable gear stats and procs** and explicitly save. Pet damage is excluded. The v3
+hybrid Beastlord model adds the fixed direct-damage rotation, loadout-specific eligible
+focus, and an explicitly unfocused Spell stats DPS partial fallback when complete focus
+evidence is unavailable. Spell focus and DoTs remain limited by the documented catalog;
+this is a reference estimate, not a combat meter.
 
 The armor-token catalog covers Planes of Power (PoP), Gates of Discord (GoD), Omens of War (OoW), Prophecy of Ro (PoR), The Serpent's Spine (TSS), Underfoot (UF), House of Thule (HoT), Veil of Alaris (VoA), Rain of Fear (RoF), Call of the Forsaken (CoTF), The Darkened Sea (TDS), The Broken Mirror (TBM), Empires of Kunark (EoK), Ring of Scale (RoS), The Burning Lands (TBL), Torment of Velious (ToV), Claws of Veeshan (CoV), Terror of Luclin (ToL), Night of Shadows (NoS), Laurion's Song (LS), and The Outer Brood (ToB). It maps slot-specific dropped armor templates and selected verified crafted/lining families, including PoP-era templates that are scoped to an armor type rather than every class; generic all-slot ores and unrelated gear are intentionally out of scope. Records are exact source-reviewed data, not a live crawler, and `python3 tools/generate_armor_token_catalog.py --check` verifies the committed catalog. This coverage requires no new permissions or network hosts.
 

@@ -9,6 +9,7 @@
   const COMPARE_KEY = 'compareProfileIds';
   const LAYOUT_KEY = 'compareBadgeLayout';
   const SCORE_KEY = 'scoreFormula';
+  const DPS_SCENARIOS_KEY = 'dpsScenariosByProfile';
   const PROFILE_STATS_VERSION = 4;
   const NON_NUMERIC_STAT = /^(?:slot|class|race|type|deity|skill|effect|click|worn|proc|focus|tools|required|restriction|lore|aug)/i;
   let profileLoadGeneration = 0;
@@ -421,15 +422,33 @@
     if (profiles.length) LC.currentFormula = formula;
   }
 
-  async function getCharacterProjection(cand, profile, worn, confirmed, mode = 'reference') {
+  async function getCharacterProjection(cand, profile, worn, confirmed, mode = 'reference', assumptions, confirmation) {
     const targetIndex = profile && profile.items ? profile.items.indexOf(worn) : -1;
     if (!profile || !profile.id || targetIndex < 0) return { ok: false, error: 'Choose an equipped comparison target.' };
     try {
+      const expectedWeapons = mode === 'dps-reference' || mode === 'dps' && assumptions && assumptions.scope === 'equipped-weapons'
+        ? profile.items.map((item, index) => {
+          const slot = LC.slots.canonicalSlot(item && item.slot);
+          const keys = slot && (slot.keys || [slot.key]);
+          return item && !item.isAugment && keys && keys.some((key) => key === 'primary' || key === 'secondary')
+            ? { index, id: item.id || '', name: item.name || '', slot: item.slot || '' } : null;
+        }).filter(Boolean)
+        : undefined;
+      const expectedEquipment = mode === 'dps-reference'
+        ? profile.items.map((item, index) => ({ index, id: item && item.id || '', name: item && item.name || '',
+          slot: item && item.slot || '', isAugment: !!(item && item.isAugment) })) : undefined;
       return await chrome.runtime.sendMessage({ type: 'GET_CHARACTER_PROJECTION', profileId: profile.id, targetIndex,
         expected: { id: worn.id || '', name: worn.name || '', slot: worn.slot || '' },
         item: storageItem(cand), classes: cand.classes || [], requiredLevel: LC.parser.itemRequiredLevel(cand),
-        confirmed: confirmed === true, mode });
+        confirmed: confirmed === true, mode, assumptions, expectedWeapons, expectedEquipment, confirmation: confirmation || undefined });
     } catch (error) { return { ok: false, error: 'Projection unavailable: ' + error.message }; }
+  }
+
+  async function saveDpsScenario(profileId, scenario, expectedRevision) {
+    if (!profileId || !Number.isInteger(expectedRevision) || expectedRevision < 0) return { ok: false, error: 'DPS scenario revision is required.' };
+    try {
+      return await chrome.runtime.sendMessage({ type: 'SET_DPS_SCENARIO', profileId, scenario, expectedRevision });
+    } catch (error) { return { ok: false, error: 'DPS scenario save failed: ' + error.message }; }
   }
 
   LC.state = {
@@ -438,6 +457,7 @@
     COMPARE_KEY,
     LAYOUT_KEY,
     SCORE_KEY,
+    DPS_SCENARIOS_KEY,
     getProfiles,
     saveProfiles,
     getSelectedId,
@@ -464,5 +484,6 @@
     enrichWishlistEntry,
     equipItem,
     getCharacterProjection,
+    saveDpsScenario,
   };
 })();

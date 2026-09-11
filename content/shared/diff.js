@@ -23,6 +23,16 @@
     'Regen', 'ManaRegen', 'EndRegen',
   ]);
 
+  const ROLE_PRESET_CLASSES = {
+    'role-tank': ['Warrior', 'Paladin', 'Shadowknight'],
+    'role-melee': ['Berserker', 'Beastlord', 'Monk', 'Ranger', 'Rogue'],
+    'role-caster': ['Enchanter', 'Magician', 'Necromancer', 'Wizard'],
+    'role-healer': ['Cleric', 'Druid', 'Shaman'],
+    'role-raw': ['Bard'],
+  };
+  const CLASS_NAME_ALIASES = { war: 'warrior', pal: 'paladin', shd: 'shadowknight', rng: 'ranger',
+    mnk: 'monk', brd: 'bard', rog: 'rogue', shm: 'shaman', nec: 'necromancer', wiz: 'wizard',
+    mag: 'magician', enc: 'enchanter', bst: 'beastlord', ber: 'berserker', clr: 'cleric', dru: 'druid' };
   const SCORE_FORMULAS = [
     { key: 'ac10hp', label: '1AC=10HP', terms: { HP: 1, AC: 10 } },
     { key: 'ac15hp', label: '1AC=15HP', terms: { HP: 1, AC: 15 } },
@@ -34,9 +44,23 @@
     { key: 'regen', label: 'HP Regen', terms: { Regen: 1 } },
     { key: 'manaregen', label: 'Mana Regen', terms: { ManaRegen: 1 } },
     { key: 'endregen', label: 'End Regen', terms: { EndRegen: 1 } },
-    { key: 'netpos', label: 'Net positive', terms: '__POSITIVE__' },
+    { key: 'netpos', label: 'Legacy — no recommendation', terms: '__POSITIVE__', recommendation: false },
+    { key: 'role-tank', label: 'Tank survivability preference', terms: { HP: 1, AC: 10, HSta: 20 }, preset: true },
+    { key: 'role-melee', label: 'Melee stat preference', terms: { HP: 1, ATK: 5, HDex: 20 }, preset: true },
+    { key: 'role-caster', label: 'Caster stat preference', terms: { MANA: 1, 'Spell Dmg': 10 }, preset: true },
+    { key: 'role-healer', label: 'Healer preference', terms: { MANA: 1, 'Heal Amount': 10 }, preset: true },
+    { key: 'role-raw', label: 'General / raw (no score)', terms: {}, scored: false, recommendation: false, preset: true },
   ].map((formula) => ({ ...formula, version: 1 }));
   const DEFAULT_FORMULA_KEY = 'ac10hp';
+  function suggestedFormula(profile) {
+    const normalize = (value) => LC.parser && LC.parser.normalizeClass
+      ? LC.parser.normalizeClass(value)
+      : (CLASS_NAME_ALIASES[String(value || '').trim().toLowerCase()] || String(value || '').trim().toLowerCase());
+    const cls = normalize(profile && profile.cls);
+    const key = Object.entries(ROLE_PRESET_CLASSES).find(([, classes]) =>
+      classes.some((name) => normalize(name) === cls))?.[0] || 'role-raw';
+    return SCORE_FORMULAS.find((formula) => formula.key === key) || SCORE_FORMULAS.find((formula) => formula.key === 'role-raw');
+  }
   function resolveFormula(profile, fallback) {
     const key = typeof fallback === 'string' ? fallback : fallback && fallback.key;
     const defaultFormula = SCORE_FORMULAS.find((formula) => formula.key === key) || SCORE_FORMULAS[0];
@@ -382,7 +406,14 @@
     for (const k of Object.keys(scoreTerms)) {
       if (!diffs[k] || diffs[k].delta == null) missingScoreStats.push(k);
     }
-    let numericScoreAvailable = missingScoreStats.length === 0;
+    const scoreEnabled = f.scored !== false;
+    const breakdown = Object.keys(scoreTerms).map((key) => {
+      const delta = diffs[key] && diffs[key].delta;
+      const weight = scoreTerms[key];
+      const contribution = delta == null || !Number.isFinite(delta * weight) ? null : delta * weight;
+      return { key, delta, weight, contribution };
+    });
+    let numericScoreAvailable = scoreEnabled && missingScoreStats.length === 0;
     let score = numericScoreAvailable ? 0 : null;
     if (f.terms === '__POSITIVE__') {
       if (numericScoreAvailable) for (const k of POSITIVE_STATS) score += diffs[k].delta;
@@ -402,13 +433,15 @@
     const weaponRatioDelta = ratioDelta != null && Number.isFinite(ratioDelta) ? ratioDelta : null;
     return {
       diffs, score, weaponRatioDelta, worn, formula: f, comparable, hasData,
-      numericScoreAvailable, missingScoreStats,
+      numericScoreAvailable, missingScoreStats, breakdown,
+      scoreReason: scoreEnabled ? '' : 'raw',
     };
   }
 
   function bestComparisonTarget(cand, wornCandidates, formula) {
     if (!wornCandidates.length) return null;
     if (wornCandidates.length === 1) return wornCandidates[0];
+    if (formula && formula.recommendation === false) return wornCandidates[0];
     let best = null, bestScore = -Infinity;
     for (const w of wornCandidates) {
       const d = diffItems(cand, w, formula);
@@ -432,7 +465,7 @@
         .sort((a, b) => {
           if (a.diff.numericScoreAvailable !== b.diff.numericScoreAvailable) return a.diff.numericScoreAvailable ? -1 : 1;
           if (!a.diff.numericScoreAvailable) return 0;
-          return b.diff.score - a.diff.score;
+          return formula.recommendation === false ? 0 : b.diff.score - a.diff.score;
         });
       if (!matches.length) return { eligible: false, rows: [] };
       return {
@@ -478,6 +511,7 @@
   }
 
   function wishlistComparisonDirection(cand, targets, formula, level) {
+    if (formula && formula.recommendation === false) return 0;
     const comparisons = (targets || []).map((target) => compareItemPair(cand, target, formula, level));
     if (!comparisons.length || comparisons.some((diff) => !diff.numericScoreAvailable)) return 0;
     const directions = comparisons.map((diff) => Math.sign(diff.score));
@@ -499,6 +533,7 @@
       hasEffects: rows.some((row) => row.diff && row.diff.effectsComparable),
       numericScoreAvailable,
       missingScoreStats,
+      recommendationAvailable: rows.length > 0 && rows.every((row) => row.diff && row.diff.formula && row.diff.formula.recommendation !== false),
       score: numericScoreAvailable ? (rows[0].isAugment ? rows[0].diff.score : rows.reduce((sum, row) => sum + row.diff.score, 0)) : null,
       rows,
     };
@@ -520,7 +555,7 @@
     const formulas = results.map((result) => resolveFormula(result.profile, formula));
     const mixedFormulas = new Set(formulas.map((entry) => entry.key + ':' + entry.version)).size > 1 ||
       formulas.some((entry) => entry.warning);
-    const comparable = mixedFormulas ? [] : results.filter((result) => result.summary.numericScoreAvailable);
+    const comparable = mixedFormulas ? [] : results.filter((result) => result.summary.numericScoreAvailable && result.summary.recommendationAvailable);
     const worn = comparable.filter((result) => !result.empty);
     const pool = worn.length ? worn : comparable;
     let best = null;
@@ -534,8 +569,10 @@
     STAT_ORDER,
     POSITIVE_STATS,
     SCORE_FORMULAS,
+    ROLE_PRESET_CLASSES,
     resolveFormula,
     DEFAULT_FORMULA_KEY,
+    suggestedFormula,
     findWornInSlot,
     findWornAugments,
     hasNumericStats,
@@ -547,6 +584,7 @@
     wishlistComparisonDirection,
     summarizeComparisons,
     compareEffects,
+    weaponRatio,
     weaponType,
     numericStat,
   };

@@ -32,7 +32,8 @@ Important gaps:
 - Wishlist entries preserve canonical numeric stats and structured effects when available; missing source data remains unresolved.
 - Profiles can contain worn augments, but do not contain complete base character totals, AAs,
   buffs, caps, or combat assumptions.
-- Role presets and character-mechanics projections remain future work; current formulas are ranking preferences.
+- Role presets and stat reference estimates are available. DPS remains an explicit
+  reference estimate; complete retail character DPS remains unsupported.
 
 The original implementation notes below predate multi-character comparison. They are retained
 as history; current selection uses multiple checked profiles (`compareProfileIds`) and has no
@@ -187,13 +188,17 @@ not permission to ship a speculative model.
 | --- | --- | --- | --- |
 | [01 Missing-data semantics](plans/wishlist-scoring/01-missing-data.md) | Implemented | — | Known zero, unknown, provenance, and conservative score availability |
 | [02 Per-character formulas](plans/wishlist-scoring/02-per-character-formulas.md) | Implemented | 01 | Versioned profile formulas and multi-character comparison rules |
-| [03 Role presets and breakdown](plans/wishlist-scoring/03-role-presets-and-breakdown.md) | Design needed | 01, 02 | Weight design, class suggestions, transparent contributions |
+| [03 Role presets and breakdown](plans/wishlist-scoring/03-role-presets-and-breakdown.md) | Implemented | 01, 02 | Versioned preferences, class suggestions, transparent contributions |
 | [04 Informational effects](plans/wishlist-scoring/04-informational-effects.md) | Implemented | 01 | Worn/click/unknown effect preservation and comparison |
 | [05 Projection evidence](plans/wishlist-scoring/05-projection-evidence.md) | Research complete; calibration pending | — | Beastlord evidence review; HP/mana/ATK still unvalidated |
 | [05A Character inputs and calibration](plans/wishlist-scoring/05a-character-inputs.md) | Implemented | 05 input contract | Local snapshots, AA checklist, reversible-swap records and export |
 | [05B Versioned rules and AA selection](plans/wishlist-scoring/05b-validated-rules.md) | Reference estimates implemented | 05A optional; reference assumptions | HP/mana/ATK/endurance model, AA defaults; optional calibrated Accuracy |
 | [05C Character projection panel](plans/wishlist-scoring/05c-projection-panel.md) | Reference estimates implemented | 05B | Compact estimates without calibration; optional calibrated Accuracy |
-| [06 Weapon throughput feasibility](plans/wishlist-scoring/06-weapon-throughput.md) | Research gate | 04 if procs are included | Sourced assumptions and a feasibility decision |
+| [06 Weapon throughput feasibility](plans/wishlist-scoring/06-weapon-throughput.md) | Explicit-assumption scope accepted | 04 if procs are included | Automatic live-DPS prediction remains unsupported |
+| [06A DPS estimates](plans/wishlist-scoring/06a-dps-estimates.md) | First increment implemented | 06, 04 | Selected-hand Beastlord melee/procs; spell-focus and pet contracts |
+| [06B Equipped weapon DPS](plans/wishlist-scoring/06b-equipped-weapon-dps.md) | Implemented as explicit scenario arithmetic | 06A | Separate hand assumptions and weapon subtotals; no automatic combat rules |
+| [06C Compact score and DPS](plans/wishlist-scoring/06c-compact-score-and-dps.md) | Shared reference scenario | 06B | Two compact metrics; explicitly saved per-character melee assumptions |
+| [06D Player damage contributions](plans/wishlist-scoring/06d-player-damage-contributions.md) | V3 Beastlord model implemented and live-verified | 06C | V2 melee/procs plus hybrid Beastlord spell rotation, eligible focus, and unfocused partial fallback; pets/DoTs excluded |
 
 Plans 01→02→03 are the scoring track. Plan 04 can run after 01 and before 03 if effect
 rows are needed in the same UI. Plans 05 and 06 may run independently, but their research
@@ -209,4 +214,4 @@ any projection or DPS number without its evidence gate remain deferred.
 ## Current checkpoint and next steps
 
 See [checkpoint and next steps](plans/wishlist-scoring/checkpoint-and-next-steps.md) for shipped
-scope, model limits, plan 03 (role presets/breakdown), and the subsequent DPS estimate work.
+scope, model limits, plan 03 (role presets/breakdown), and the bounded next focus-coverage increment.

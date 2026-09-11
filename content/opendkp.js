@@ -343,7 +343,7 @@
     for (const [index, row] of comparison.rows.entries()) {
       if (selected.isAugment && index) break;
       if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
-      for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact)) {
+      for (const rowBadge of LC.ui.buildComparisonBadges(row, f, compact, selected, LC.currentProfile)) {
         if (onBadge) onBadge(rowBadge, row, index, comparison);
         badges.push(rowBadge);
       }
@@ -595,7 +595,7 @@
       return;
     }
     if (!started) return;
-    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula'].some((k) => changes[k]);
+    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula', 'dpsScenariosByProfile'].some((k) => changes[k]);
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     // Clear badges and re-annotate (keep any open character picker alive)
