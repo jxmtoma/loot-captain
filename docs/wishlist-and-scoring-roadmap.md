@@ -198,7 +198,7 @@ not permission to ship a speculative model.
 | [06A DPS estimates](plans/wishlist-scoring/06a-dps-estimates.md) | First increment implemented | 06, 04 | Selected-hand Beastlord melee/procs; spell-focus and pet contracts |
 | [06B Equipped weapon DPS](plans/wishlist-scoring/06b-equipped-weapon-dps.md) | Implemented as explicit scenario arithmetic | 06A | Separate hand assumptions and weapon subtotals; no automatic combat rules |
 | [06C Compact score and DPS](plans/wishlist-scoring/06c-compact-score-and-dps.md) | Shared reference scenario | 06B | Two compact metrics; explicitly saved per-character melee assumptions |
-| [06D Player damage contributions](plans/wishlist-scoring/06d-player-damage-contributions.md) | V3 Beastlord model implemented and live-verified | 06C | V2 melee/procs plus hybrid Beastlord spell rotation, eligible focus, and unfocused partial fallback; pets/DoTs excluded |
+| [06D Player damage contributions](plans/wishlist-scoring/06d-player-damage-contributions.md) | V3 Beastlord, bounded caster, and bounded Berserker/Monk/Rogue base-melee references implemented | 06C | V2 melee/procs plus hybrid Beastlord rotation, class-specific caster references, base-melee references for three melee classes, eligible focus and unfocused fallback; class abilities/pets/unsupported mechanics excluded |
 
 Plans 01→02→03 are the scoring track. Plan 04 can run after 01 and before 03 if effect
 rows are needed in the same UI. Plans 05 and 06 may run independently, but their research

@@ -1,7 +1,9 @@
 # 06D — Player damage across gear sets
 
-Scope: level-100 Beastlord melee stats/effects, weapon procs and spell damage.
-Pet damage is explicitly excluded. Keep the compact Stats / DPS display and
+Scope: level-100 Beastlord melee stats/effects, weapon procs and spell damage, plus
+bounded level-100 Wizard, Magician, Enchanter and Necromancer class-specific
+spell-only references and bounded base-melee references for Berserker, Monk and
+Rogue. Pet damage is explicitly excluded. Keep the compact Stats / DPS display and
 independent metric text colors on a neutral background.
 
 Status: melee stats/effects and supported weapon procs are implemented in the
@@ -39,6 +41,14 @@ Acceptance: an armor replacement with a supported changed effect produces a
 recomputable melee contribution; covered/weaker duplicate effects do not stack
 incorrectly; unchanged gear yields zero; unknown active effects remain unresolved.
 
+The level-100 Berserker, Monk and Rogue variants currently use separate base-melee
+scenario identities over this same explicit weapon/effect/proc arithmetic. Their class
+spell lists are retained as applicability sources—[Berserker](https://www.raidloot.com/spells/berserker),
+[Monk](https://www.raidloot.com/spells/monk) and [Rogue](https://www.raidloot.com/spells/rogue)—but
+discs/Frenzy, hand-to-hand and kicks, backstab/poisons, class special attacks and
+class-specific weapon rules are excluded until their timing and damage inputs are
+separately sourced. These are base-melee references, not full class-DPS estimates.
+
 ## 2. Supported weapon procs
 
 Resolve exact effects before assigning damage. Start with direct-damage weapon procs;
@@ -53,22 +63,32 @@ applied twice; proc damage is not also counted in the spell-rotation component.
 ## 3. Spell damage and focus
 
 Use the fixed v3 level-100 Beastlord rotation: one Poantaar's Bite and one Kromrif
-Lance per 32-second cycle. Resolve spell IDs/ranks, base damage, cast/recast timing
-and eligibility from sources. Use the same rotation and target assumptions for both
-sets, then apply each set's eligible focus separately. Nak's Maelstrom stays out
-until its repeated-child probabilities are sourced.
+Lance per 32-second cycle. The four caster models use one class-specific spell
+application per declared cycle: Wizard Hoarfrost (12s), Magician Spear (12.5s),
+Enchanter Mindcleave (13s), or Necromancer Pyre of Marnek (30s, five sourced ticks).
+These are bounded references, not optimal rotations. Resolve spell IDs/ranks,
+base/tick damage, cast/recast timing and eligibility from sources. Use the same
+rotation and target assumptions for both sets, then apply each set's eligible focus
+separately. Nak's Maelstrom stays out until its repeated-child probabilities and
+scheduling are sufficient for calculation.
 
 Use the emulator-derived flat Spell Dmg rule and explicit focus stacking, level
 decay, mana/casting uptime, crit/landing assumptions documented in model v3. A
 "Spell stats DPS" partial fallback uses the same rotation with both loadouts
 explicitly unfocused, so flat Spell Dmg can be compared without pretending that
 unknown focus is zero. Focus damage is a modifier of the spell component, not an
-additional duplicate damage contribution. DoTs remain excluded.
+additional duplicate damage contribution. Only the bounded Necromancer Pyre
+reference uses a sourced five-tick DoT; other DoTs remain excluded. Berserker, Monk
+and Rogue use base weapon melee/proc references; their class special attacks remain
+excluded.
 
 Acceptance: a supported focus swap changes expected spell damage under the same
 rotation; nonqualifying or covered focus does not; missing spell/focus rules yield
 an unavailable full spell component or the explicitly unfocused partial fallback;
-a Beastlord result retains melee plus spell contributions because the class is hybrid.
+a Beastlord result retains melee plus spell contributions because the class is hybrid;
+caster results remain spell-only and explicitly exclude melee, pets and unsupported
+triggered mechanics. Necromancer's bounded DoT model also excludes other DoTs,
+clipping/overlap and DoT Spell Dmg scaling.
 
 ## Delivery order and evidence
 

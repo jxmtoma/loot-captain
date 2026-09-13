@@ -44,8 +44,10 @@
     { name: 'Strike of Flames VI', spellId: 23735, baseDamage: 510, resist: 'Fire -190', rateMultiplier: 1, source: source(3) },
     { name: 'Strike of Venom V', spellId: 23774, baseDamage: 420, resist: 'Poison -180', rateMultiplier: 1, source: source(6) },
   ];
-  const SPELL_SOURCE = source(9);
+  const SPELL_SOURCE = source(8);
   const focusRecords = [
+    { spellId: 36812, name: 'Type3 FC Kromrif Lance', flatDamage: 532, spellGroup: 2512, eligibleSpellIds: [36401, 36402, 36403], critScaled: true, source: spellSource('RaidLoot Type3 FC Kromrif Lance', 36812) },
+    { spellId: 36809, name: "Type3 FC Poantaar's Bite", flatDamage: 661, spellGroup: 2517, eligibleSpellIds: [36379, 36380, 36381], critScaled: true, source: spellSource("RaidLoot Type3 FC Poantaar's Bite", 36809) },
     { spellId: 33139, name: 'Cold Damage 35-70 L100', minPct: 8, maxPct: 15, maxLevel: 100, decayPctPerLevel: 5, resist: 'Cold', ddComponent: true, critScaled: true, source: spellSource('RaidLoot Cold Damage 35-70 L100', 33139) },
     { spellId: 33140, name: 'Cold Damage 40-70 L100', minPct: 9, maxPct: 15, maxLevel: 100, decayPctPerLevel: 5, resist: 'Cold', ddComponent: true, critScaled: true, source: spellSource('RaidLoot Cold Damage 40-70 L100', 33140) },
     { spellId: 33141, name: 'Cold Damage 35-100 L100', minPct: 8, maxPct: 22, maxLevel: 100, decayPctPerLevel: 5, resist: 'Cold', ddComponent: true, critScaled: true, source: spellSource('RaidLoot Cold Damage 35-100 L100', 33141) },
@@ -251,6 +253,34 @@
     return false;
   }
 
+  function flatFocusRawConflicts(effect, record, exactIdentity = false) {
+    for (const key of ['spellId', 'effectId', 'id']) {
+      if (effect[key] != null && String(effect[key]).trim() !== String(record.spellId)) return true;
+    }
+    if (effect.critScaled != null && effect.critScaled !== true) return true;
+    for (const key of ['flatDamage', 'spellGroup']) {
+      if (effect[key] != null && Number(effect[key]) !== record[key]) return true;
+    }
+    if (effect.eligibleSpellIds != null && (!Array.isArray(effect.eligibleSpellIds) ||
+        effect.eligibleSpellIds.length !== record.eligibleSpellIds.length ||
+        record.eligibleSpellIds.some((id) => !effect.eligibleSpellIds.includes(id)))) return true;
+    const lines = rawText(effect).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (normalizeName(lines[0]) === normalizeName(record.name)) lines.shift();
+    if (!lines.length) return false;
+    if (lines.length > 2) return true;
+    const damage = lines[0].replace(/^\d+\s*:\s*/, '').match(/^(?:SPA\s+303\s+Base1\s*=\s*(\d+)|Increase Spell Damage by (\d+) \(v303, Before Crit\))$/i);
+    if (!damage || Number(damage[1] || damage[2]) !== record.flatDamage) return true;
+    // Exact identity supplies catalog group limits; raw-only matching must prove them.
+    if (lines.length === 1) return !exactIdentity;
+    const group = lines[1].replace(/^\d+\s*:\s*/, '').match(/^(?:SPA\s+385\s+Base1\s*=\s*(\d+)|Limit Spell Group:\s*(\d+))$/i);
+    const spells = lines[1].replace(/^\d+\s*:\s*/, '').match(/^Limit Spells:\s*(.+)$/i);
+    const names = spells ? spells[1].split(',').map(normalizeName) : [];
+    const baseName = record.name.replace(/^Type3 FC /, '');
+    const exactList = names.length === 3 && [baseName, baseName + ' Rk. II', baseName + ' Rk. III']
+      .every((name) => names.includes(normalizeName(name)));
+    return !(group && Number(group[1] || group[2]) === record.spellGroup || exactList);
+  }
+
   function resolveFocus(effect) {
     if (!effect || typeof effect !== 'object' || effect.type !== 'focus') return null;
     const names = [effect.name, rawName(rawText(effect))].map(normalizeName).filter(Boolean);
@@ -264,9 +294,15 @@
     if (idRecord && uniqueNames.length && idRecord !== uniqueNames[0]) return null;
     const explicitName = effect.name == null ? '' : String(effect.name).trim();
     if (explicitName && !focusByName.has(normalizeName(explicitName))) return null;
-    const record = idRecord || uniqueNames[0] || null;
+    const packetRecords = !idRecord && !uniqueNames.length && rawText(effect)
+      ? focusRecords.filter((entry) => entry.flatDamage != null && !flatFocusRawConflicts(effect, entry)) : [];
+    const record = idRecord || uniqueNames[0] || (packetRecords.length === 1 ? packetRecords[0] : null);
     if (!record) return null;
     const parsedRawName = rawName(rawText(effect));
+    if (record.flatDamage != null) {
+      if (flatFocusRawConflicts(effect, record, !!(idRecord || uniqueNames.length))) return null;
+      return { ...record, eligibleSpellIds: [...record.eligibleSpellIds] };
+    }
     if (parsedRawName && !/^\d+\s*:/.test(parsedRawName) && normalizeName(parsedRawName) !== normalizeName(record.name)) return null;
     if (focusRawConflicts(effect, record)) return null;
     return { spellId: record.spellId, name: record.name, minPct: record.minPct, maxPct: record.maxPct,
@@ -274,8 +310,38 @@
       critScaled: record.critScaled, source: record.source };
   }
 
-  function spellRotation(rank) {
+  const wizardRotationRecords = [23156, 24314, 25894].map((baseDamage, index) => ({
+    spellId: 35821 + index, name: 'Ethereal Hoarfrost' + ['', ' Rk. II', ' Rk. III'][index],
+    level: 99, baseDamage, mana: [3740, 3890, 4046][index], castSeconds: 3.75, recastSeconds: 5.25,
+    resist: 'Cold', resistAdjust: -50,
+    source: { label: 'RaidLoot Wizard spell list', url: 'https://www.raidloot.com/spells/wizard' },
+  }));
+  const casterRotationRecords = {
+    'magician-spear': [24460, 25683, 26967].map((baseDamage, index) => ({
+      spellId: 36022 + index, name: 'Spear of Blistersteel' + ['', ' Rk. II', ' Rk. III'][index],
+      level: 100, baseDamage, mana: [3951, 4109, 4273][index], castSeconds: 3.5, recastSeconds: 9,
+      resist: 'Fire', resistAdjust: 0,
+      source: { label: 'RaidLoot Magician spell list', url: 'https://www.raidloot.com/spells/mage' },
+    })),
+    'enchanter-mindcleave': [20791, 21831, 22922].map((baseDamage, index) => ({
+      spellId: 36237 + index, name: 'Mindcleave' + ['', ' Rk. II', ' Rk. III'][index],
+      level: 100, baseDamage, mana: [3316, 3449, 3587][index], castSeconds: 4, recastSeconds: 9,
+      resist: 'Lowest', resistAdjust: 0,
+      source: { label: 'RaidLoot Enchanter spell list', url: 'https://www.raidloot.com/spells/enchanter' },
+    })),
+    'necro-pyre': [8271, 8685, 9119].map((tickDamage, index) => ({
+      spellId: 35610 + index, name: 'Pyre of Marnek' + ['', ' Rk. II', ' Rk. III'][index],
+      level: 99, baseDamage: tickDamage, tickDamage, tickCount: 5, tickIntervalSeconds: 6,
+      durationSeconds: 30, kind: 'dot', mana: [8854, 9208, 9668][index], castSeconds: 3, recastSeconds: 1.5,
+      resist: 'Fire', resistAdjust: -100,
+      source: { label: 'RaidLoot Necromancer spell list', url: 'https://www.raidloot.com/spells/necro' },
+    })),
+  };
+  function spellRotation(rank, model = 'beastlord') {
     if (!Number.isInteger(rank) || rank < 1 || rank > 3) return [];
+    if (model === 'wizard-hoarfrost') return [{ ...wizardRotationRecords[rank - 1] }];
+    if (casterRotationRecords[model]) return [{ ...casterRotationRecords[model][rank - 1] }];
+    if (model !== 'beastlord') return [];
     return rotationRecords[rank - 1].map((spell) => ({ ...spell }));
   }
 

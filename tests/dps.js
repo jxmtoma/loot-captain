@@ -185,7 +185,7 @@ const read = file => fs.readFileSync(file, 'utf8'), clone = value => JSON.parse(
   const layoutNeeded = dps.referenceProject({ ...profile, items: [worn] }, candidate, worn);
   assert.equal(layoutNeeded.outputs[0].available, false);
   assert.equal(layoutNeeded.scenario.layout, null);
-  const unsupported = dps.referenceProject({ ...profile, cls: 'Wizard' }, candidate, worn);
+  const unsupported = dps.referenceProject({ ...profile, cls: 'Cleric' }, candidate, worn);
   assert.equal(unsupported.outputs[0].available, false);
   assert.equal(unsupported.scenario.layout, 'dual-wield');
   const malformed = dps.referenceProject(profile, candidate, worn, { ...reference.scenario, revision: NaN });
@@ -195,6 +195,20 @@ const read = file => fs.readFileSync(file, 'utf8'), clone = value => JSON.parse(
   assert.equal(nonweapon.outputs[0].available, false);
   const custom = { ...reference.scenario, revision: 0, primary: { ...reference.scenario.primary, damageBonus: 20 } };
   const scenarioV3 = { ...clone(dps.SCENARIO_DEFAULTS_V3), layout: 'dual-wield', spells: { ...clone(dps.SCENARIO_DEFAULTS_V3.spells) } };
+  const wizardDefaults = dps.referenceScenario({ ...profile, cls: 'Wizard', level: 100 }).scenario;
+  assert.equal(wizardDefaults.layout, null);
+  assert.deepEqual(clone(wizardDefaults.spells), { model: 'wizard-hoarfrost', rank: 1, cycleSeconds: 12,
+    landingMultiplier: 1, criticalChance: 0, criticalMultiplier: 2, manaPerSecond: 1000, meleeDuringCast: 0 });
+  assert.equal(dps.validateScenario(wizardDefaults).spells.model, 'wizard-hoarfrost');
+  assert.throws(() => dps.validateScenario({ ...wizardDefaults, spells: { ...wizardDefaults.spells, cycleSeconds: 8.99 } }), /cycleSeconds/);
+  assert.throws(() => dps.validateScenario({ ...wizardDefaults, spells: { ...wizardDefaults.spells, model: 'magician' } }), /Unsupported spell model/);
+  assert.throws(() => dps.project({ ...profile, cls: 'Wizard' }, candidate, worn, assumptions), /Beastlords only/);
+  for (const [cls, model] of [['Berserker', 'berserker-base-melee'], ['Monk', 'monk-base-melee'], ['Rogue', 'rogue-base-melee']]) {
+    const meleeDefaults = dps.referenceScenario({ ...profile, cls, level: 100 }).scenario;
+    assert.equal(meleeDefaults.meleeModel, model); assert.equal(meleeDefaults.layout, 'dual-wield');
+    assert.equal(dps.validateScenario(meleeDefaults).meleeModel, model);
+  }
+  assert.throws(() => dps.validateScenario({ ...scenarioV3, meleeModel: 'paladin-full' }), /Unsupported melee model/);
   for (const [key, value] of [['rank', 0], ['rank', 1.5], ['cycleSeconds', 31], ['criticalChance', 2], ['meleeDuringCast', 2], ['manaPerSecond', null], ['cycleSeconds', NaN]]) {
     const invalid = { ...scenarioV3, spells: { ...scenarioV3.spells, [key]: value } };
     assert.throws(() => dps.validateScenario(invalid), /Scenario spells\.|DPS scenario spell assumptions/);
@@ -231,5 +245,24 @@ const read = file => fs.readFileSync(file, 'utf8'), clone = value => JSON.parse(
   assert.equal(deleted.ok, true);
   assert.equal(storage.dpsScenariosByProfile.p, undefined);
   assert.equal(storage.dpsScenariosByProfile.p2.revision, 1);
+  const robe = { id: '1001', name: 'Wizard Robe', slot: 'chest', stats: { 'Spell Dmg': 0 }, effectsKnown: true, effects: [] };
+  storage.profiles.wizard = { id: 'wizard', cls: 'Wizard', level: 100, items: [robe] };
+  const wizardRequest = { type: 'GET_CHARACTER_PROJECTION', mode: 'dps-reference', profileId: 'wizard', targetIndex: 0,
+    expected: { id: robe.id, name: robe.name, slot: robe.slot }, expectedWeapons: [],
+    expectedEquipment: [{ index: 0, id: robe.id, name: robe.name, slot: robe.slot, isAugment: false }],
+    item: { ...robe, id: '1002', stats: { 'Spell Dmg': 70 } }, classes: ['WIZ'], requiredLevel: 100 };
+  const wizardReference = await send(wizardRequest);
+  assert.equal(wizardReference.ok, true, wizardReference.error);
+  assert.equal(wizardReference.projection.outputs.find((entry) => entry.metric === 'Player DPS').delta, 7.5);
+  const wizardSaved = await send({ type: 'SET_DPS_SCENARIO', profileId: 'wizard', expectedRevision: 0,
+    scenario: { ...wizardReference.projection.scenario, spells: { ...wizardReference.projection.scenario.spells, rank: 3 } } });
+  assert.equal(wizardSaved.ok, true);
+  assert.equal(wizardSaved.scenario.revision, 1);
+  const wizardReloaded = await send(wizardRequest);
+  assert.equal(wizardReloaded.projection.scenarioDefault, false);
+  assert.equal(wizardReloaded.projection.scenario.spells.rank, 3);
+  assert.equal(wizardReloaded.projection.scenario.spells.model, 'wizard-hoarfrost');
+  assert.equal(wizardReloaded.projection.scenarioRevision, 1);
+  assert.equal((await send({ type: 'SET_DPS_SCENARIO', profileId: 'wizard', expectedRevision: 0, scenario: wizardSaved.scenario })).ok, false);
   console.log('DPS estimate checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

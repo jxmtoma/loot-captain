@@ -62,6 +62,23 @@ RaidLoot level, mana, 0.5-second cast, 30-second recast, base damage, and
 Poison/Cold resist from the [Beastlord spell list](https://www.raidloot.com/spells/beastlord).
 Invalid rotation ranks return an empty array.
 
+Nak's Maelstrom (36474–36476) remains outside the runtime rotation. The same
+public list documents 33/33/34 child-repeat probabilities, but does not establish
+the shared 12-second scheduling/global recast policy needed to include it.
+
+The exact Type 3 records use SPA 303 flat damage before crit and SPA 385 group
+limits: [Type3 FC Kromrif Lance (36812)](https://www.raidloot.com/spells?name=36812)
+adds 532 for group 2512, only spell IDs 36401/36402/36403;
+[Type3 FC Poantaar's Bite (36809)](https://www.raidloot.com/spells?name=36809)
+adds 661 for group 2517, only 36379/36380/36381. The resolver returns
+`flatDamage`, `spellGroup`, `eligibleSpellIds`, and `critScaled: true` alongside
+identity/source. Exact names or IDs resolve, including item packets with only a
+single matching SPA 303 damage line; group and eligible ranks come from the catalog.
+Raw-only packets without an exact identity must contain the exact damage and
+group (or complete three-rank spell list). Unknown names, conflicting
+identities/values, incomplete lists, and additional ambiguous packet lines fail
+closed. Eligibility uses spell IDs, never resist or name fragments.
+
 `resolveFocus` accepts exact focus identities and returns the direct-damage
 component. The supported Cold Damage L100 records are 33139, 33140, 33141,
 33142, 37939, and 37940; their direct-damage ranges are 8–15, 9–15, 8–22,
@@ -82,3 +99,33 @@ The focus and spell records were checked against RaidLoot's current public
 spell pages on September 10, 2026. They describe current source data, not
 retail combat coefficients; emulator references remain implementation context
 only.
+
+## Wizard direct cold reference
+
+`spellRotation(rank, 'wizard-hoarfrost')` returns only Ethereal Hoarfrost for
+ranks 1–3: IDs 35821/35822/35823, level 99, base damage 23156/24314/25894,
+mana 3740/3890/4046, cast 3.75s, recast 5.25s, Cold -50 (`resist: Cold`,
+`resistAdjust: -50`). Source: [RaidLoot Wizard spell list](https://www.raidloot.com/spells/wizard).
+This is a declared one-spell direct-cold reference, not an optimal rotation.
+The omitted model argument still selects the existing Beastlord records.
+
+## Additional caster reference models
+
+`spellRotation(rank, 'magician-spear')` returns Spear of Blistersteel ranks
+36022/36023/36024: level 100, base damage 24460/25683/26967, mana
+3951/4109/4273, 3.5-second cast, 9-second recast, Fire. Source: [RaidLoot
+Mage spell list](https://www.raidloot.com/spells/mage). It is a direct player-spell
+reference; summoned pets, swarm/Of Many and triggered effects are excluded.
+
+`spellRotation(rank, 'enchanter-mindcleave')` returns Mindcleave ranks
+36237/36238/36239: level 100, base damage 20791/21831/22922, mana
+3316/3449/3587, 4-second cast, 9-second recast, Lowest. Source: [RaidLoot
+Enchanter spell list](https://www.raidloot.com/spells/enchanter). Mind Squall,
+mana-return, auras, crowd control and support damage are excluded.
+
+`spellRotation(rank, 'necro-pyre')` returns Pyre of Marnek ranks 35610/35611/35612:
+level 99, five 6-second ticks over a sourced 30-second duration, tick damage
+8271/8685/9119, mana 8854/9208/9668, 3-second cast, 1.5-second recast, Fire.
+Source: [RaidLoot Necromancer spell list](https://www.raidloot.com/spells/necro).
+The runtime declares one non-overlapping application per 30-second cycle. Other
+DoTs, clipping, fade effects and DoT Spell Dmg scaling remain excluded.

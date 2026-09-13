@@ -1,4 +1,4 @@
-// Narrow, explicit level-100 Beastlord weapon DPS estimate.
+// Narrow, explicit level-100 player damage reference estimates.
 (function () {
   'use strict';
   const root = typeof window === 'undefined' ? globalThis : window;
@@ -15,6 +15,17 @@
   const SCENARIO_V1_VERSION = 1;
   const SCENARIO_V2_VERSION = 2;
   const SCENARIO_VERSION = 3;
+  const SPELL_MODEL_BY_CLASS = Object.freeze({
+    beastlord: 'beastlord', bst: 'beastlord', wizard: 'wizard-hoarfrost', wiz: 'wizard-hoarfrost',
+    magician: 'magician-spear', mag: 'magician-spear', enchanter: 'enchanter-mindcleave', enc: 'enchanter-mindcleave',
+    necromancer: 'necro-pyre', nec: 'necro-pyre',
+  });
+  const MELEE_MODEL_BY_CLASS = Object.freeze({
+    berserker: 'berserker-base-melee', ber: 'berserker-base-melee',
+    monk: 'monk-base-melee', mnk: 'monk-base-melee',
+    rogue: 'rogue-base-melee', rog: 'rogue-base-melee',
+  });
+  const SPELL_MODEL_CYCLES = Object.freeze({ beastlord: 32, 'wizard-hoarfrost': 12, 'magician-spear': 12.5, 'enchanter-mindcleave': 13, 'necro-pyre': 30 });
   const SCENARIO_DEFAULTS_V1 = Object.freeze({
     version: SCENARIO_V1_VERSION,
     revision: 0,
@@ -35,7 +46,8 @@
   const SCENARIO_DEFAULTS_V3 = Object.freeze({
     ...SCENARIO_DEFAULTS_V2,
     version: SCENARIO_VERSION,
-    spells: Object.freeze({ rank: 1, cycleSeconds: 32, landingMultiplier: 1,
+    meleeModel: 'beastlord',
+    spells: Object.freeze({ model: 'beastlord', rank: 1, cycleSeconds: 32, landingMultiplier: 1,
       criticalChance: 0, criticalMultiplier: 2, manaPerSecond: 100, meleeDuringCast: 0 }),
   });
   const SCENARIO_DEFAULTS = SCENARIO_DEFAULTS_V3;
@@ -106,7 +118,7 @@
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('DPS scenario is required');
     if (![SCENARIO_V1_VERSION, SCENARIO_V2_VERSION, SCENARIO_VERSION].includes(value.version)) fail('Unsupported DPS scenario version');
     const allowed = ['version', 'revision', 'layout', 'hastePercent', 'primary', 'secondary'];
-    if (value.version >= SCENARIO_V2_VERSION) allowed.push('combat', 'procs');
+    if (value.version >= SCENARIO_V2_VERSION) allowed.push('combat', 'procs', 'meleeModel');
     if (value.version >= SCENARIO_VERSION) allowed.push('spells');
     if (Object.keys(value).some((key) => !allowed.includes(key))) fail('DPS scenario has unsupported fields');
     if (!Number.isSafeInteger(value.revision) || value.revision < 0 || value.version >= SCENARIO_V2_VERSION && value.revision > 1000000000) fail('DPS scenario revision is invalid');
@@ -132,6 +144,8 @@
     if (!value.combat || typeof value.combat !== 'object' || Object.keys(value.combat).some((key) => !combatKeys.includes(key)) || combatKeys.some((key) => !own(value.combat, key))) fail('DPS scenario combat assumptions are required');
     if (!value.procs || typeof value.procs !== 'object' || Object.keys(value.procs).some((key) => !procKeys.includes(key)) || procKeys.some((key) => !own(value.procs, key))) fail('DPS scenario proc assumptions are required');
     const combat = {}, procs = {};
+    const meleeModel = value.meleeModel == null ? 'beastlord' : value.meleeModel;
+    if (!['beastlord', ...Object.values(MELEE_MODEL_BY_CLASS)].includes(meleeModel)) fail('Unsupported melee model');
     for (const key of combatKeys) { const reason = scenarioNumber(value.combat[key], 'combat.' + key, true); if (reason) fail(reason); combat[key] = value.combat[key]; }
     for (const key of procKeys) { const reason = scenarioNumber(value.procs[key], 'procs.' + key, true); if (reason) fail(reason); procs[key] = value.procs[key]; }
     if (!Number.isSafeInteger(combat.criticalDifficulty) || combat.criticalDifficulty <= 0 || !Number.isSafeInteger(combat.targetMitigation) || combat.targetMitigation > 100000 || !Number.isSafeInteger(combat.doubleAttackSkill) || combat.criticalDamageMultiplier < 1) fail('DPS critical assumptions are invalid');
@@ -139,24 +153,26 @@
       hastePercent: value.hastePercent, primary: hands.primary, secondary: hands.secondary, combat, procs };
     const spellKeys = Object.keys(SCENARIO_DEFAULTS_V3.spells);
     if (!value.spells || typeof value.spells !== 'object' || Array.isArray(value.spells) ||
-        Object.keys(value.spells).some((key) => !spellKeys.includes(key)) || spellKeys.some((key) => !own(value.spells, key))) {
+        Object.keys(value.spells).some((key) => !spellKeys.includes(key)) || spellKeys.some((key) => key !== 'model' && !own(value.spells, key))) {
       fail('DPS scenario spell assumptions are required');
     }
-    const spells = {};
-    for (const key of spellKeys) {
+    const spells = { model: own(value.spells, 'model') ? value.spells.model : 'beastlord' };
+    if (!Object.prototype.hasOwnProperty.call(SPELL_MODEL_CYCLES, spells.model)) fail('Unsupported spell model');
+    for (const key of spellKeys.filter((key) => key !== 'model')) {
       const reason = scenarioNumber(value.spells[key], 'spells.' + key, true);
       if (reason) fail(reason);
       spells[key] = value.spells[key];
     }
     if (!Number.isSafeInteger(spells.rank) || spells.rank < 1 || spells.rank > 3) fail('Scenario spells.rank must be an integer between 1 and 3');
-    if (spells.cycleSeconds < 32 || spells.cycleSeconds > 3600) fail('Scenario spells.cycleSeconds must be between 32 and 3600');
+    const minimumCycle = spells.model === 'wizard-hoarfrost' ? 9 : spells.model === 'magician-spear' ? 12.5 : spells.model === 'enchanter-mindcleave' ? 13 : spells.model === 'necro-pyre' ? 30 : 32;
+    if (spells.cycleSeconds < minimumCycle || spells.cycleSeconds > 3600) fail('Scenario spells.cycleSeconds must be between ' + minimumCycle + ' and 3600');
     for (const key of ['landingMultiplier', 'criticalChance', 'meleeDuringCast']) {
       if (spells[key] < 0 || spells[key] > 1) fail('Scenario spells.' + key + ' must be between 0 and 1');
     }
     if (spells.criticalMultiplier < 1 || spells.criticalMultiplier > 100) fail('Scenario spells.criticalMultiplier must be between 1 and 100');
     if (spells.manaPerSecond < 0 || spells.manaPerSecond > 100000) fail('Scenario spells.manaPerSecond must be between 0 and 100000');
     return { version: SCENARIO_VERSION, revision: value.revision, layout: value.layout,
-      hastePercent: value.hastePercent, primary: hands.primary, secondary: hands.secondary, combat, procs, spells };
+      hastePercent: value.hastePercent, primary: hands.primary, secondary: hands.secondary, combat, procs, meleeModel, spells };
   }
 
   function hasUniqueKnownWeapon(profile, hand) {
@@ -170,6 +186,14 @@
 
   function defaultScenario(profile) {
     const scenario = JSON.parse(JSON.stringify(SCENARIO_DEFAULTS));
+    const className = String(profile && profile.cls || '').trim().toLowerCase();
+    const model = profile && SPELL_MODEL_BY_CLASS[className];
+    if (model && model !== 'beastlord' && Number(profile.level) === 100) {
+      scenario.spells = { ...scenario.spells, model, cycleSeconds: SPELL_MODEL_CYCLES[model], manaPerSecond: 1000 };
+      return scenario;
+    }
+    const meleeModel = MELEE_MODEL_BY_CLASS[className];
+    if (meleeModel && Number(profile.level) === 100) scenario.meleeModel = meleeModel;
     if (hasUniqueKnownWeapon(profile, 'primary') && hasUniqueKnownWeapon(profile, 'secondary')) scenario.layout = 'dual-wield';
     return scenario;
   }
@@ -453,13 +477,25 @@
       base.reason = reference.reason;
       return base;
     }
-    const supported = profile && ['beastlord', 'bst'].includes(String(profile.cls || '').trim().toLowerCase()) && Number(profile.level) === 100;
+    const className = String(profile && profile.cls || '').trim().toLowerCase();
+    const spellModel = SPELL_MODEL_BY_CLASS[className], meleeModel = MELEE_MODEL_BY_CLASS[className];
+    const supported = profile && (spellModel || meleeModel || ['beastlord', 'bst'].includes(className)) && Number(profile.level) === 100;
     if (!supported) {
-      base.outputs = referenceOutputs('The DPS estimate supports level-100 Beastlords only.');
-      base.reason = 'The DPS estimate supports level-100 Beastlords only.';
+      base.outputs = referenceOutputs('The reference DPS estimate supports only the cataloged level-100 class models.');
+      base.reason = 'The reference DPS estimate supports only the cataloged level-100 class models.';
       return base;
     }
     const scenario = reference.scenario;
+    if (spellModel && spellModel !== 'beastlord' && (scenario.version < SCENARIO_VERSION || scenario.spells.model !== spellModel)) {
+      base.reason = 'This caster reference requires the v3 ' + spellModel + ' spell model.';
+      base.outputs = [unavailable('Spell DPS', base.reason)];
+      return base;
+    }
+    if (meleeModel && (scenario.version < SCENARIO_VERSION || scenario.meleeModel !== meleeModel)) {
+      base.reason = 'This melee reference requires the v3 ' + meleeModel + ' scenario.';
+      base.outputs = [unavailable('Melee DPS', base.reason)];
+      return base;
+    }
     if (scenario && scenario.version < SCENARIO_VERSION) base.upgradeScenario = upgradeScenario(scenario);
     if (scenario.version >= SCENARIO_V2_VERSION) {
       const model = LC.playerDamage;

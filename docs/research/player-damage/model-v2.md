@@ -1,7 +1,8 @@
 # Player melee and weapon-proc reference model — v2
 
 This increment implements 06D's melee and supported weapon-proc slices for level-100
-Beastlords. It is a reference estimate, not a combat meter or retail-engine replica.
+Beastlords, plus bounded base-melee references for level-100 Berserkers, Monks and
+Rogues. It is a reference estimate, not a combat meter or retail-engine replica.
 Spell damage/focus remains a separate later increment. Pet damage is excluded.
 
 ## Compatibility and shared inputs
@@ -105,3 +106,15 @@ showed a partial melee-stat change of -11.03 DPS. After reviewing the listed bas
 procs, comparison-local proc confirmation produced 24 → 22.33 proc DPS (-1.67) at the
 reference rates, independently of the unresolved worn-effect component. That confirmation
 was cleared after the check. No equipment or shared scenario was saved during verification.
+
+## Class-specific base-melee references
+
+The same explicit hand/layout arithmetic is available under separate level-100
+scenarios for [Berserker](https://www.raidloot.com/spells/berserker),
+[Monk](https://www.raidloot.com/spells/monk) and
+[Rogue](https://www.raidloot.com/spells/rogue). These models compare base weapon
+melee and exact supported weapon procs under the shared scenario; they do not claim
+full class DPS. Berserker discs/Frenzy, Monk hand-to-hand and kicks, Rogue backstab
+and poisons, class special attacks, AAs, pets, DoTs and other class-specific weapon
+rules remain excluded until their inputs are separately sourced. Unknown stats or
+effects remain unavailable, and saved scenarios keep explicit revision semantics.

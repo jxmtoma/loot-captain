@@ -146,4 +146,115 @@ const critScenario = { ...v3(), spells: { ...v3().spells, criticalChance: 1, cri
 const critGear = spellArmor('crit', {}, [focus(33141, 'Cold Damage 35-100 L100'), focus(33145, 'Poison Damage 35-100 L100')]);
 const critResult = model.project(spellProfile(critGear), spellArmor('crit-new'), critGear, critScenario);
 assert.equal(spellOutput(critResult, 'Spell DPS').current, (6757 * 1.15 * 2 + 8391 * 2 + 8391 * .675) / 32);
+const type3 = [focus(36812, 'Type3 FC Kromrif Lance'), focus(36809, "Type3 FC Poantaar's Bite")];
+for (const rank of [1, 2, 3]) {
+  const scenario = { ...critScenario, spells: { ...critScenario.spells, rank, manaPerSecond: 1000 } };
+  const empty = spellArmor('type3-empty');
+  for (const [effects, bonus] of [[type3, 1193], [[type3[0]], 532], [[type3[1]], 661], [[...type3, ...type3], 1193]]) {
+    const result = model.project(spellProfile(empty), spellArmor('type3-new', {}, effects), empty, scenario);
+    assert.equal(spellOutput(result, 'Spell DPS').available, true);
+    assert.equal(spellOutput(result, 'Spell DPS').delta, bonus * 2 / 32);
+  }
+}
+const combined = spellArmor('combined', {}, [...critGear.effects, ...type3]);
+const combinedResult = model.project(spellProfile(critGear), combined, critGear, critScenario);
+assert.ok(Math.abs(spellOutput(combinedResult, 'Spell DPS').delta - 1193 * 2 / 32) < 1e-10);
+const type3Gear = spellArmor('type3-old', {}, type3);
+const type3Covered = model.project({ ...spellProfile(type3Gear), items: [type3Gear, spellArmor('retained', {}, type3)] }, spellArmor('removed'), type3Gear, v3());
+assert.equal(spellOutput(type3Covered, 'Spell DPS').delta, 0);
+for (const [effects, known] of [[[...type3, { type: 'focus', name: 'unknown Type3' }], true], [type3, false]]) {
+  const result = model.project(spellProfile(type3Gear), spellArmor('unresolved-type3', { 'Spell Dmg': 10 }, effects, known), type3Gear, v3());
+  assert.equal(spellOutput(result, 'Spell DPS').available, false);
+  assert.equal(spellOutput(result, 'Spell stats DPS').available, true);
+  assert.equal(spellOutput(result, 'Spell stats DPS').delta, 2.6875);
+}
+// Keep real focus records; substitute rotation IDs only to exercise non-applicability.
+const realCatalog = context.LootCaptain.damageCatalog;
+context.LootCaptain.damageCatalog = { ...realCatalog,
+  spellRotation: (rank) => realCatalog.spellRotation(rank).map((spell) => ({ ...spell, spellId: spell.spellId + 100000 })),
+};
+try {
+  const irrelevant = model.project(spellProfile(type3Gear), spellArmor('irrelevant-new'), type3Gear, v3());
+  assert.equal(spellOutput(irrelevant, 'Spell DPS').available, true);
+  assert.equal(spellOutput(irrelevant, 'Spell DPS').delta, 0);
+  assert.equal(irrelevant.observations.unresolved.some((reason) => /spell-focus/.test(reason)), false);
+} finally {
+  context.LootCaptain.damageCatalog = realCatalog;
+}
 console.log('Spell v3 checks passed');
+
+const wizardGear = spellArmor('wizard-old');
+const wizardProfile = { id: 'wizard', cls: 'WIZ', level: 100, items: [wizardGear] };
+const wizardScenario = dps.referenceScenario(wizardProfile).scenario;
+for (const rank of [1, 2, 3]) {
+  const scenario = { ...wizardScenario, spells: { ...wizardScenario.spells, rank } };
+  const same = dps.referenceProject(wizardProfile, clone(wizardGear), wizardGear, scenario);
+  assert.ok(Math.abs(output(same, 'Spell DPS').current - [23156, 24314, 25894][rank - 1] / 12) < 1e-10);
+  assert.equal(output(same, 'Player DPS').delta, 0);
+  assert.equal(same.scope.layout, null);
+  assert.deepEqual(Array.from(same.includedComponents), ['Spell DPS']);
+  assert.equal(same.outputs.some((entry) => /Melee|proc/.test(entry.metric)), false);
+}
+const wizardDelta = dps.referenceProject(wizardProfile, spellArmor('wizard-new', { 'Spell Dmg': 70 }), wizardGear);
+assert.equal(output(wizardDelta, 'Spell DPS').delta, 7.5);
+assert.equal(output(wizardDelta, 'Spell stats DPS').delta, 7.5);
+assert.equal(output(wizardDelta, 'Player DPS').delta, 7.5);
+assert.equal(wizardDelta.scenarioDefault, true);
+assert.match(wizardDelta.rule.name, /Wizard.*spell-only/);
+for (const effects of [[{ type: 'focus', name: 'unknown' }], [{ type: 'focus', spellId: 33139, name: 'Cold Damage 35-100 L100' }]]) {
+  const fallback = dps.referenceProject(wizardProfile, spellArmor('unknown-wizard', { 'Spell Dmg': 70 }, effects), wizardGear);
+  assert.equal(output(fallback, 'Spell DPS').available, false);
+assert.equal(output(fallback, 'Spell stats DPS').delta, 7.5);
+  assert.deepEqual(Array.from(fallback.includedComponents), ['Spell stats DPS']);
+  assert.ok(fallback.observations.unresolved.length);
+}
+const irrelevantWizard = dps.referenceProject(wizardProfile, spellArmor('irrelevant-wizard', {}, [...type3, focus(33145, 'Poison Damage 35-100 L100')]), wizardGear);
+assert.equal(output(irrelevantWizard, 'Spell DPS').delta, 0);
+assert.equal(irrelevantWizard.observations.unresolved.length, 0);
+const focusedWizard = dps.referenceProject(wizardProfile, spellArmor('focused-wizard', {}, [focus(33141, 'Cold Damage 35-100 L100')]), wizardGear);
+assert.ok(output(focusedWizard, 'Spell DPS').delta > 0);
+assert.equal(output(focusedWizard, 'Spell stats DPS').delta, 0);
+const casterModels = [
+  ['Magician', 'magician-spear', 24460 / 12.5],
+  ['Enchanter', 'enchanter-mindcleave', 20791 / 13],
+  ['Necromancer', 'necro-pyre', (8271 * 5) / 30],
+];
+for (const [cls, modelName, baseline] of casterModels) {
+  const profile = { ...wizardProfile, cls };
+  const reference = dps.referenceProject(profile, wizardGear, wizardGear);
+  assert.equal(reference.scenario.spells.model, modelName);
+  assert.ok(Math.abs(output(reference, 'Spell DPS').current - baseline) < 1e-10);
+  assert.equal(output(reference, 'Player DPS').delta, 0);
+  const changed = dps.referenceProject(profile, spellArmor(cls + '-new', { 'Spell Dmg': 70 }), wizardGear);
+  assert.ok(output(changed, 'Spell DPS').available);
+  assert.equal(output(changed, 'Player DPS').delta, cls === 'Necromancer' ? 0 : 10);
+}
+assert.ok(dps.referenceProject({ ...wizardProfile, cls: 'Cleric' }, wizardGear, wizardGear).outputs.every((entry) => !entry.available));
+for (const [cls, modelName, excluded] of [
+  ['Berserker', 'berserker-base-melee', 'Discs'], ['Monk', 'monk-base-melee', 'kicks'], ['Rogue', 'rogue-base-melee', 'backstab'],
+]) {
+  const oldGear = armor(cls + '-old', { STR: 10 }, []);
+  const profile = { ...profileWith(weapon(cls + '-primary', 'primary'), oldGear), cls, level: 100 };
+  const scenario = dps.referenceScenario(profile).scenario;
+  assert.equal(scenario.meleeModel, modelName); assert.equal(scenario.layout, 'dual-wield');
+  const result = dps.referenceProject(profile, armor(cls + '-new', { STR: 20 }, []), oldGear);
+  assert.ok(output(result, 'Player DPS').available); assert.ok(output(result, 'Player DPS').delta > 0);
+  assert.deepEqual(Array.from(result.includedComponents), ['Melee DPS', 'Weapon proc DPS']);
+  assert.ok(result.excludedComponents.includes(excluded));
+  assert.equal(result.outputs.some((entry) => /Spell/.test(entry.metric)), false);
+}
+assert.ok(dps.referenceProject({ ...wizardProfile, level: 99 }, wizardGear, wizardGear).outputs.every((entry) => !entry.available));
+assert.throws(() => model.project(wizardProfile, wizardGear, wizardGear, v3()), /model does not match/);
+const savedOldV3 = { ...hybridScenario, revision: 9, spells: { ...hybridScenario.spells } };
+delete savedOldV3.spells.model;
+const oldSavedResult = dps.referenceProject(weaponProfile, spellArmor('hybrid-new', { 'Spell Dmg': 10 }), weaponProfile.items[2], savedOldV3);
+assert.equal(oldSavedResult.scenario.spells.model, 'beastlord');
+assert.equal(oldSavedResult.scenarioRevision, 9);
+assert.equal(oldSavedResult.scenarioDefault, false);
+assert.deepEqual(clone(oldSavedResult.outputs), clone(hybrid.outputs));
+for (const [castSeconds, recastSeconds, recoverySeconds, expected] of [
+  [2.5, 0, 0, 250], [2.501, 0, 0, 167], [7, 0, 0, 1000], [7.001, 0, 0, 1000],
+  [.5, 30, 0, 4357], [3.75, 5.25, 0, 1285], [.5, 1, 2, 250],
+]) assert.equal(model.spellExtra(1000, { castSeconds, recastSeconds, recoverySeconds, baseDamage: 100000 }), expected);
+assert.equal(model.spellExtra(100000, { castSeconds: 3.75, recastSeconds: 5.25, baseDamage: 23156 }), 11578);
+console.log('Wizard spell-only checks passed');

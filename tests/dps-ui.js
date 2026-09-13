@@ -45,6 +45,10 @@ const context = {
     state: {
       async getCharacterProjection(cand, profile, worn, confirmed, mode, assumptions, confirmation) {
         calls.push({ cand, profile, worn, confirmed, mode, assumptions, confirmation });
+        if (mode === 'dps-reference' && ['Wizard', 'WIZ'].includes(profile.cls)) return { ok: true,
+          projection: context.LootCaptain.dps.referenceProject(profile, cand, worn, null, confirmation) };
+        if (mode === 'dps-reference' && ['Berserker', 'BER'].includes(profile.cls)) return { ok: true,
+          projection: context.LootCaptain.dps.referenceProject(profile, cand, worn, null, confirmation) };
         if (mode === 'dps' && deferDps) return new Promise((resolve) => { resolveDps = resolve; });
         if (mode === 'dps') return { ok: true, projection: { mode: 'dps', rule: { key: 'bst100-dps', version: 1 }, outputs: [
           { metric: 'Melee DPS', available: true, current: 100, candidate: 110, delta: 10 },
@@ -92,6 +96,7 @@ const context = {
   },
 };
 context.window = context;
+for (const file of ['dps', 'damage-catalog', 'player-damage']) vm.runInNewContext(read('content/shared/' + file + '.js'), context);
 vm.runInNewContext(read('content/shared/ui.js'), context, { filename: 'content/shared/ui.js' });
 
 (async () => {
@@ -157,7 +162,7 @@ vm.runInNewContext(read('content/shared/ui.js'), context, { filename: 'content/s
   const nonBstBadge = context.LootCaptain.ui.buildComparisonBadge({ target: worn,
     diff: { numericScoreAvailable: true, score: 1, formula: { key: 'role-caster', version: 1 } }, slotKey: { key: 'primary' } },
     { key: 'role-caster', version: 1 }, false,
-    { ...candidate, id: 'wizard-candidate', stats: { Damage: 120, Delay: 20 } }, { ...profile, id: 'wizard', cls: 'Wizard' });
+    { ...candidate, id: 'cleric-candidate', stats: { Damage: 120, Delay: 20 } }, { ...profile, id: 'cleric', cls: 'Cleric' });
   assert.match(nonBstBadge.textContent, /DPS not modeled/);
 
   referenceDps = -5;
@@ -335,5 +340,47 @@ vm.runInNewContext(read('content/shared/ui.js'), context, { filename: 'content/s
   await Promise.all((mode.listeners.change || []).map((callback) => callback({ target: mode })));
   await Promise.resolve();
   assert.equal(calls.at(-1).mode, 'reference');
+  const wizardWorn = { id: 'wizard-worn', slot: 'Chest', name: 'Wizard Robe', stats: { 'Spell Dmg': 70 }, effectsKnown: true, effects: [] };
+  const wizard = { id: 'wizard', cls: 'Wizard', level: 100, items: [wizardWorn] };
+  for (const [damage, state] of [[140, 'upgrade'], [0, 'downgrade'], [70, 'sidegrade']]) {
+    const badge = context.LootCaptain.ui.buildComparisonBadge({ target: wizardWorn,
+      diff: { numericScoreAvailable: true, score: 35, formula: { key: 'role-caster', version: 1 } }, slotKey: { key: 'chest' } },
+      { key: 'role-caster', version: 1 }, false, { ...wizardWorn, id: 'wizard-' + damage, stats: { 'Spell Dmg': damage } }, wizard);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(badge.textContent, /Stats \+35 · DPS est\./);
+    assert.equal(badge.textContent.match(/[+-]?\d+(?:\.\d+)?/g).length, 2);
+    assert.equal(badge.dataset.state, 'upgrade');
+    assert.equal(badge.__lcDpsMetric.dataset.state, state);
+    assert.match(badge.title, /Includes Spell DPS/);
+  }
+  const wizardPanel = context.LootCaptain.ui.buildComparePanel({ ...wizardWorn, id: 'wizard-panel' }, wizardWorn,
+    { diffs: {}, hasData: false }, 'Chest', [], 0, 'stats', 'worn', wizard);
+  const wizardEditor = wizardPanel.find((node) => node.tagName === 'DETAILS' && node.children.some((child) => child.tagName === 'SUMMARY' && child.textContent === 'DPS assumptions'));
+  await wizardEditor.children.find((child) => child.tagName === 'SUMMARY').click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(wizardEditor.textContent, /wizard-hoarfrost.*Ethereal Hoarfrost/);
+  assert.doesNotMatch(wizardEditor.textContent, /Primary hand|Shared haste|Melee during cast|Poantaar|Layout/);
+  assert.equal(wizardPanel.find((node) => node.tagName === 'OPTION' && node.value === 'dps'), null);
+  await wizardEditor.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save for this character').click();
+  assert.equal(calls.at(-1).profileId, 'wizard');
+  assert.equal(calls.at(-1).scenario.spells.model, 'wizard-hoarfrost');
+  assert.equal(calls.at(-1).scenario.spells.cycleSeconds, 12);
+  assert.equal(calls.at(-1).scenario.layout, null);
+  assert.doesNotThrow(() => context.LootCaptain.dps.validateScenario(calls.at(-1).scenario));
+  const berserkerWorn = { id: 'berserker-worn', slot: 'Primary', name: 'Berserker Greatblade', stats: { Damage: 282, Delay: 32 }, effectsKnown: true, effects: [] };
+  const berserker = { id: 'berserker', cls: 'Berserker', level: 100, items: [berserkerWorn] };
+  const berserkerPanel = context.LootCaptain.ui.buildComparePanel({ ...berserkerWorn, id: 'berserker-candidate', stats: { Damage: 300, Delay: 32 } }, berserkerWorn,
+    { diffs: {}, hasData: false }, 'Primary', [], 0, 'stats', 'worn', berserker);
+  const berserkerEditor = berserkerPanel.find((node) => node.tagName === 'DETAILS' && node.children.some((child) => child.tagName === 'SUMMARY' && child.textContent === 'DPS assumptions'));
+  await berserkerEditor.children.find((child) => child.tagName === 'SUMMARY').click();
+  await new Promise((resolve) => setImmediate(resolve));
+  const berserkerLayout = berserkerEditor.find((node) => node.tagName === 'SELECT' && node.children.some((option) => option.value === 'two-hand'));
+  assert.ok(berserkerLayout);
+  berserkerLayout.value = 'two-hand';
+  await berserkerEditor.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save for this character').click();
+  assert.equal(calls.at(-1).profileId, 'berserker');
+  assert.equal(calls.at(-1).scenario.layout, 'two-hand');
+  assert.equal(calls.at(-1).scenario.spells.model, 'beastlord');
+  assert.doesNotThrow(() => context.LootCaptain.dps.validateScenario(calls.at(-1).scenario));
   console.log('DPS UI integration check passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

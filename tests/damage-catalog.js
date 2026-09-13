@@ -9,12 +9,82 @@ vm.runInNewContext(fs.readFileSync('content/shared/slots.js', 'utf8') +
   fs.readFileSync('content/shared/damage-catalog.js', 'utf8'), context);
 const parser = context.window.LootCaptain.parser;
 const catalog = context.window.LootCaptain.damageCatalog;
+for (const rank of [1, 2, 3]) {
+  const records = catalog.spellRotation(rank, 'wizard-hoarfrost');
+  assert.equal(records.length, 1);
+  const spell = records[0];
+  assert.equal(spell.spellId, 35820 + rank);
+  assert.equal(spell.name, 'Ethereal Hoarfrost' + ['', ' Rk. II', ' Rk. III'][rank - 1]);
+  assert.equal(spell.level, 99);
+  assert.equal(spell.baseDamage, [23156, 24314, 25894][rank - 1]);
+  assert.equal(spell.mana, [3740, 3890, 4046][rank - 1]);
+  assert.equal(spell.castSeconds, 3.75); assert.equal(spell.recastSeconds, 5.25);
+  assert.equal(spell.resist, 'Cold'); assert.equal(spell.resistAdjust, -50);
+  assert.equal(spell.source.url, 'https://www.raidloot.com/spells/wizard');
+}
+for (const [model, ids, damage, mana, cast, recast, resist, url] of [
+  ['magician-spear', [36022, 36023, 36024], [24460, 25683, 26967], [3951, 4109, 4273], 3.5, 9, 'Fire', 'https://www.raidloot.com/spells/mage'],
+  ['enchanter-mindcleave', [36237, 36238, 36239], [20791, 21831, 22922], [3316, 3449, 3587], 4, 9, 'Lowest', 'https://www.raidloot.com/spells/enchanter'],
+]) for (const rank of [1, 2, 3]) {
+  const spell = catalog.spellRotation(rank, model)[0];
+  assert.equal(spell.spellId, ids[rank - 1]); assert.equal(spell.baseDamage, damage[rank - 1]);
+  assert.equal(spell.mana, mana[rank - 1]); assert.equal(spell.castSeconds, cast); assert.equal(spell.recastSeconds, recast);
+  assert.equal(spell.resist, resist); assert.equal(spell.source.url, url);
+}
+for (const [rank, damage, id] of [[1, 8271, 35610], [2, 8685, 35611], [3, 9119, 35612]]) {
+  const spell = catalog.spellRotation(rank, 'necro-pyre')[0];
+  assert.equal(spell.spellId, id); assert.equal(spell.tickDamage, damage); assert.equal(spell.tickCount, 5);
+  assert.equal(spell.tickIntervalSeconds, 6); assert.equal(spell.durationSeconds, 30); assert.equal(spell.resist, 'Fire');
+  assert.equal(spell.source.url, 'https://www.raidloot.com/spells/necro');
+}
+assert.equal(catalog.spellRotation(1, 'cleric').length, 0);
+assert.equal(catalog.spellRotation(1, 'magician').length, 0);
 const raidlootParser = {};
 vm.runInNewContext(fs.readFileSync('background/raidloot-parser.js', 'utf8') +
   '\nglobalThis.normalizeEffectForTest = parserNormalizeEffect;', raidlootParser);
 
 const worn = (name, extra = {}) => ({ type: 'worn', name, raw: name, ...extra });
 const proc = (name, extra = {}) => ({ type: 'proc', name, raw: name, ...extra });
+
+for (const [spellId, name, flatDamage, spellGroup, eligibleSpellIds] of [
+  [36812, 'Type3 FC Kromrif Lance', 532, 2512, [36401, 36402, 36403]],
+  [36809, "Type3 FC Poantaar's Bite", 661, 2517, [36379, 36380, 36381]],
+]) {
+  const raw = `1: SPA 303 Base1=${flatDamage}\n2: SPA 385 Base1=${spellGroup}`;
+  const base = name.replace('Type3 FC ', '');
+  const text = `1: Increase Spell Damage by ${flatDamage} (v303, Before Crit)\n2: Limit Spells: ${base}, ${base} Rk. II, ${base} Rk. III`;
+  const itemRaw = text.split('\n')[0];
+  for (const identity of [{ name }, { spellId }, { raw }, { raw: name + '\n' + raw }, { raw: text },
+    { name, raw: itemRaw }, { spellId, raw: itemRaw }, { raw: name + '\n' + itemRaw },
+    { name, raw: raw.split('\n')[0] }]) {
+    const resolved = catalog.resolveFocus({ type: 'focus', ...identity });
+    assert.equal(resolved.flatDamage, flatDamage);
+    assert.equal(resolved.spellGroup, spellGroup);
+    assert.deepEqual(Array.from(resolved.eligibleSpellIds), eligibleSpellIds);
+    assert.equal(resolved.spellId, spellId);
+    assert.equal(resolved.critScaled, true);
+  }
+  for (const conflict of [
+    { spellId: 99999 }, { effectId: 99999 }, { id: 'unknown' }, { critScaled: false }, { name: base }, { flatDamage: flatDamage + 1 },
+    { spellGroup: spellGroup + 1 }, { eligibleSpellIds: eligibleSpellIds.slice(1) },
+    { raw: raw.replace(String(flatDamage), '999') }, { raw: raw.replace(String(spellGroup), '999') },
+    { raw: raw + '\n3: Limit Resist: Cold' },
+    { raw: itemRaw.replace(String(flatDamage), '999') }, { raw: itemRaw.replace('Before Crit', 'After Crit') },
+    { raw: itemRaw + '\n' + itemRaw }, { raw: itemRaw + '\n2: Limit Resist: Cold' },
+    { name: 'Unknown focus', raw: itemRaw }, { raw: 'Unknown focus\n' + itemRaw },
+    { raw: text.replace(', ' + base + ' Rk. III', '') }, { raw: text.replace('Before Crit', 'After Crit') },
+    { raw: 'Unknown focus\n' + raw },
+  ]) assert.equal(catalog.resolveFocus({ type: 'focus', name, spellId, ...conflict }), null);
+  for (const incomplete of [itemRaw, raw.split('\n')[0], raw.split('\n')[1],
+    itemRaw + '\n' + itemRaw, text.replace(', ' + base + ' Rk. III', '')]) {
+    assert.equal(catalog.resolveFocus({ type: 'focus', raw: incomplete }), null);
+  }
+  assert.equal(catalog.resolveFocus({ type: 'focus', name, spellId: spellId === 36812 ? 36809 : 36812, raw: itemRaw }), null);
+}
+assert.equal(catalog.resolveFocus({ type: 'focus', name: 'Type3 FC Kromrif Lance', spellId: 36809 }), null);
+for (const rank of [1, 2, 3]) for (const spell of catalog.spellRotation(rank)) {
+  assert.equal(spell.source.url, 'https://www.raidloot.com/spells/beastlord');
+}
 
 assert.deepEqual(JSON.parse(JSON.stringify(catalog.spellRotation(1).map((spell) => [spell.spellId, spell.baseDamage]))), [[36379, 8391], [36401, 6757]]);
 assert.deepEqual(JSON.parse(JSON.stringify(catalog.spellRotation(2).map((spell) => [spell.spellId, spell.mana]))), [[36380, 1714], [36402, 1211]]);

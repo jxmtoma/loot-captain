@@ -25,7 +25,17 @@
   complete melee, procs and their subtotal remain separate; confirmation is bound to
   the current comparison and is never saved as a blanket assumption. v3 adds a
   hybrid Beastlord spell contribution and an explicitly unfocused Spell stats DPS
-  partial fallback when complete focus evidence is unavailable.
+  partial fallback when complete focus evidence is unavailable. Exact Type 3 FC Kromrif
+  Lance and Type 3 FC Poantaar's Bite coverage is now source-backed, rank-scoped and
+  fail-closed for unknown or conflicting data; duplicate copies use the strongest value.
+- 06D caster increments: level-100 Wizard/WIZ, Magician/MAG, Enchanter/ENC and
+  Necromancer/NEC now have bounded class-specific spell-only references using exact
+  rank catalogs and explicit shared editable scenarios. Necromancer is limited to
+  one five-tick Pyre of Marnek application per 30-second cycle. These are reference
+  arithmetic, not optimal rotations or a combat meter.
+- 06D melee increments: level-100 Berserker/BER, Monk/MNK and Rogue/ROG now have
+  separate base-melee reference scenarios using the shared weapon/effect/proc path.
+  Their class special attacks remain explicitly excluded.
 
 ## Limits to preserve
 
@@ -41,11 +51,19 @@ unresolved; nonweapon ATK, attributes, Spell Dmg and supported focuses can chang
 Reference outputs are consistent gear-change estimates, not measured game totals. AC is
 before soft caps; mitigation returns, shield exceptions and avoidance are excluded.
 Three named AA bonuses are modeled; the full catalog is not a universal effect interpreter.
-Pet damage, DoTs, unsupported spell effects and augment transfers remain outside the
-v3 estimate. Spell DPS uses the explicit hybrid Beastlord rotation, emulator-derived
-flat Spell Dmg, and independently resolved focus. Proc DPS requires explicit
+Pet damage, unsupported spell effects and augment transfers remain outside the
+v3 estimate. Beastlord Spell DPS uses its explicit hybrid rotation; each caster uses
+its own bounded class-specific reference and independently resolved focus. Direct
+casters use emulator-derived flat Spell Dmg timing. Necromancer's bounded DoT omits
+DoT Spell Dmg scaling, other DoTs and clipping/overlap. Wizard Weave/children,
+innate crits, twincast, burns, Magician pets/conditional damage and Enchanter
+support mechanics remain excluded. Berserker discs/Frenzy, Monk hand-to-hand/kicks,
+and Rogue backstab/poisons remain excluded from their bounded base-melee references.
+Proc DPS requires explicit
 rate/damage assumptions and complete or user-confirmed weapon-proc lists; it is not
-inferred from effect text. Other classes/levels remain unsupported. Reference estimates do not alter
+inferred from effect text. Berserker discs/Frenzy, Monk hand-to-hand/kicks and Rogue
+backstab/poisons remain excluded from their bounded base-melee references. Other
+classes/levels remain unsupported. Reference estimates do not alter
 ranking scores. No synthetic test records belong in real character storage or evidence samples.
 
 ## Completed: 03, role presets and score breakdown
@@ -56,15 +74,40 @@ class mechanics. Existing selections/fallbacks remain intact; suggestions do not
 
 ## Next bounded increment
 
-Next in [06D](06d-player-damage-contributions.md): broaden exact supported focus coverage
-for the real Beastlord profile, beginning with Type 3 FC Kromrif Lance and Poantaar's
-Bite. Known irrelevant focus classifications should remain irrelevant; unknown focus
-data should remain unresolved rather than silently treated as zero. Melee and supported
-weapon procs use v2; saved v1/v2 scenarios retain their prior behavior until explicitly
-upgraded. Pet damage and DoTs remain excluded. Expand the rotation only after source
-cadence, mana and duration inputs are available; Maelstrom repeat probabilities remain
-unknown. Consider other classes only after class-specific scenarios exist. Combat
-calibration remains optional.
+Next in [06D](06d-player-damage-contributions.md): preserve class-specific caster
+and melee boundaries. Add broader rotations or class abilities only when spell or
+attack identity, cadence, mana/duration or timing evidence is available. The completed Type 3 records are Kromrif Lance 36812 (+532, group 2512,
+ranks 36401/36402/36403) and Poantaar's Bite 36809 (+661, group 2517,
+ranks 36379/36380/36381), both before crit. Known non-applicable records remain
+irrelevant; unknown or conflicting focus data remains unresolved rather than zero.
+Melee and supported weapon procs use v2; saved v1/v2 scenarios retain prior behavior
+until explicitly upgraded. The shared editable scenario remains the only scenario for
+both gear sets, with explicit upgrades for saved older scenarios. Pet damage and DoTs
+remain excluded where not separately modeled, and calibration remains optional.
+
+The reviewed Beastlord rotation remains one Poantaar's Bite and one Kromrif Lance per
+explicit 32-second cycle, with a 100 mana/second budget and source-backed 0.5-second
+casts and 30-second recasts. No starting mana pool, regeneration, finite encounter
+duration or cast timeline is modeled. Maelstrom (36474–36476) has documented 33/33/34
+child-repeat probabilities, but its shared 12-second scheduling/global-recast behavior
+is not established, so it remains excluded. Expand the rotation only when those inputs
+are source-backed.
+
+The caster increments use exact Wizard, Magician, Enchanter and Necromancer spell
+records and the shared focus pipeline. Direct-caster Spell Dmg timing uses the pinned
+EQEmu reference rule, not retail calibration; Necromancer's five six-second ticks over
+30 seconds omit DoT Spell Dmg scaling. No optimal rotation or live combat accuracy is
+claimed.
+
+The melee increments use separate Berserker, Monk and Rogue base-melee scenario
+identities over shared explicit weapon/effect/proc arithmetic. They do not claim
+full class DPS or automatically price special attacks, discs, Frenzy, backstab,
+poisons, hand-to-hand or kicks.
+
+The melee increments use separate Berserker, Monk and Rogue base-melee scenario
+identities over the shared explicit weapon/effect/proc arithmetic. They do not claim
+full class DPS or automatically price special attacks, discs, backstab, poisons or
+hand-to-hand/kick mechanics.
 
 Call this a DPS estimate, not a meter. A meter would require a separate combat-log ingestion
 feature. Keep calibration optional for reference estimates, label defaults, and avoid
@@ -73,17 +116,23 @@ blend DPS into ranking until the model and preference policy have been reviewed.
 
 ## Verification at checkpoint
 
-`node tests/regression.js` covers missing data, storage round trips, per-character formulas,
+`node tests/damage-catalog.js`, `node tests/player-damage.js`, and `node tests/regression.js`
+pass. The full suite covers missing data, storage round trips, per-character formulas,
 effects, snapshots/AA persistence, calibration gates, reference calculations, role preset
 breakdowns and neutral recommendations, plus DPS arithmetic, input validation, independent
 component availability, equipped-weapon aggregation, stale weapon identities and UI
 stale-response handling.
 `python3 docs/research/character-projection/check_evidence.py` checks the research register.
-Both commands pass after 03, 06A, 06B, 06C and 06D. The new UI checks use a synthetic
+`python3 docs/research/player-damage/check_reference_vectors.py` and `git diff --check`
+also pass. These checks pass after 03, 06A, 06B, 06C and 06D. The new UI checks use a synthetic
 DOM harness; no live-game DPS measurement is claimed; live extension checks are recorded below.
 The v3 spell model is implemented in the shared reference path; software checks
 and a live project-extension verification pass are complete. These remain reference
 calculations, not combat measurements.
+
+The four caster and three melee increments pass the focused catalog/player/DPS/UI checks, the full
+regression suite, both research checks, packaging, and diff validation. No live caster
+gear or scenario was saved; these remain software-verified reference calculations.
 
 Earlier isolated Chrome checks used synthetic profiles to verify the compact editor, real-source
 AA catalog, no-snapshot estimates, stat order, estimate-before-table layout and optional
@@ -112,14 +161,45 @@ critical multiplier 2, mana 100, and melee-during-cast 0. No scenario or gear wa
 saved and all confirmations remained unchecked. This verifies the extension path,
 not live combat accuracy.
 
+After the Type 3 increment, the live RaidLoot Beastlord page was reloaded through the
+existing unpacked project extension instance. Its compact rows still showed independent Stats and one
+DPS estimate with the green/red/yellow metric treatment and the explicit pet/DoT
+exclusions. No gear or scenario was saved.
+
+On 2026-09-12, Chrome validated the user-added `Pikity — Berserker · Lv 100` profile:
+35 imported items, all with stats, Compare selected. Manage Characters showed the
+known primary Milratus, the Heart's Fang (282 damage / 32 delay) and an empty
+secondary slot. The live compact row was `Stats +1,443 · DPS UNAVAILABLE`; the
+shared v3 editor initially showed `Layout: Select…`, so the first result was unresolved
+layout/input coverage rather than a zero. The exact RaidLoot record lists Milratus as
+`2HP` with 282 damage / 32 delay and includes `BER`, confirming it is Berserker-wearable
+([source](https://www.raidloot.com/raid/rof4)). After saving the source-backed
+`two-hand` layout, Chrome showed revision 1 and `Stats +878 · DPS est. 146 → 145.90
+(Δ -0.10) (partial)`, with Melee stats DPS included and Spell DPS, focus, pet damage,
+DoTs, Discs, Frenzy and class special attacks excluded. The first save exposed and
+fixed a v3 melee-only UI omission of required spell defaults; the UI regression now
+covers it. Expanded Damage contributions showed Melee DPS unavailable for unresolved
+imported worn effects and Weapon proc DPS unavailable because the effect lists are
+incomplete, including `Strike of Venom VIII`; these are genuinely unresolved inputs,
+not known-irrelevant effects. RaidLoot identifies `Strike of Venom VIII` as 750 Poison
+damage with -200 resist ([source](https://www.raidloot.com/aa/ranger)), but the current
+catalog only covers Strike of Venom V. Type 3 Kromrif/Poantaar focuses remain separate
+Beastlord spell-model inputs and cannot substitute for weapon-proc coverage. The next
+increment needs the exact proc catalog entry and a validated proc-rate assumption. No
+gear changed; the real Pikity scenario was saved explicitly.
+The unpacked extension was reloaded from `~/workspace/loot-captain`, then the RaidLoot
+page was reloaded; the saved scenario persisted.
+
 ## Copy-ready next session prompt
 
 Read this checkpoint, [the roadmap](../../wishlist-and-scoring-roadmap.md), and
-[06D](06d-player-damage-contributions.md). Treat the v3 Beastlord spell model and live
-project-extension verification as complete. Continue one bounded increment: broaden
-exact supported focus coverage for the real Beastlord profile, starting with Type 3 FC
-Kromrif Lance and Poantaar's Bite. Preserve the distinction between known irrelevant and
-unknown focus classification. Keep pets and DoTs excluded, and do not expand the rotation
-or add other classes until cadence/mana/duration evidence or class-specific scenarios
-exist. Run the focused checks and full regression, then update this checkpoint with only
-verified results; do not save synthetic scenarios or change the compact presentation.
+[06D](06d-player-damage-contributions.md). Treat the v3 Beastlord model, exact Type 3
+focus coverage, four bounded caster references, and three bounded melee references as
+complete. Continue only with source-backed rotation expansion or additional class
+mechanics; preserve
+known-irrelevant versus unknown focus handling, shared editable scenarios, explicit
+saved-scenario upgrades, compact presentation and independent metric colors. Keep
+pets and unsupported mechanics excluded, and do not expand Maelstrom without the
+missing scheduling evidence. Run focused checks and full regression, then update this
+checkpoint with verified results only; do not save synthetic scenarios or claim live
+combat accuracy.

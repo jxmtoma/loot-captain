@@ -2,8 +2,10 @@
 
 This increment adds a spell contribution to the level-100 Beastlord player
 damage estimate. Beastlords are hybrid: the estimate retains melee, supported
-weapon procs, and spell damage together. Pet damage, DoTs, other classes, and
-retail combat-log measurement remain outside this model.
+weapon procs, and spell damage together. Bounded class-specific Wizard,
+Magician, Enchanter and Necromancer spell-only references are also supported as
+described below. Pet damage, unsupported class mechanics and retail combat-log
+measurement remain outside this model.
 
 The model is emulator-derived and versioned. It is a reference estimate, not a
 claim about every live server or a replacement for measured combat data. Current
@@ -21,22 +23,29 @@ The default v3 rotation uses one cast of each ordinary direct-damage spell per
 
 The cycle and one-cast-per-spell policy are explicit reference assumptions. The
 same spells, ranks, target, landing outcome, and cycle apply to current and
-candidate gear. Nak's Maelstrom is excluded because its repeated-child
-probabilities were not verified.
+candidate gear. Nak's Maelstrom (36474–36476) remains excluded: the
+[public spell list](https://www.raidloot.com/spells/beastlord) documents 33/33/34
+child-repeat probabilities, but a shared 12-second scheduling/global recast
+policy is not established by that evidence.
 
 ## Spell damage calculation
 
 For each direct-damage spell:
 
 ```text
-extra = min(floor(SpellDmg × 30500 / 7000), floor(baseDamage / 2))
+totalMs = 1000 × (castSeconds + max(recastSeconds, recoverySeconds or 0))
+factor = totalMs <= 2500 ? 0.25
+  : totalMs < 7000 ? 0.167 × floor((totalMs - 1000) / 1000)
+  : totalMs / 7000
+extra = min(floor(SpellDmg × factor), floor(baseDamage / 2))
 critFactor = 1 + critChance × (critMultiplier - 1)
-expectedDamage = ((baseDamage + extra) × critFactor
+expectedDamage = ((baseDamage + extra + type3Flat) × critFactor
   + baseDamage × focusMean / 100 × (focusCritScaled ? critFactor : 1))
   × landingMultiplier
 ```
 
-The flat Spell Dmg rule is the pinned emulator rule for fixed spells. Level-100
+The flat Spell Dmg rule is the pinned emulator timing rule, not retail calibration.
+Beastlord's 0.5s cast + 30s recast retains the existing 30500/7000 arithmetic. Level-100
 Beastlords qualify under the selected reference rules. The v3 default uses
 `critChance = 0`, `critMultiplier = 2`, and `landingMultiplier = 1`; these are
 editable reference assumptions rather than a complete critical or resistance
@@ -57,6 +66,16 @@ uniform integer range. Do not generalize Cold limits to Poison.
 Focus records must prove the spell type and level limits. A focus list that is
 unknown or incomplete does not silently become zero focus. Proc applicability is
 not assumed from an ordinary spell focus record.
+
+`type3Flat` is the strongest applicable exact SPA 303 bonus, selected separately
+from percentage focus and applied before crit. [Type3 FC Kromrif Lance
+(36812)](https://www.raidloot.com/spells?name=36812) adds 532 for SPA 385 group
+2512, restricted to 36401–36403; [Type3 FC Poantaar's Bite
+(36809)](https://www.raidloot.com/spells?name=36809) adds 661 for group 2517,
+restricted to 36379–36381. Duplicate copies do not stack. Recognized records
+outside the eligible spell IDs contribute no bonus without becoming unresolved;
+unknown/conflicting records still block full Spell DPS. Spell stats DPS excludes
+both kinds of focus.
 
 ## Mana and melee uptime
 
@@ -90,6 +109,43 @@ a blanket scenario assumption. Existing v1 and v2 saved scenarios retain their
 prior behavior; v3 is an explicit upgrade/default for new spell-aware estimates.
 
 ## Sources and limits
+
+### Class-specific caster increments
+
+Level-100 Wizard/WIZ, Magician/MAG, Enchanter/ENC and Necromancer/NEC profiles
+select their own spell model when no scenario is saved. Each defaults to rank 1,
+landing 1, crit chance 0, crit multiplier 2 and mana budget 1000/second; no melee
+layout is needed or used. These are declared reference scenarios, not optimal
+rotations. Their minimum cycles are 9 seconds for Wizard, 12.5 for Magician,
+13 for Enchanter and 30 for Necromancer.
+
+[RaidLoot's Wizard list](https://www.raidloot.com/spells/wizard) supplies:
+
+| Rank | ID | Level | Base damage | Mana | Cast | Recast | Resist |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| I | 35821 | 99 | 23156 | 3740 | 3.75s | 5.25s | Cold -50 |
+| II | 35822 | 99 | 24314 | 3890 | 3.75s | 5.25s | Cold -50 |
+| III | 35823 | 99 | 25894 | 4046 | 3.75s | 5.25s | Cold -50 |
+
+The other class-specific records are [Spear of Blistersteel on the Mage list](https://www.raidloot.com/spells/mage),
+[Mindcleave on the Enchanter list](https://www.raidloot.com/spells/enchanter), and
+[Pyre of Marnek on the Necromancer list](https://www.raidloot.com/spells/necro).
+
+All four caster models use the same focus/Spell Dmg pipeline and select exactly
+one of Spell DPS or unfocused Spell stats DPS for the compact subtotal. Unknown/
+conflicting focus remains unresolved; known ineligible focus remains irrelevant.
+Melee, weapon procs and pets are excluded. Wizard excludes Weave/children,
+innate crits, twincast and burns; Magician excludes summoned-pet and conditional
+damage; Enchanter excludes Mind Squall, mana-return, auras and support effects;
+Necromancer is limited to the single Pyre of Marnek DoT and excludes other DoTs,
+clipping/overlap and DoT Spell Dmg scaling. With the default cycles, +70 Spell
+Dmg adds 7.5 Wizard DPS and 10 direct Magician/Enchanter DPS; it does not change
+the bounded Necromancer DoT model.
+
+The shared per-profile scenario remains v3 with its existing revision semantics.
+Missing `spells.model` in saved v3 data means `beastlord`; v1/v2 upgrades also
+retain Beastlord assumptions. A model/class mismatch is unavailable rather than
+silently applying another class's rotation. Manual DPS stays Beastlord-only.
 
 - [RaidLoot Beastlord spell list](https://www.raidloot.com/spells/beastlord)
 - [RaidLoot Rain of Fear armor and focus records](https://www.raidloot.com/raid/rofarmor)

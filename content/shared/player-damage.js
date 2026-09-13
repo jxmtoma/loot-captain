@@ -1,4 +1,4 @@
-// Level-100 Beastlord player-damage reference contribution model.
+// Level-100 Beastlord/Wizard player-damage reference contribution models.
 // Reference arithmetic only; this is not a retail combat simulator.
 (function () {
   'use strict';
@@ -8,6 +8,29 @@
     name: 'Level-100 Beastlord player melee and weapon-proc reference estimate' });
   const RULE = Object.freeze({ key: 'bst-player-damage-reference', version: 3,
     name: 'Level-100 Beastlord player melee, weapon-proc and spell reference estimate' });
+  const WIZARD_RULE = Object.freeze({ key: 'wiz-hoarfrost-damage-reference', version: 3,
+    name: 'Level-100 Wizard direct cold spell-only reference estimate' });
+  const SPELL_ONLY_RULES = Object.freeze({
+    'wizard-hoarfrost': WIZARD_RULE,
+    'magician-spear': Object.freeze({ key: 'mag-spear-damage-reference', version: 3, name: 'Level-100 Magician direct fire spell-only reference estimate' }),
+    'enchanter-mindcleave': Object.freeze({ key: 'enc-mindcleave-damage-reference', version: 3, name: 'Level-100 Enchanter direct spell-only reference estimate' }),
+    'necro-pyre': Object.freeze({ key: 'nec-pyre-damage-reference', version: 3, name: 'Level-100 Necromancer bounded fire DoT reference estimate' }),
+  });
+  const SPELL_MODEL_BY_CLASS = Object.freeze({
+    beastlord: 'beastlord', bst: 'beastlord', wizard: 'wizard-hoarfrost', wiz: 'wizard-hoarfrost',
+    magician: 'magician-spear', mag: 'magician-spear', enchanter: 'enchanter-mindcleave', enc: 'enchanter-mindcleave',
+    necromancer: 'necro-pyre', nec: 'necro-pyre',
+  });
+  const MELEE_MODEL_BY_CLASS = Object.freeze({
+    berserker: 'berserker-base-melee', ber: 'berserker-base-melee',
+    monk: 'monk-base-melee', mnk: 'monk-base-melee',
+    rogue: 'rogue-base-melee', rog: 'rogue-base-melee',
+  });
+  const MELEE_ONLY_RULES = Object.freeze({
+    'berserker-base-melee': Object.freeze({ key: 'ber-base-melee-reference', version: 3, name: 'Level-100 Berserker base melee reference estimate', source: { label: 'RaidLoot Berserker spell list', url: 'https://www.raidloot.com/spells/berserker' } }),
+    'monk-base-melee': Object.freeze({ key: 'mnk-base-melee-reference', version: 3, name: 'Level-100 Monk base melee reference estimate', source: { label: 'RaidLoot Monk spell list', url: 'https://www.raidloot.com/spells/monk' } }),
+    'rogue-base-melee': Object.freeze({ key: 'rog-base-melee-reference', version: 3, name: 'Level-100 Rogue base melee reference estimate', source: { label: 'RaidLoot Rogue spell list', url: 'https://www.raidloot.com/spells/rogue' } }),
+  });
   const HANDS = ['primary', 'secondary'];
   const FAMILIES = new Set(['cleave', 'ferocity']);
   const EFFECT_TYPES = new Set(['worn', 'proc', 'focus', 'click']);
@@ -101,9 +124,9 @@
     const fn = catalog().resolveFocus;
     return typeof fn === 'function' ? fn(effect) : null;
   }
-  function spellRotation(rank) {
+  function spellRotation(rank, model) {
     const fn = catalog().spellRotation;
-    return typeof fn === 'function' ? fn(rank) : null;
+    return typeof fn === 'function' ? fn(rank, model) : null;
   }
   function normalized(value) { return String(value == null ? '' : value).trim().toLowerCase().replace(/[’]/g, "'").replace(/\s+/g, ' '); }
   function spellFocusLoadout(profile, confirmation) {
@@ -115,6 +138,13 @@
         if (['proc', 'worn', 'click'].includes(type)) continue;
         if (type !== 'focus') { unresolved.push('Unknown spell-focus effect ' + String(effect && effect.name || 'unknown')); continue; }
         const resolved = resolveFocus(effect);
+        if (resolved && resolved.spellId && resolved.name && number(resolved.flatDamage) !== null &&
+            resolved.flatDamage >= 0 && resolved.critScaled === true &&
+            Array.isArray(resolved.eligibleSpellIds) && resolved.eligibleSpellIds.length &&
+            resolved.eligibleSpellIds.every((id) => Number.isInteger(id) && id > 0)) {
+          focus.push(resolved); if (resolved.source) sources.push(resolved.source);
+          continue;
+        }
         const values = resolved && ['minPct', 'maxPct', 'maxLevel', 'decayPctPerLevel'].map((key) => number(resolved[key]));
         if (!resolved || !resolved.spellId || !resolved.name || !resolved.resist || !values ||
             values.some((value) => value === null) || values[1] < values[0] || values[2] < 0 || values[3] < 0) {
@@ -131,18 +161,25 @@
     if (total.available && total.value < 0) return { value: null, available: false, unresolved: ['Negative Spell Dmg is outside the reference model.'] };
     return total;
   }
-  function spellExtra(totalSpellDmg, baseDamage) {
-    return Math.min(Math.floor(totalSpellDmg * 30500 / 7000), Math.floor(baseDamage / 2));
+  function spellExtra(totalSpellDmg, spell) {
+    const totalMs = 1000 * (spell.castSeconds + Math.max(spell.recastSeconds, spell.recoverySeconds || 0));
+    // Pinned EQEmu GetExtraSpellAmt reference, not retail calibration.
+    const extra = totalMs <= 2500 ? totalSpellDmg * .25 : totalMs < 7000
+      ? totalSpellDmg * .167 * Math.floor((totalMs - 1000) / 1000) : totalSpellDmg * totalMs / 7000;
+    return Math.min(Math.floor(extra), Math.floor(spell.baseDamage / 2));
   }
-  function rotationRecords(rank, level) {
-    const records = spellRotation(rank);
-    if (!Array.isArray(records) || records.length !== 2) return { records: [], unresolved: ['The spell rotation catalog is unavailable.'] };
-    const wanted = ["poantaar's bite", 'kromrif lance'];
+  function rotationRecords(rank, level, model = 'beastlord') {
+    const records = spellRotation(rank, model);
+    const wanted = model === 'wizard-hoarfrost' ? ['ethereal hoarfrost'] :
+      model === 'magician-spear' ? ['spear of blistersteel'] :
+      model === 'enchanter-mindcleave' ? ['mindcleave'] :
+      model === 'necro-pyre' ? ['pyre of marnek'] : ["poantaar's bite", 'kromrif lance'];
+    if (!Array.isArray(records) || records.length !== wanted.length) return { records: [], unresolved: ['The spell rotation catalog is unavailable.'] };
     const selected = wanted.map((name) => records.find((record) => {
       const actual = normalized(record && record.name);
       return actual === name || actual.startsWith(name + ' rk.') || actual.startsWith(name + ' rk ');
     }));
-    if (selected.some((record) => !record) || new Set(selected).size !== 2) return { records: [], unresolved: ['The fixed Beastlord spell rotation is incomplete.'] };
+    if (selected.some((record) => !record) || new Set(selected).size !== wanted.length) return { records: [], unresolved: ['The fixed ' + model + ' spell rotation is incomplete.'] };
     const unresolved = [];
     for (const record of selected) {
       for (const key of ['spellId', 'name', 'level', 'baseDamage', 'castSeconds', 'recastSeconds', 'mana', 'resist']) {
@@ -169,7 +206,7 @@
     return { value: Math.max(0, (ties[0].min + strongest) / 2), critScaled: ties[0].critScaled !== false };
   }
   function spellComponent(profile, after, scenario, confirmation) {
-    const rotation = rotationRecords(scenario.spells.rank, Number(profile.level));
+    const rotation = rotationRecords(scenario.spells.rank, Number(profile.level), scenario.spells.model);
     const result = { available: false, reason: null, current: NaN, candidate: NaN, focus: null, sources: [] };
     if (rotation.unresolved.length) { result.reason = rotation.unresolved.join('; '); return result; }
     const currentFocus = spellFocusLoadout(profile, confirmation), candidateFocus = spellFocusLoadout(after, confirmation);
@@ -186,11 +223,16 @@
     const expected = (focusLoadout, totalSpellDmg, applyFocus) => rotation.records.reduce((sum, spell) => {
       const focus = focusMean(focusLoadout, spell.resist, spell.level);
       if (applyFocus && focus.unresolved) unresolved.push(focus.unresolved);
-      const extra = spellExtra(totalSpellDmg.value, spell.baseDamage);
-      const focused = spell.baseDamage * (applyFocus ? focus.value : 0) / 100;
+      const dot = spell.kind === 'dot';
+      const spellBase = dot ? spell.tickDamage * spell.tickCount : spell.baseDamage;
+      const extra = dot ? 0 : spellExtra(totalSpellDmg.value, spell);
+      const focused = spellBase * (applyFocus ? focus.value : 0) / 100;
+      const flatFocus = applyFocus ? Math.max(0, ...focusLoadout
+        .filter((entry) => entry.eligibleSpellIds && entry.eligibleSpellIds.includes(spell.spellId))
+        .map((entry) => entry.flatDamage)) : 0;
       const damage = applyFocus && !focus.critScaled
-        ? (spell.baseDamage + extra) * crit + focused
-        : (spell.baseDamage + extra + focused) * crit;
+        ? (spellBase + extra + flatFocus) * crit + focused
+        : (spellBase + extra + flatFocus + focused) * crit;
       return sum + damage * scenario.spells.landingMultiplier;
     }, 0) * countPerSecond;
     result.uptime = uptime; result.countPerSecond = countPerSecond;
@@ -357,11 +399,17 @@
   }
   function project(profile, candidate, worn, inputScenario, confirmation = {}) {
     confirmation = confirmation && typeof confirmation === 'object' && !Array.isArray(confirmation) ? confirmation : {};
-    if (!profile || !['beastlord', 'bst'].includes(String(profile.cls || '').trim().toLowerCase()) || Number(profile.level) !== 100) return { mode: 'dps-reference', rule: inputScenario && inputScenario.version === 2 ? RULE_V2 : RULE, outputs: [row('Melee stats DPS', NaN, NaN, 'The player-damage model supports level-100 Beastlords only.')], scenario: inputScenario };
+    const className = String(profile && profile.cls || '').trim().toLowerCase();
+    const classModel = SPELL_MODEL_BY_CLASS[className] || MELEE_MODEL_BY_CLASS[className] || (['beastlord', 'bst'].includes(className) ? 'beastlord' : '');
+    if (!profile || !classModel || Number(profile.level) !== 100) return { mode: 'dps-reference', rule: inputScenario && inputScenario.version === 2 ? RULE_V2 : RULE, outputs: [row('Melee DPS', NaN, NaN, 'The player-damage model supports only cataloged level-100 class models.')], scenario: inputScenario };
     if (!Array.isArray(profile.items)) fail('Character equipment is required');
     const sharedValidate = LC.dps && LC.dps.validateScenario;
     if (typeof sharedValidate !== 'function') fail('DPS scenario validator is unavailable');
     const scenario = sharedValidate(inputScenario);
+    const spellModel = SPELL_MODEL_BY_CLASS[className], meleeModel = MELEE_MODEL_BY_CLASS[className];
+    if (spellModel && spellModel !== 'beastlord' && (scenario.version !== 3 || scenario.spells.model !== spellModel) ||
+        meleeModel && (scenario.version !== 3 || scenario.meleeModel !== meleeModel) ||
+        classModel === 'beastlord' && scenario.version === 3 && scenario.spells.model !== 'beastlord') fail('Reference model does not match the character class.');
     if (scenario.version !== 2 && scenario.version !== 3) fail('Player-damage model requires DPS scenario version 2 or 3');
     if (scenario.version === 2 && !scenario.layout || scenario.layout && !['dual-wield', 'two-hand', 'one-hand-shield'].includes(scenario.layout)) fail('DPS scenario layout is invalid');
     if (scenario.version === 3) return projectV3(profile, candidate, worn, scenario, confirmation);
@@ -400,6 +448,8 @@
       scope: { hand: null, layout: scenario.layout, singleHand: false }, spellFocus: { available: false, reason: 'Spell focus and spell rotation are not modeled.' }, pet: { available: false, reason: 'Pet damage is not modeled.' } };
   }
   function projectV3(profile, candidate, worn, scenario, confirmation) {
+    if (scenario.meleeModel !== 'beastlord') return projectMeleeOnly(profile, candidate, worn, scenario, confirmation);
+    if (scenario.spells.model !== 'beastlord') return projectSpellOnly(profile, candidate, worn, scenario, confirmation);
     const { after } = replacement(profile, candidate, worn, scenario, false);
     let currentWeapons = null, afterWeapons = null, weaponReason = null;
     if (scenario.layout) {
@@ -465,5 +515,83 @@
       scope: { hand: null, layout: scenario.layout, singleHand: false },
       spellFocus: { available: spells.available, reason: spells.reason, uptime: spells.uptime, focusMean: spells.focusMean }, pet: { available: false, reason: 'Pet damage is not modeled.' } };
   }
-  LC.playerDamage = { RULE, project, expectedRoll, critFactor, doubleAttackChance, daFactor };
+  function projectMeleeOnly(profile, candidate, worn, scenario, confirmation) {
+    const { after } = replacement(profile, candidate, worn, scenario, false);
+    let currentWeapons = null, afterWeapons = null, weaponReason = null;
+    if (scenario.layout) {
+      try { currentWeapons = activeWeapons(profile, scenario); afterWeapons = activeWeapons(after, scenario); }
+      catch (error) { weaponReason = error && error.message || String(error); }
+    }
+    const beforeStats = totals(profile, scenario), afterStats = totals(after, scenario);
+    const beforeEffects = loadout(profile, confirmation), afterEffects = loadout(after, confirmation);
+    const statsAvailable = !!currentWeapons && !!afterWeapons && beforeStats.available && afterStats.available;
+    const activeHands = currentWeapons ? Object.keys(currentWeapons) : [];
+    const sumHands = (values) => values.length && values.every((value) => finite(value)) ? values.reduce((a, b) => a + b, 0) : NaN;
+    const statsValues = statsAvailable ? sumHands(activeHands.map((hand) => handDps(currentWeapons[hand], hand, scenario, beforeStats, beforeStats, beforeEffects, beforeEffects, true))) : NaN;
+    const statsCandidate = statsAvailable ? sumHands(activeHands.map((hand) => handDps(afterWeapons[hand], hand, scenario, beforeStats, afterStats, beforeEffects, beforeEffects, true))) : NaN;
+    const effectsComplete = (beforeEffects.complete && afterEffects.complete) || confirmation.effectsComplete === true;
+    const fullReady = statsAvailable && effectsComplete && !beforeEffects.unresolved.length && !afterEffects.unresolved.length;
+    const fullValues = fullReady ? sumHands(activeHands.map((hand) => handDps(currentWeapons[hand], hand, scenario, beforeStats, beforeStats, beforeEffects, beforeEffects, false))) : NaN;
+    const fullCandidate = fullReady ? sumHands(activeHands.map((hand) => handDps(afterWeapons[hand], hand, scenario, beforeStats, afterStats, beforeEffects, afterEffects, false))) : NaN;
+    const procBefore = currentWeapons ? procDps(profile, currentWeapons, scenario, confirmation) : { available: false, reason: weaponReason || 'Weapon layout is unavailable.' };
+    const procAfter = afterWeapons ? procDps(after, afterWeapons, scenario, confirmation) : { available: false, reason: weaponReason || 'Weapon layout is unavailable.' };
+    const outputs = [
+      row('Melee stats DPS', statsValues, statsCandidate, weaponReason || (statsAvailable ? null : 'Required melee stats or active weapons are unavailable.')),
+      row('Melee DPS', fullValues, fullCandidate, weaponReason || beforeEffects.unresolved.concat(afterEffects.unresolved).join('; ') || 'Relevant worn effect lists are incomplete.'),
+      procBefore.available && procAfter.available ? row('Weapon proc DPS', procBefore.value, procAfter.value) : row('Weapon proc DPS', NaN, NaN, procBefore.reason || procAfter.reason),
+    ];
+    outputs[0].partial = true; outputs[1].partial = false; outputs[2].partial = false;
+    const melee = outputs[1].available ? outputs[1] : outputs[0].available ? outputs[0] : null;
+    const selected = melee ? [melee.metric] : [];
+    if (outputs[2].available) selected.push(outputs[2].metric);
+    const excluded = ['Spell DPS', 'Spell focus modifiers', 'Pet damage', 'DoTs'];
+    if (scenario.meleeModel === 'berserker-base-melee') excluded.push('Discs', 'Frenzy', 'class special attacks');
+    if (scenario.meleeModel === 'monk-base-melee') excluded.push('hand-to-hand base damage', 'kicks', 'class special attacks');
+    if (scenario.meleeModel === 'rogue-base-melee') excluded.push('backstab', 'poisons', 'class special attacks');
+    const values = [melee, outputs[2]].filter((entry) => entry && entry.available);
+    const player = values.length ? row('Player DPS', values.reduce((sum, entry) => sum + entry.current, 0), values.reduce((sum, entry) => sum + entry.candidate, 0)) : row('Player DPS', NaN, NaN, 'No player-damage components are available.');
+    player.includedComponents = selected; player.excludedComponents = excluded; player.partial = values.length < 2 || melee === outputs[0];
+    outputs.push(player);
+    const rule = MELEE_ONLY_RULES[scenario.meleeModel];
+    return { mode: 'dps-reference', rule, outputs, scenario, scenarioRevision: scenario.revision,
+      includedComponents: selected, excludedComponents: excluded, partial: player.partial,
+      assumptions: ['One shared class-specific base-melee scenario applies to both gear sets.', 'ATK/STR/DEX, target, layout, hand rates and proc assumptions are explicit reference inputs.', 'Class abilities, special attacks and class-specific weapon rules are excluded until separately sourced.', 'Unchanged augments stay in place; candidate augment transfer is not modeled.'],
+      sources: [...MODEL_SOURCES, rule && rule.source].filter(Boolean),
+      effectSources: { current: effectSnapshot(profile), candidate: effectSnapshot(after) },
+      resolvedEffectSources: { current: beforeEffects.sources, candidate: afterEffects.sources },
+      observations: { gearStats: { current: beforeStats.values, candidate: afterStats.values }, effects: { current: beforeEffects.strongest, candidate: afterEffects.strongest }, unresolved: [...(beforeStats.unresolved || []), ...(afterStats.unresolved || []), ...(beforeEffects.unresolved || []), ...(afterEffects.unresolved || []), ...(procBefore.unresolved || []), ...(procAfter.unresolved || [])] },
+      scope: { hand: null, layout: scenario.layout, singleHand: false },
+      spellFocus: { available: false, reason: 'Spell focus and spell rotation are not modeled.' }, pet: { available: false, reason: 'Pet damage is not modeled.' } };
+  }
+  function projectSpellOnly(profile, candidate, worn, scenario, confirmation) {
+    const { after } = replacement(profile, candidate, worn, { ...scenario, layout: null }, false);
+    const spells = spellComponent(profile, after, scenario, confirmation);
+    const full = spells.available ? row('Spell DPS', spells.current, spells.candidate) : row('Spell DPS', NaN, NaN, spells.reason);
+    const stats = spells.statsAvailable ? row('Spell stats DPS', spells.statsCurrent, spells.statsCandidate) : row('Spell stats DPS', NaN, NaN, spells.reason);
+    full.partial = false; stats.partial = true;
+    if (stats.available) stats.reason = 'Unfocused spell reference; gear focus modifiers excluded.';
+    const selected = full.available ? full : stats;
+    const includedComponents = selected.available ? [selected.metric] : [];
+    const excludedComponents = ['Melee DPS', 'Weapon proc DPS', 'Pet damage', 'DoTs', 'Mana pool/regeneration', 'Other triggered effects'];
+    if (scenario.spells.model === 'wizard-hoarfrost') excludedComponents.push('Ethereal Weave and children', 'Wizard innate crits', 'Twincast', 'Burns');
+    if (scenario.spells.model === 'magician-spear') excludedComponents.push('Summoned pets', 'Swarm/pet-linked damage', 'Of Many/conditional effects');
+    if (scenario.spells.model === 'enchanter-mindcleave') excludedComponents.push('Mind Squall DoT/mana return', 'Auras', 'Crowd-control/support effects');
+    if (scenario.spells.model === 'necro-pyre') excludedComponents.push('Other DoTs', 'DoT Spell Dmg scaling', 'DoT clipping/overlap and fade effects');
+    if (!full.available) excludedComponents.push('Spell focus modifiers');
+    const player = { ...selected, metric: 'Player DPS', partial: true, includedComponents, excludedComponents };
+    return { mode: 'dps-reference', rule: SPELL_ONLY_RULES[scenario.spells.model] || WIZARD_RULE, outputs: [full, stats, player], scenario, scenarioRevision: scenario.revision,
+      includedComponents, excludedComponents, partial: true,
+      assumptions: ['One cataloged class spell application per shared cycle: a declared reference, not an optimal rotation.',
+        'Spell Dmg uses the pinned EQEmu GetExtraSpellAmt timing rule; this is not retail calibration.',
+        'Explicit mana budget limits uptime; no mana pool or regeneration is inferred. Crit and landing inputs are shared.',
+        ...(scenario.spells.model === 'necro-pyre' ? ['Pyre of Marnek uses five six-second ticks over its sourced 30-second duration; DoT Spell Dmg scaling is intentionally omitted.'] : []),
+        'Unchanged augments stay in place; candidate augment transfer is not modeled.'],
+      sources: [MODEL_SOURCES[3], ...spells.sources],
+      effectSources: { current: effectSnapshot(profile), candidate: effectSnapshot(after) },
+      observations: { spellFocus: spells.focus, unresolved: spells.unresolved || [] },
+      scope: { hand: null, layout: null, singleHand: false },
+      spellFocus: { available: spells.available, reason: spells.reason, uptime: spells.uptime, focusMean: spells.focusMean },
+      pet: { available: false, reason: 'Pet damage is not modeled.' } };
+  }
+  LC.playerDamage = { RULE, project, expectedRoll, critFactor, doubleAttackChance, daFactor, spellExtra };
 })();

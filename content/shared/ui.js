@@ -152,8 +152,8 @@
 
   function dpsEligibility(cand, worn, profile, formula) {
     const selectedRole = dpsProfileRole(profile, formula);
-    const supportedProfile = profile && ['beastlord', 'bst'].includes(String(profile.cls || '').trim().toLowerCase()) && Number(profile.level) === 100;
-    if (!supportedProfile) return { role: selectedRole, supported: false, kind: 'unsupported', reason: 'Player DPS estimate supports level-100 Beastlords only.' };
+    const supportedProfile = profile && ['beastlord', 'bst', 'wizard', 'wiz', 'magician', 'mag', 'enchanter', 'enc', 'necromancer', 'nec', 'berserker', 'ber', 'monk', 'mnk', 'rogue', 'rog'].includes(String(profile.cls || '').trim().toLowerCase()) && Number(profile.level) === 100;
+    if (!supportedProfile) return { role: selectedRole, supported: false, kind: 'unsupported', reason: 'Player DPS estimate supports only cataloged level-100 class models.' };
     return { role: selectedRole || 'player-dps', supported: true, reason: '' };
   }
 
@@ -628,9 +628,14 @@
     details.appendChild(status);
     const body = document.createElement('div');
     details.appendChild(body);
-    const supportedProfile = profile && ['beastlord', 'bst'].includes(String(profile.cls || '').trim().toLowerCase()) && Number(profile.level) === 100;
+    const className = String(profile && profile.cls || '').trim().toLowerCase();
+    const spellOnlyModel = { wizard: 'wizard-hoarfrost', wiz: 'wizard-hoarfrost', magician: 'magician-spear', mag: 'magician-spear', enchanter: 'enchanter-mindcleave', enc: 'enchanter-mindcleave', necromancer: 'necro-pyre', nec: 'necro-pyre' }[className] || '';
+    const meleeOnlyModel = { berserker: 'berserker-base-melee', ber: 'berserker-base-melee', monk: 'monk-base-melee', mnk: 'monk-base-melee', rogue: 'rogue-base-melee', rog: 'rogue-base-melee' }[className] || '';
+    const spellOnly = !!spellOnlyModel;
+    const meleeOnly = !!meleeOnlyModel;
+    const supportedProfile = profile && (spellOnly || meleeOnly || ['beastlord', 'bst'].includes(className)) && Number(profile.level) === 100;
     if (!supportedProfile) {
-      status.textContent = 'Editable Player DPS assumptions support level-100 Beastlords only.';
+      status.textContent = 'Editable Player DPS assumptions support only cataloged level-100 class models.';
       return details;
     }
     const fieldLabels = {
@@ -672,6 +677,7 @@
         ? 'Illustrative reference defaults — not measured combat values. These shared inputs apply to every comparison for this character.'
         : 'Saved shared reference scenario — still an illustrative estimate, not measured combat values.';
       body.appendChild(note);
+      if (!spellOnly) {
       select(body, 'layout', 'Layout', values.layout);
       number(body, 'hastePercent', 'Shared haste (%)', values.hastePercent);
       for (const hand of ['primary', 'secondary']) {
@@ -699,6 +705,7 @@
         for (const [key, label, unit] of [['primaryPpm', 'Primary proc rate', 'procs/min'], ['secondaryPpm', 'Secondary proc rate', 'procs/min'], ['landingMultiplier', 'Proc landing multiplier', '×']]) number(procs, 'procs.' + key, label + ' (' + unit + ')', procValue[key]);
         body.appendChild(procs);
       }
+      }
       const upgradeDraft = projection && projection.upgradeScenario;
       if (upgradeDraft && typeof upgradeDraft === 'object' && Number(upgradeDraft.version) > Number(values.version)) {
         const upgrade = document.createElement('button'); upgrade.type = 'button'; upgrade.textContent = 'Enable gear stats and procs';
@@ -712,7 +719,7 @@
         });
         body.appendChild(upgrade);
       }
-      if (values.version >= 3) {
+      if (values.version >= 3 && !meleeOnly) {
         const spells = document.createElement('details'); spells.open = false;
         const spellSummary = document.createElement('summary'); spellSummary.textContent = 'Spell rotation'; spells.appendChild(spellSummary);
         const spellValue = values.spells || {};
@@ -725,8 +732,11 @@
           ['criticalChance', 'Spell critical chance', 'fraction 0–1'], ['criticalMultiplier', 'Spell critical multiplier', '×'],
           ['manaPerSecond', 'Available mana budget', 'mana/second'], ['meleeDuringCast', 'Melee during cast', 'fraction 0–1'],
         ];
-        for (const [key, label, unit] of spellLabels) number(spells, 'spells.' + key, label + ' (' + unit + ')', spellValue[key]);
-        const explanation = document.createElement('p'); explanation.textContent = 'Fixed shared rotation: one Poantaar\'s Bite and one Kromrif Lance per cycle. Low mana budget scales rotation uptime; spell casts also reduce melee according to Melee during cast. Spell focus is evaluated from each loadout; pet damage remains excluded.'; spells.appendChild(explanation);
+        for (const [key, label, unit] of spellLabels) if (!spellOnly || key !== 'meleeDuringCast') number(spells, 'spells.' + key, label + ' (' + unit + ')', spellValue[key]);
+        const spellNames = { 'wizard-hoarfrost': 'Ethereal Hoarfrost', 'magician-spear': 'Spear of Blistersteel', 'enchanter-mindcleave': 'Mindcleave', 'necro-pyre': 'Pyre of Marnek' };
+        const explanation = document.createElement('p'); explanation.textContent = spellOnly
+          ? 'Caster spell-only model: ' + (spellValue.model || spellOnlyModel) + '. One ' + (spellNames[spellValue.model] || 'cataloged spell') + ' application per cycle; this is a bounded reference, not an optimal rotation. Pets, unsupported triggered effects and unmodeled class mechanics are excluded.'
+          : 'Fixed shared rotation: one Poantaar\'s Bite and one Kromrif Lance per cycle. Low mana budget scales rotation uptime; spell casts also reduce melee according to Melee during cast. Spell focus is evaluated from each loadout; pet damage remains excluded.'; spells.appendChild(explanation);
         body.appendChild(spells);
       }
       const save = document.createElement('button'); save.type = 'button'; save.textContent = 'Save for this character';
@@ -734,18 +744,19 @@
         event.preventDefault(); event.stopPropagation();
         if (!LC.state || typeof LC.state.saveDpsScenario !== 'function') { status.textContent = 'Saving DPS assumptions is unavailable.'; return; }
         save.disabled = true; status.textContent = 'Saving DPS assumptions…';
-        const scenario = {
+        const scenario = spellOnly ? { ...JSON.parse(JSON.stringify(currentScenario)), revision, layout: null } : {
           version: currentScenario.version,
           revision,
           layout: inputByKey.layout.value || null,
           hastePercent: String(inputByKey.hastePercent.value || '').trim() ? Number(inputByKey.hastePercent.value) : null,
           primary: {}, secondary: {},
+          meleeModel: currentScenario.meleeModel || 'beastlord',
         };
-        for (const hand of ['primary', 'secondary']) for (const key of Object.keys(fieldLabels)) {
+        if (!spellOnly) for (const hand of ['primary', 'secondary']) for (const key of Object.keys(fieldLabels)) {
           const input = inputByKey[hand + '.' + key];
           scenario[hand][key] = String(input.value || '').trim() ? Number(input.value) : null;
         }
-        if (currentScenario.version >= 2) {
+        if (currentScenario.version >= 2 && !spellOnly) {
           scenario.version = currentScenario.version;
           scenario.combat = {};
           for (const key of combatKeys) {
@@ -759,8 +770,11 @@
           }
         }
         if (currentScenario.version >= 3) {
-          scenario.spells = {};
-          for (const key of ['rank', 'cycleSeconds', 'landingMultiplier', 'criticalChance', 'criticalMultiplier', 'manaPerSecond', 'meleeDuringCast']) {
+          scenario.spells = { model: 'beastlord', rank: 1, cycleSeconds: 32, landingMultiplier: 1,
+            criticalChance: 0, criticalMultiplier: 2, manaPerSecond: 100, meleeDuringCast: 0,
+            ...(currentScenario.spells || {}) };
+          if (!meleeOnly) for (const key of ['rank', 'cycleSeconds', 'landingMultiplier', 'criticalChance', 'criticalMultiplier', 'manaPerSecond', 'meleeDuringCast']) {
+            if (spellOnly && key === 'meleeDuringCast') { scenario.spells[key] = currentScenario.spells[key]; continue; }
             const input = inputByKey['spells.' + key];
             scenario.spells[key] = String(input && input.value || '').trim() ? Number(input.value) : null;
           }
@@ -796,6 +810,9 @@
   }
 
   function buildProjectionPanel(cand, profile, worn) {
+    const className = String(profile && profile.cls || '').trim().toLowerCase();
+    const spellOnly = ['wizard', 'wiz', 'magician', 'mag', 'enchanter', 'enc', 'necromancer', 'nec'].includes(className);
+    const meleeOnly = ['berserker', 'ber', 'monk', 'mnk', 'rogue', 'rog'].includes(className);
     const panel = document.createElement('details'); panel.className = 'lc-projection';
     const title = document.createElement('summary'); title.textContent = 'Stat estimates and experimental DPS'; panel.appendChild(title);
     const scope = document.createElement('p'); scope.textContent = 'Reference estimates use the same model for both items; calibration is optional. These are not measured game totals.'; panel.appendChild(scope);
@@ -816,10 +833,14 @@
     const procConfirm = document.createElement('label'); const procCheck = document.createElement('input'); procCheck.type = 'checkbox'; procCheck.disabled = true;
     const procText = document.createTextNode(' Weapon-proc source review unavailable until loaded.');
     procConfirm.appendChild(procCheck); procConfirm.appendChild(procText); damageBody.appendChild(procConfirm);
+    effectsConfirm.hidden = spellOnly; procConfirm.hidden = spellOnly;
     const focusConfirm = document.createElement('label'); const focusCheck = document.createElement('input'); focusCheck.type = 'checkbox'; focusCheck.disabled = true;
     const focusText = document.createTextNode(' Spell-focus source review unavailable until loaded.');
     focusConfirm.appendChild(focusCheck); focusConfirm.appendChild(focusText); damageBody.appendChild(focusConfirm);
+    focusConfirm.hidden = spellOnly || meleeOnly;
     const damageStatus = document.createElement('p'); damageStatus.textContent = 'Open to calculate known melee, proc and spell contributions.'; damageBody.appendChild(damageStatus);
+    if (spellOnly) damageStatus.textContent = 'Open to calculate the class-specific spell-only reference.';
+    if (meleeOnly) damageStatus.textContent = 'Open to calculate the class-specific base-melee reference.';
     let damageLoaded = false; let damageLoading = false; let damageBinding = null; let damageGeneration = 0;
     const renderDamage = (projection) => {
       damageBody.replaceChildren(effectsConfirm, procConfirm, focusConfirm, damageStatus);
@@ -843,6 +864,8 @@
       const outputs = projection && Array.isArray(projection.outputs) ? projection.outputs : [];
       damageStatus.textContent = projection && projection.scenarioDefault
         ? 'Illustrative defaults for melee, procs and spells; values are estimates, not measured combat.' : 'Same melee, proc and spell scenario applied to current and candidate.';
+      if (spellOnly) damageStatus.textContent = 'Same class-specific spell-only reference applied to current and candidate; not measured combat or an optimal rotation.';
+      if (meleeOnly) damageStatus.textContent = 'Same class-specific base-melee reference applied to current and candidate; class abilities remain excluded.';
       for (const output of outputs) {
         const row = document.createElement('p');
         const reasons = output && (output.unresolvedReasons || output.reasons);
@@ -921,6 +944,7 @@
     const modeLabel = document.createElement('label'); modeLabel.textContent = 'Comparison model ';
     const mode = document.createElement('select');
     for (const [value, label] of [['reference', 'Reference estimate (no calibration)'], ['calibrated', 'Calibrated Accuracy only'], ['dps', 'Manual DPS estimate (melee and procs)']]) {
+      if (value === 'dps' && (!profile || !['beastlord', 'bst'].includes(String(profile.cls || '').trim().toLowerCase()) || Number(profile.level) !== 100)) continue;
       const option = document.createElement('option'); option.value = value; option.textContent = label; mode.appendChild(option);
     }
     modeLabel.appendChild(mode); panel.appendChild(modeLabel);
