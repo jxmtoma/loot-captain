@@ -46,7 +46,6 @@ main {
 
 /* Import card */
 .import-card { margin-top: 24px; }
-.raidloot-import-card { border-color: var(--primary); }
 .recommended-label { color: var(--teal); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .raidloot-import-row { display: flex; gap: 8px; width: 100%; }
 .raidloot-import-row input { flex: 1; min-width: 0; }
@@ -84,6 +83,55 @@ main {
 .import-status { font-size: 12px; color: var(--text-dim); min-height: 16px; }
 .import-status.error { color: var(--danger); }
 .import-status.success { color: #6cdc6c; }
+
+/* Add character menu + shared import panel */
+.add-character-menu { position: relative; }
+.add-character-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 300px;
+  max-width: min(90vw, 380px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.add-character-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.add-character-option:hover,
+.add-character-option:focus-visible { background: rgba(198,164,94,.12); border-color: var(--border); outline: none; }
+.add-character-option .option-title { font-size: 13px; font-weight: 700; }
+.add-character-option .option-title .recommended-label { margin-left: 6px; }
+.add-character-option .option-desc { font-size: 12px; color: var(--text-dim); }
+.add-panel-option .hint { margin: 0 0 10px; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 
 .section-header {
   display: flex;
@@ -308,7 +356,6 @@ main { max-width: 1280px; padding: 28px 24px 40px; }
 .card { padding: 18px; }
 .card h3 { color: #e1bd69; text-shadow: 1px 1px #080f19; letter-spacing: .35px; }
 .hint, .profile-card .profile-meta, .profile-card .profile-items { color: #aeb8c5; }
-.raidloot-import-card { border-color: #b08b44; box-shadow: inset 0 1px rgba(255,255,255,.12), 0 0 18px rgba(198,151,65,.08); }
 .recommended-label { color: #8bd0a9; }
 
 .btn {
@@ -356,6 +403,19 @@ main { max-width: 1280px; padding: 28px 24px 40px; }
 .debug-card pre { background: #08111d; border-color: #35475c; color: #a9b9c8; }
 .import-card code { background: #08111d; border-color: #3a4a61; color: #f0d995; }
 .import-status.success { color: #7be29a; }
+
+/* Add character menu + shared import panel (theme) */
+.add-character-menu-list {
+  border-color: #6e603f;
+  border-radius: 3px;
+  background: linear-gradient(145deg, rgba(28,43,61,.98), rgba(13,23,36,.98));
+  box-shadow: inset 0 1px rgba(255,255,255,.09), 0 10px 26px rgba(0,0,0,.45);
+}
+.add-character-option { border-radius: 2px; }
+.add-character-option:hover,
+.add-character-option:focus-visible { border-color: #8f7640; background: rgba(213,174,85,.08); }
+.add-character-option .option-title { color: #f0eee5; }
+.add-character-option .option-desc { color: #a9b9c8; }
 
 @media (max-width: 700px) {
   .section-header { padding-left: 0; padding-right: 0; }

@@ -146,7 +146,7 @@ function renderProfileList() {
   list.innerHTML = '';
   const ids = Object.keys(profiles);
   if (!ids.length) {
-    list.appendChild(el('div', 'empty-state', 'No characters yet. Click "+ New Character" to create one.'));
+    list.appendChild(el('div', 'empty-state', 'No characters yet. Use "+ Add Character" to create or import one.'));
     return;
   }
   for (const id of ids) {
@@ -1334,6 +1334,47 @@ async function handleInventoryFile(file) {
   }
 }
 
+// ---------- Add character menu + shared import panel ----------
+function toggleAddCharacterMenu() {
+  const menu = $('#add-character-menu-list');
+  const open = menu.classList.contains('hidden');
+  if (open) {
+    menu.classList.remove('hidden');
+    $('#btn-add-character').setAttribute('aria-expanded', 'true');
+  } else {
+    closeAddCharacterMenu();
+  }
+}
+
+function closeAddCharacterMenu() {
+  $('#add-character-menu-list').classList.add('hidden');
+  $('#btn-add-character').setAttribute('aria-expanded', 'false');
+}
+
+function closeAddCharacterPanel() {
+  $('#add-character-panel').classList.add('hidden');
+}
+
+// Show the shared panel with the chosen import form; 'new' opens the blank editor instead.
+function chooseAddCharacterOption(option) {
+  closeAddCharacterMenu();
+  if (option === 'new') {
+    closeAddCharacterPanel();
+    openEditor('new');
+    return;
+  }
+  $('#add-character-panel').classList.remove('hidden');
+  $('#add-panel-raidloot').classList.toggle('hidden', option !== 'raidloot');
+  $('#add-panel-everquest').classList.toggle('hidden', option !== 'everquest');
+  $('#add-character-panel-title').textContent = option === 'raidloot' ? 'Import from RaidLoot' : 'Import from EverQuest';
+  if (option === 'raidloot') {
+    $('#raidloot-profile').focus();
+  } else {
+    $('#import-status').textContent = '';
+  }
+  $('#add-character-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 // ---------- Init ----------
 async function requireConsent() {
   const result = await chrome.storage.local.get(CONSENT_KEY);
@@ -1358,7 +1399,18 @@ async function init() {
   if (new URLSearchParams(location.search).has('debug')) $('#debug-details').hidden = false;
   renderClassSelect();
   renderFormulaSelect();
-  $('#btn-new-profile').addEventListener('click', () => openEditor('new'));
+  $('#btn-add-character').addEventListener('click', () => toggleAddCharacterMenu());
+  document.querySelectorAll('[data-add-option]').forEach((option) => {
+    option.addEventListener('click', () => chooseAddCharacterOption(option.dataset.addOption));
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.add-character-menu')) closeAddCharacterMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAddCharacterMenu();
+  });
+  $('#btn-close-add-panel').addEventListener('click', closeAddCharacterPanel);
+  $('#btn-choose-inventory').addEventListener('click', () => $('#inventory-file').click());
   $('#btn-back').addEventListener('click', closeEditor);
   $('#btn-save-profile').addEventListener('click', saveProfile);
   $('#btn-delete-profile').addEventListener('click', deleteProfile);
