@@ -301,7 +301,7 @@ let characterSelectImage = newImage(width: 1280, height: 800) {
     drawText("Local character profiles for gear comparison", x: 104, y: 54, size: 13, fill: color("#9eacbc"))
     drawText("CHARACTER SELECT / INVENTORY", x: 64, y: 102, size: 10, fill: color("#8e9daf"))
     drawText("Character Select", x: 64, y: 126, size: 24, fill: color("#e6c26d"), bold: true, serif: true)
-    drawButton(x: 1018, y: 119, width: 198, label: "+ New Character", primary: true)
+    drawButton(x: 1000, y: 119, width: 216, label: "+ Add Character \u{25BE}", primary: true)
     // Rows carry a Compare toggle rather than a single active character:
     // every checked profile is compared on RaidLoot and OpenDKP.
     let profiles: [(String, String, String, Bool, Bool)] = [
@@ -329,18 +329,16 @@ let characterSelectImage = newImage(width: 1280, height: 800) {
     drawRect(NSRect(x: 84, y: 486, width: 420, height: 28), fill: color("#07101b"), stroke: color("#4b5b70"), radius: 3)
     drawText("1AC = 10HP", x: 98, y: 493, size: 12, fill: color("#dfe6ef"))
     drawText("Controls the base upgrade score. Weapons also show Damage/Delay ratio when available.", x: 540, y: 492, size: 12, fill: color("#aeb8c5"))
-    drawRect(NSRect(x: 64, y: 550, width: 568, height: 176), fill: color("#17263a"), stroke: color("#b08b44"), radius: 4)
+    // The two import cards collapsed into one shared panel opened from the
+    // "+ Add Character" menu; the menu offers RaidLoot, EverQuest, and blank.
+    drawRect(NSRect(x: 64, y: 550, width: 1152, height: 176), fill: color("#17263a"), stroke: color("#b08b44"), radius: 4)
     drawText("IMPORT FROM RAIDLOOT", x: 84, y: 568, size: 12, fill: color("#e1bd69"), bold: true)
-    drawText("Recommended", x: 512, y: 568, size: 11, fill: color("#8bd0a9"), bold: true, align: .right)
-    drawText("Paste a public profile URL or numeric ID to import worn gear and stats.", x: 84, y: 602, size: 12, fill: color("#aeb8c5"))
-    drawRect(NSRect(x: 84, y: 634, width: 362, height: 30), fill: color("#07101b"), stroke: color("#4b5b70"), radius: 3)
+    drawText("Recommended", x: 1096, y: 568, size: 11, fill: color("#8bd0a9"), bold: true, align: .right)
+    drawText("One \"+ Add Character\" menu offers RaidLoot, an /output inventory file, or a blank profile.", x: 84, y: 602, size: 12, fill: color("#aeb8c5"))
+    drawRect(NSRect(x: 84, y: 634, width: 830, height: 30), fill: color("#07101b"), stroke: color("#4b5b70"), radius: 3)
     drawText("https://www.raidloot.com/profile/...", x: 96, y: 642, size: 11, fill: color("#7d8c9c"))
-    drawButton(x: 458, y: 634, width: 142, label: "Import Profile", primary: true)
-    drawRect(NSRect(x: 648, y: 550, width: 568, height: 176), fill: color("#17263a"), stroke: color("#6e603f"), radius: 4)
-    drawText("IMPORT FROM EVERQUEST", x: 668, y: 568, size: 12, fill: color("#e1bd69"), bold: true)
-    drawText("Run /output inventory in game and select the exported file.", x: 668, y: 602, size: 12, fill: color("#aeb8c5"))
-    drawButton(x: 668, y: 634, width: 176, label: "Choose Inventory File")
-    drawText("Class and level can be entered after import.", x: 668, y: 684, size: 11, fill: color("#7f8d9d"))
+    drawButton(x: 926, y: 634, width: 142, label: "Import Profile", primary: true)
+    drawText("EverQuest file import and blank characters live in the same menu.", x: 84, y: 696, size: 11, fill: color("#7f8d9d"))
 }
 
 let raidLootImage = newImage(width: 1280, height: 800) {

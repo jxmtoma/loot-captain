@@ -26,15 +26,15 @@ Profiles and settings stay in browser-local storage. Loot Captain has no account
 
 Support ongoing development: https://github.com/sponsors/jxmtoma
 
-### What's new in 0.4.0
+### What's new in 0.5.0
 
-- Equip an item into a local character profile from its comparison row on RaidLoot or OpenDKP, with an inline confirmation naming both items. An item the profile already holds shows as equipped instead, and the character editor offers a one-step undo of the most recent equip. This updates Loot Captain's stored profile only; it does not change the character in EverQuest.
-- Moved the wishlist into the character editor's inventory tab strip, shown as a game-style slot grid or a plain list.
-- Replaced the options page's single active character with a per-row Compare checkbox that shares the popup's selection, added a "Fresh from RaidLoot" button on rows imported from a RaidLoot profile, and dropped deleted characters from the compare selection.
-- Extended the statless armor-token catalog back to Planes of Power: 357 to 630 offline mappings adding PoP, GoD, OoW, PoR, TSS, UF, HoT and VoA. PoP and TSS templates are scoped to an armor type rather than every class, so a token a class cannot use is refused instead of resolving to the wrong piece.
-- Compare panels, wishlist panels, and pickers now close when clicking elsewhere on the page, while the wishlist character picker stays open while characters are selected.
+- One "+ Add Character" menu on the options page now offers all three ways to add a character: import from RaidLoot (recommended), import from an EverQuest `/output inventory` file, and a blank new character. The two separate import cards are gone.
+- Added optional, clearly labeled reference estimates next to the preference score: a melee DPS estimate for melee classes, partial physical survivability estimates for level-100 Warriors, Paladins and Shadowknights, and partial direct-heal estimates for level-100 Clerics, Druids and Shamans. Every estimate shows its assumptions, uses one shared editable scenario per character, and stays separate from the preference score. Viewing an estimate saves nothing.
+- Added an AA checklist and character-stat projection panel in the character editor, with optional snapshots and local observation/approval records.
+- Versioned per-character score formulas and role preference presets with weighted contribution breakdowns; incomplete weighted inputs never produce a numeric score.
+- Faycite augments are excluded from all estimate models; their numeric stats and effects cannot affect the estimates.
 
-The armor catalog uses offline, source-reviewed definitions; it does not use a live crawler or request new permissions. Incomplete or unavailable RaidLoot sets remain unresolved. This release adds no permissions and no new hosts.
+The armor catalog and estimates use offline, source-reviewed definitions; they do not use a live crawler or request new permissions. Incomplete or unavailable RaidLoot sets remain unresolved. This release adds no permissions and no new hosts.
 
 ### Category and language
 
@@ -84,11 +84,11 @@ The repository includes current, correctly sized PNGs in `store-assets/`:
 
 The store icon is `icons/icon128.png`. A YouTube promotional video link remains a manual listing step because no video is included in this repository.
 
-## Release submission checklist for 0.4.0
+## Release submission checklist for 0.5.0
 
 - Run `node tests/regression.js`.
 - Run `python3 tools/generate_armor_token_catalog.py --check`.
 - Run `swift tools/generate_store_visuals.swift` from the repository root when the UI changed, and re-upload the refreshed screenshots.
-- Run `./tools/package-extension.sh` and confirm `dist/loot-captain-v0.4.0.zip`. The script keeps only the newest two archives, so the previous release stays available to roll back to.
+- Run `./tools/package-extension.sh` and confirm `dist/loot-captain-v0.5.0.zip`. The script keeps only the newest two archives, so the previous release stays available to roll back to.
 - Load unpacked for a smoke test, profile switch, and variant check before manually uploading to the Chrome Web Store / Edge.
 - Verify the hosted privacy policy before submission.
