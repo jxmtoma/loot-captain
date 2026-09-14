@@ -51,6 +51,8 @@
       criticalChance: 0, criticalMultiplier: 2, manaPerSecond: 100, meleeDuringCast: 0 }),
   });
   const SCENARIO_DEFAULTS = SCENARIO_DEFAULTS_V3;
+  const CLASS_ATTACK_DEFAULTS = Object.freeze({ skill: 400, cycleSeconds: 8, attacksPerUse: 1,
+    hitChance: .8, damageMultiplier: 1, uptime: 1, primaryPiercingConfirmed: false });
 
   const unavailable = (metric, reason) => ({ metric, available: false, reason });
   const output = (metric, current, candidate) => finite(current) && finite(candidate) && finite(candidate - current)
@@ -119,7 +121,7 @@
     if (![SCENARIO_V1_VERSION, SCENARIO_V2_VERSION, SCENARIO_VERSION].includes(value.version)) fail('Unsupported DPS scenario version');
     const allowed = ['version', 'revision', 'layout', 'hastePercent', 'primary', 'secondary'];
     if (value.version >= SCENARIO_V2_VERSION) allowed.push('combat', 'procs', 'meleeModel');
-    if (value.version >= SCENARIO_VERSION) allowed.push('spells');
+    if (value.version >= SCENARIO_VERSION) allowed.push('spells', 'classAttack');
     if (Object.keys(value).some((key) => !allowed.includes(key))) fail('DPS scenario has unsupported fields');
     if (!Number.isSafeInteger(value.revision) || value.revision < 0 || value.version >= SCENARIO_V2_VERSION && value.revision > 1000000000) fail('DPS scenario revision is invalid');
     if (value.layout !== null && !LAYOUTS.has(value.layout)) fail('DPS scenario layout is invalid');
@@ -171,8 +173,27 @@
     }
     if (spells.criticalMultiplier < 1 || spells.criticalMultiplier > 100) fail('Scenario spells.criticalMultiplier must be between 1 and 100');
     if (spells.manaPerSecond < 0 || spells.manaPerSecond > 100000) fail('Scenario spells.manaPerSecond must be between 0 and 100000');
+    let classAttack;
+    if (own(value, 'classAttack')) {
+      const input = value.classAttack;
+      if (!Object.values(MELEE_MODEL_BY_CLASS).includes(meleeModel) || !input || Array.isArray(input) ||
+          Object.keys(input).some((key) => !own(CLASS_ATTACK_DEFAULTS, key))) fail('Invalid classAttack assumptions');
+      classAttack = {};
+      for (const key of Object.keys(CLASS_ATTACK_DEFAULTS)) {
+        if (key === 'primaryPiercingConfirmed') {
+          if (typeof input[key] !== 'boolean') fail('classAttack primaryPiercingConfirmed must be boolean');
+        } else {
+          const reason = scenarioNumber(input[key], 'classAttack.' + key);
+          if (reason) fail(reason);
+        }
+        classAttack[key] = input[key];
+      }
+      if (input.cycleSeconds < 1 || input.cycleSeconds > 3600 || input.uptime > 1 ||
+          input.attacksPerUse > 20 || input.damageMultiplier > 100 || !Number.isInteger(input.skill) || input.skill > 1000) fail('classAttack assumptions are out of bounds');
+    }
     return { version: SCENARIO_VERSION, revision: value.revision, layout: value.layout,
-      hastePercent: value.hastePercent, primary: hands.primary, secondary: hands.secondary, combat, procs, meleeModel, spells };
+      hastePercent: value.hastePercent, primary: hands.primary, secondary: hands.secondary, combat, procs, meleeModel, spells,
+      ...(classAttack ? { classAttack } : {}) };
   }
 
   function hasUniqueKnownWeapon(profile, hand) {
@@ -548,7 +569,7 @@
   }
 
   LC.dps = { RULE, project, REFERENCE_RULE, SCENARIO_VERSION, SCENARIO_V1_VERSION, SCENARIO_V2_VERSION,
-    SCENARIO_DEFAULTS, SCENARIO_DEFAULTS_V1, SCENARIO_DEFAULTS_V2, SCENARIO_DEFAULTS_V3,
+    SCENARIO_DEFAULTS, SCENARIO_DEFAULTS_V1, SCENARIO_DEFAULTS_V2, SCENARIO_DEFAULTS_V3, CLASS_ATTACK_DEFAULTS,
     defaultsV2: SCENARIO_DEFAULTS_V2, defaultsV3: SCENARIO_DEFAULTS_V3, validateScenario, upgradeScenario,
     referenceScenario, referenceProject, stat, weaponNumeric: stat };
 })();

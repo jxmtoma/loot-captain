@@ -9,7 +9,8 @@ for (const file of ['slots', 'parser', 'diff']) vm.runInNewContext(read('content
 const LC = core.LootCaptain;
 const choice = (key, version = 1) => ({ key, version });
 const preset = (key) => LC.diff.SCORE_FORMULAS.find((formula) => formula.key === key);
-assert.equal(JSON.stringify(preset('role-tank').terms), JSON.stringify({ HP: 1, AC: 10, HSta: 20 }));
+assert.equal(JSON.stringify(preset('role-tank').terms), JSON.stringify({ HP: 1, AC: 4 }));
+assert.equal(LC.diff.diffItems({ stats: { HP: 104, AC: 9 } }, { stats: { HP: 100, AC: 10 } }, preset('role-tank')).score, 0);
 assert.equal(JSON.stringify(preset('role-melee').terms), JSON.stringify({ HP: 1, ATK: 5, HDex: 20 }));
 assert.equal(JSON.stringify(preset('role-caster').terms), JSON.stringify({ MANA: 1, 'Spell Dmg': 10 }));
 assert.equal(preset('role-melee').label, 'Melee stat preference');

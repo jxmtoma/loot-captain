@@ -8,6 +8,7 @@
   const STAT_ALIASES = {
     ac: 'AC', hp: 'HP', mana: 'MANA', end: 'END', endur: 'END', endurance: 'END',
     atk: 'ATK', attack: 'ATK',
+    'backstab dmg': 'Backstab Dmg', 'backstab damage': 'Backstab Dmg', 'bs dmg': 'Backstab Dmg', backstabdmg: 'Backstab Dmg', backstabdamage: 'Backstab Dmg',
     hsta: 'HSta', hstr: 'HStr', hagi: 'HAgi', hdex: 'HDex', hint: 'HInt', hwis: 'HWis', hcha: 'HCha',
     sta: 'STA', stamina: 'STA', str: 'STR', strength: 'STR', agi: 'AGI', agility: 'AGI',
     dex: 'DEX', dexterity: 'DEX', int: 'INT', intelligence: 'INT', wis: 'WIS', wisdom: 'WIS',
@@ -366,7 +367,7 @@
       'sta', 'str', 'agi', 'dex', 'int', 'wis', 'cha',
       'svfire', 'svcold', 'svmagic', 'svpoison', 'svdisease', 'svcorrupt',
       'heroics', 'healamount', 'spelldmg', 'clairvoyance',
-      'purity', 'luck', 'haste', 'dmg', 'damage', 'delay', 'range',
+      'purity', 'luck', 'haste', 'dmg', 'damage', 'delay', 'range', 'backstabdmg', 'backstabdamage',
       'hpregen', 'manaregen', 'endregen', 'hp_regen', 'mana_regen', 'end_regen',
     ];
     const statLabels = {

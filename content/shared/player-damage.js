@@ -369,8 +369,9 @@
         if (type === 'focus' || type === 'click' || type === 'worn') continue;
         if (type !== 'proc') { unresolved.push('Unknown weapon effect ' + String(effect && effect.name || 'unknown')); continue; }
         const resolved = resolveProc(effect), damage = resolved && number(resolved.baseDamage), rate = resolved && number(resolved.rateMultiplier);
-        if (!resolved || damage === null || rate === null || damage < 0 || rate < 0 || !resolved.spellId || !resolved.name || !resolved.resist || seenSpells.has(String(resolved.spellId))) unresolved.push('Unresolved or duplicate weapon proc ' + String(effect.name || effect.key || 'unknown'));
-        else { seenSpells.add(String(resolved.spellId)); total += damage * ppm * scenario.procs.landingMultiplier * rate / 60; if (resolved.source) sources.push(resolved.source); }
+        const identities = resolved ? ['name:' + normalized(resolved.name), ...(resolved.spellId ? ['id:' + resolved.spellId] : [])] : [];
+        if (!resolved || damage === null || rate === null || damage < 0 || rate < 0 || !resolved.name || identities.some((key) => seenSpells.has(key))) unresolved.push('Unresolved or duplicate weapon proc ' + String(effect.name || effect.key || 'unknown'));
+        else { identities.forEach((key) => seenSpells.add(key)); total += damage * ppm * scenario.procs.landingMultiplier * rate / 60; if (resolved.source) sources.push(resolved.source); }
       }
     }
     return { available: complete && !unresolved.length, value: total, unresolved, sources, reason: !complete ? 'Weapon proc effect lists are incomplete.' : unresolved.length ? unresolved.join('; ') : null };
@@ -440,7 +441,7 @@
     const all = outputs[1].available && outputs[2].available ? row('Melee + procs DPS', outputs[1].current + outputs[2].current, outputs[1].candidate + outputs[2].candidate) : row('Melee + procs DPS', NaN, NaN, 'Melee and weapon-proc components must both be available.');
     outputs.push(all);
     return { mode: 'dps-reference', rule: RULE_V2, outputs, scenario, scenarioRevision: scenario.revision,
-      assumptions: ['Same target, buffs, AAs, weapon skills and combat assumptions apply to both loadouts.', 'Omitted RaidLoot/legacy ATK, STR, DEX and heroic fields count as zero; explicit unknown and partial OpenDKP omissions remain unavailable.', 'ATK/STR/DEX use the versioned illustrative offense, RollD20, critical and double-attack relationships.', 'Strongest resolved Cleave and Ferocity effects are used per loadout; duplicate weaker effects do not stack.', 'Weapon procs use fixed hand PPM and exact catalog damage; haste and hit chance are not applied to proc rates.', 'Unchanged augments stay in place; candidate augment transfer is not modeled.', 'Spell focus and pet damage are not modeled.'],
+      assumptions: ['Same target, buffs, AAs, weapon skills and combat assumptions apply to both loadouts.', 'Omitted RaidLoot/legacy ATK, STR, DEX and heroic fields count as zero; explicit unknown and partial OpenDKP omissions remain unavailable.', 'ATK/STR/DEX use the versioned illustrative offense, RollD20, critical and double-attack relationships.', 'Strongest resolved Cleave and Ferocity effects are used per loadout; duplicate weaker effects do not stack.', 'Weapon procs estimate direct damage from descriptions or catalog records using effective hand PPM and the landing multiplier; item Proc Rate, haste and hit chance are not applied again.', 'Unchanged augments stay in place; candidate augment transfer is not modeled.', 'Spell focus and pet damage are not modeled.'],
       sources: [...MODEL_SOURCES, ...beforeEffects.sources || [], ...afterEffects.sources || [], ...procBefore.sources, ...procAfter.sources],
       effectSources: { current: effectSnapshot(profile), candidate: effectSnapshot(after) },
       resolvedEffectSources: { current: beforeEffects.sources, candidate: afterEffects.sources },
@@ -506,6 +507,7 @@
         'Unchanged augments stay in place; candidate augment transfer is not modeled.',
         'Fixed rotation is one Poantaar\'s Bite and one Kromrif Lance per cycle; pets, DoTs, wrappers and extra procs are excluded.',
         'Mana-limited spell uptime is shared; casting time reduces melee only and does not rescale realized weapon PPM.',
+        'Weapon proc damage comes from direct-damage descriptions or catalog records; effective PPM includes item rate modifiers.',
         'Spell focus uses the strongest eligible exact focus per resist; flat Spell Dmg uses the sourced extra-damage rule.'],
       sources: [...MODEL_SOURCES, ...beforeEffects.sources, ...afterEffects.sources, ...procBefore.sources || [], ...procAfter.sources || [], ...spells.sources],
       effectSources: { current: effectSnapshot(profile), candidate: effectSnapshot(after) },
@@ -515,6 +517,34 @@
       scope: { hand: null, layout: scenario.layout, singleHand: false },
       spellFocus: { available: spells.available, reason: spells.reason, uptime: spells.uptime, focusMean: spells.focusMean }, pet: { available: false, reason: 'Pet damage is not modeled.' } };
   }
+  function classAttackDps(profile, scenario) {
+    const input = scenario.classAttack;
+    if (!input) return NaN;
+    if (input.uptime === 0 || input.attacksPerUse === 0 || input.hitChance === 0) return 0;
+    let base;
+    if (scenario.meleeModel === 'berserker-base-melee') {
+      const primary = occupant(profile, 'primary');
+      if (!primary || !isWeapon(primary)) return NaN;
+      base = 27; // Pinned GetBaseSkillDamage(Frenzy), level 100 with a primary weapon.
+    } else if (scenario.meleeModel === 'monk-base-melee') {
+      const boots = occupant(profile, 'feet');
+      const ac = boots ? LC.dps.weaponNumeric(boots, 'AC') : 0;
+      if (ac === null || ac < 0) return NaN;
+      base = 25 + Math.floor(input.skill / 9 + Math.min(ac / 25, input.skill / 9));
+    } else {
+      if (!input.primaryPiercingConfirmed || scenario.layout === 'two-hand') return NaN;
+      const primary = occupant(profile, 'primary');
+      if (!primary || !isWeapon(primary)) return NaN;
+      const entry = Object.entries(primary.stats || {}).find(([key]) => ['BACKSTABDMG', 'BACKSTABDAMAGE', 'BSDMG'].includes(canonical(key)));
+      const backstab = entry ? number(entry[1]) : null;
+      // Missing backstab damage is unknown; an explicit zero uses weapon damage.
+      if (backstab === null || backstab < 0) return NaN;
+      base = Math.floor((backstab || LC.dps.weaponNumeric(primary, 'Damage')) * (2 + input.skill * .02));
+    }
+    // ponytail: effective landed multiplier covers mitigation/crit; no AA/disc or ATK scaling yet.
+    return base * input.damageMultiplier * input.hitChance * input.attacksPerUse * input.uptime / input.cycleSeconds;
+  }
+
   function projectMeleeOnly(profile, candidate, worn, scenario, confirmation) {
     const { after } = replacement(profile, candidate, worn, scenario, false);
     let currentWeapons = null, afterWeapons = null, weaponReason = null;
@@ -544,19 +574,32 @@
     const melee = outputs[1].available ? outputs[1] : outputs[0].available ? outputs[0] : null;
     const selected = melee ? [melee.metric] : [];
     if (outputs[2].available) selected.push(outputs[2].metric);
+    const attackName = scenario.meleeModel === 'berserker-base-melee' ? 'Frenzy' : scenario.meleeModel === 'monk-base-melee' ? 'Flying Kick' : 'Backstab';
+    let attack = null;
+    if (scenario.classAttack) {
+      let current = NaN, projected = NaN;
+      try { current = classAttackDps(profile, scenario); projected = classAttackDps(after, scenario); } catch (_) { /* Ambiguous equipped slots remain unavailable. */ }
+      attack = row(attackName + ' DPS', current, projected, 'Class attack requires known equipment inputs; Backstab also requires confirmed primary 1H piercing weapons and Backstab Dmg.');
+      attack.partial = true;
+      outputs.push(attack);
+      if (attack.available) selected.push(attack.metric);
+    }
     const excluded = ['Spell DPS', 'Spell focus modifiers', 'Pet damage', 'DoTs'];
-    if (scenario.meleeModel === 'berserker-base-melee') excluded.push('Discs', 'Frenzy', 'class special attacks');
-    if (scenario.meleeModel === 'monk-base-melee') excluded.push('hand-to-hand base damage', 'kicks', 'class special attacks');
-    if (scenario.meleeModel === 'rogue-base-melee') excluded.push('backstab', 'poisons', 'class special attacks');
-    const values = [melee, outputs[2]].filter((entry) => entry && entry.available);
+    if (scenario.meleeModel === 'berserker-base-melee') excluded.push('Discs', ...(!attack?.available ? ['Frenzy'] : []), 'other class special attacks');
+    if (scenario.meleeModel === 'monk-base-melee') excluded.push('hand-to-hand base damage', ...(!attack?.available ? ['kicks'] : ['other kicks']), 'other class special attacks');
+    if (scenario.meleeModel === 'rogue-base-melee') excluded.push(...(!attack?.available ? ['backstab'] : []), 'poisons', 'other class special attacks');
+    const values = [melee, outputs[2], attack].filter((entry) => entry && entry.available);
     const player = values.length ? row('Player DPS', values.reduce((sum, entry) => sum + entry.current, 0), values.reduce((sum, entry) => sum + entry.candidate, 0)) : row('Player DPS', NaN, NaN, 'No player-damage components are available.');
-    player.includedComponents = selected; player.excludedComponents = excluded; player.partial = values.length < 2 || melee === outputs[0];
+    player.includedComponents = selected; player.excludedComponents = excluded; player.partial = !!attack || values.length < 2 || melee === outputs[0];
     outputs.push(player);
     const rule = MELEE_ONLY_RULES[scenario.meleeModel];
     return { mode: 'dps-reference', rule, outputs, scenario, scenarioRevision: scenario.revision,
       includedComponents: selected, excludedComponents: excluded, partial: player.partial,
-      assumptions: ['One shared class-specific base-melee scenario applies to both gear sets.', 'ATK/STR/DEX, target, layout, hand rates and proc assumptions are explicit reference inputs.', 'Class abilities, special attacks and class-specific weapon rules are excluded until separately sourced.', 'Unchanged augments stay in place; candidate augment transfer is not modeled.'],
-      sources: [...MODEL_SOURCES, rule && rule.source].filter(Boolean),
+      assumptions: ['One shared class-specific base-melee scenario applies to both gear sets.', 'ATK/STR/DEX, target, layout, hand rates and proc assumptions are explicit reference inputs.', 'Weapon proc damage comes from direct-damage descriptions or catalog records; effective PPM includes item rate modifiers.', 'Optional Frenzy/Flying Kick/Backstab uses pinned base damage with explicit effective cadence, hit chance and landed multiplier; AA/disc and ATK scaling are excluded.', 'Unchanged augments stay in place; candidate augment transfer is not modeled.'],
+      sources: [...MODEL_SOURCES, rule && rule.source, ...(scenario.classAttack ? [
+        { label: 'EQEmu class attack base damage', url: 'https://github.com/EQEmu/EQEmu/blob/4aceae18b94ffaafc08e2b17bc41cd72c77f795d/zone/special_attacks.cpp' },
+        { label: 'EQEmu base damage constants', url: 'https://github.com/EQEmu/EQEmu/blob/4aceae18b94ffaafc08e2b17bc41cd72c77f795d/common/ruletypes.h' },
+      ] : [])].filter(Boolean),
       effectSources: { current: effectSnapshot(profile), candidate: effectSnapshot(after) },
       resolvedEffectSources: { current: beforeEffects.sources, candidate: afterEffects.sources },
       observations: { gearStats: { current: beforeStats.values, candidate: afterStats.values }, effects: { current: beforeEffects.strongest, candidate: afterEffects.strongest }, unresolved: [...(beforeStats.unresolved || []), ...(afterStats.unresolved || []), ...(beforeEffects.unresolved || []), ...(afterEffects.unresolved || []), ...(procBefore.unresolved || []), ...(procAfter.unresolved || [])] },

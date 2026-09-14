@@ -12,9 +12,11 @@ const MAX_RAIDLOOT_CACHE_BYTES = 2 * 1024 * 1024;
 const MAX_WISHLIST_ITEM_BYTES = 128 * 1024;
 const MAX_PROFILE_MUTATION_BYTES = 4 * 1024 * 1024;
 const DPS_SCENARIOS_KEY = 'dpsScenariosByProfile';
+const TANK_SCENARIOS_KEY = 'tankScenariosByProfile';
+const HEALER_SCENARIOS_KEY = 'healerScenariosByProfile';
 let profileMutationQueue = Promise.resolve();
 
-importScripts('raidloot-parser.js', 'armor-token-catalog.js', '../content/shared/diff.js', '../content/shared/character-data.js', '../content/shared/projection.js', '../content/shared/reference-stats.js', '../content/shared/dps.js', '../content/shared/damage-catalog.js', '../content/shared/player-damage.js');
+importScripts('raidloot-parser.js', 'armor-token-catalog.js', '../content/shared/diff.js', '../content/shared/character-data.js', '../content/shared/projection.js', '../content/shared/reference-stats.js', '../content/shared/dps.js', '../content/shared/damage-catalog.js', '../content/shared/player-damage.js', '../content/shared/tank.js', '../content/shared/healer.js');
 
 const ARMOR_CLASS_NAMES = {
   WAR: 'Warrior', CLR: 'Cleric', PAL: 'Paladin', RNG: 'Ranger', SHD: 'ShadowKnight',
@@ -390,7 +392,7 @@ function allowedSender(type, sender) {
   if (type === 'EQUIP_ITEM') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'UNDO_EQUIP') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'GET_CHARACTER_PROJECTION') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
-  if (type === 'SET_DPS_SCENARIO') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (['SET_DPS_SCENARIO', 'SET_TANK_SCENARIO', 'SET_HEALER_SCENARIO'].includes(type)) return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'GET_AA_CATALOG') return isExtensionPage(sender);
   if (type === 'SAVE_CHARACTER_DATA') return isExtensionPage(sender);
   if (type === 'SET_PROFILE_FORMULA') return isExtensionPage(sender);
@@ -773,6 +775,17 @@ function comparableProfile(profile) {
   return rest;
 }
 
+function profileForEstimate(profile, id) {
+  // Ignore this augment family consistently before any role model sees stats or effects.
+  return { ...profile, id, items: profile.items.filter((item) =>
+    !(item.isAugment && /\bfaycite\b/i.test(String(item.name || '')))) };
+}
+
+function withEstimateExclusions(projection) {
+  projection.assumptions = [...(projection.assumptions || []), 'Faycite augments are excluded from all reference estimates, including their stats and effects.'];
+  return projection;
+}
+
 function saveProfiles(records, deletedIds, expectedRecords) {
   return queueProfileMutation(async () => {
     if (!records || typeof records !== 'object' || JSON.stringify(records).length > MAX_PROFILE_MUTATION_BYTES) {
@@ -799,33 +812,43 @@ function saveProfiles(records, deletedIds, expectedRecords) {
       const scenarios = await storageGet(DPS_SCENARIOS_KEY, {});
       const nextScenarios = scenarios && typeof scenarios === 'object' ? { ...scenarios } : {};
       for (const id of deleted) delete nextScenarios[id];
-      await writeProfiles(profiles, { [DPS_SCENARIOS_KEY]: nextScenarios });
+      const tankScenarios = { ...await storageGet(TANK_SCENARIOS_KEY, {}) };
+      for (const id of deleted) delete tankScenarios[id];
+      const healerScenarios = { ...await storageGet(HEALER_SCENARIOS_KEY, {}) };
+      for (const id of deleted) delete healerScenarios[id];
+      await writeProfiles(profiles, { [DPS_SCENARIOS_KEY]: nextScenarios, [TANK_SCENARIOS_KEY]: tankScenarios, [HEALER_SCENARIOS_KEY]: healerScenarios });
     } else await writeProfiles(profiles);
     return profiles;
   });
 }
 
 function saveDpsScenario(msg) {
+  const tank = msg.type === 'SET_TANK_SCENARIO', healer = msg.type === 'SET_HEALER_SCENARIO';
+  const storageKey = healer ? HEALER_SCENARIOS_KEY : tank ? TANK_SCENARIOS_KEY : DPS_SCENARIOS_KEY;
+  const model = healer ? LootCaptain.healer : tank ? LootCaptain.tank : LootCaptain.dps;
+  const label = healer ? 'Healer' : tank ? 'Tank' : 'DPS';
   return queueProfileMutation(async () => {
-    if (JSON.stringify(msg).length > 16 * 1024) throw new Error('DPS scenario is too large');
+    if (JSON.stringify(msg).length > 16 * 1024) throw new Error(label + ' scenario is too large');
     const profileId = cleanWishlistId(msg.profileId, 100);
     if (!profileId) throw new Error('Character profile is required');
-    if (!Number.isSafeInteger(msg.expectedRevision) || msg.expectedRevision < 0) throw new Error('DPS scenario revision is required');
+    if (!Number.isSafeInteger(msg.expectedRevision) || msg.expectedRevision < 0) throw new Error(label + ' scenario revision is required');
     const profiles = await storageGet('profiles', {});
     if (!profiles || !Object.prototype.hasOwnProperty.call(profiles, profileId)) throw new Error('Character no longer exists');
-    const scenarios = await storageGet(DPS_SCENARIOS_KEY, {});
+    if ((tank || healer) && !model.supported(profiles[profileId])) throw new Error('Unsupported ' + label + ' profile');
+    const scenarios = await storageGet(storageKey, {});
     const current = scenarios && typeof scenarios === 'object' ? scenarios[profileId] : undefined;
     const currentRevision = current == null ? 0 : current.revision;
-    if (!Number.isSafeInteger(currentRevision) || currentRevision < 0) throw new Error('Stored DPS scenario is invalid');
-    if (msg.expectedRevision !== currentRevision) throw new Error('DPS scenario changed in another tab. Reload it before saving.');
-    if (current) LootCaptain.dps.validateScenario(current);
-    if (!msg.scenario || typeof msg.scenario !== 'object' || Array.isArray(msg.scenario)) throw new Error('DPS scenario is required');
-    if (msg.scenario.revision !== undefined && msg.scenario.revision !== currentRevision) throw new Error('DPS scenario revision is stale');
-    const normalized = LootCaptain.dps.validateScenario({ ...msg.scenario, revision: currentRevision });
-    if (currentRevision >= Number.MAX_SAFE_INTEGER) throw new Error('DPS scenario revision cannot be incremented');
+    if (!Number.isSafeInteger(currentRevision) || currentRevision < 0) throw new Error('Stored ' + label + ' scenario is invalid');
+    if (msg.expectedRevision !== currentRevision) throw new Error(label + ' scenario changed in another tab. Reload it before saving.');
+    if (current) model.validateScenario(current);
+    if (!msg.scenario || typeof msg.scenario !== 'object' || Array.isArray(msg.scenario)) throw new Error(label + ' scenario is required');
+    if (msg.scenario.revision !== undefined && msg.scenario.revision !== currentRevision) throw new Error(label + ' scenario revision is stale');
+    const normalized = model.validateScenario({ ...msg.scenario, revision: currentRevision });
+    if (healer && normalized.spellModel !== model.classOf(profiles[profileId])) throw new Error('Healer scenario does not match this class');
+    if (currentRevision >= Number.MAX_SAFE_INTEGER) throw new Error(label + ' scenario revision cannot be incremented');
     const saved = { ...normalized, revision: currentRevision + 1 };
     const nextScenarios = { ...(scenarios && typeof scenarios === 'object' ? scenarios : {}), [profileId]: saved };
-    await chrome.storage.local.set({ [DPS_SCENARIOS_KEY]: nextScenarios });
+    await chrome.storage.local.set({ [storageKey]: nextScenarios });
     return saved;
   });
 }
@@ -877,7 +900,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return !expected || !Number.isInteger(expected.index) || ['id', 'name', 'slot'].some((key) => String(expected[key] || '') !== String(snapshot[itemIndex][key] || '')) || expected.index !== snapshot[itemIndex].index;
           })) throw new Error('Weapon equipment changed; reopen the comparison');
         }
-        if (msg.mode === 'dps-reference') {
+        if (['dps-reference', 'tank-reference', 'healer-reference'].includes(msg.mode)) {
           const expectedEquipment = Array.isArray(msg.expectedEquipment) ? msg.expectedEquipment : [];
           if (expectedEquipment.length !== profile.items.length || expectedEquipment.some((expected, itemIndex) => {
             const actual = profile.items[itemIndex];
@@ -892,7 +915,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const classes = parserParseClasses(msg.classes);
         if (classes.length && !classes.includes('ALL') && !classes.includes(parserNormalizeClass(profile.cls))) throw new Error('This character cannot wear the candidate');
         if (msg.requiredLevel != null && (!Number.isInteger(msg.requiredLevel) || msg.requiredLevel < 1 || msg.requiredLevel > Number(profile.level))) throw new Error('Candidate level requirement is incompatible');
-        if (msg.mode != null && !['reference', 'calibrated', 'dps', 'dps-reference'].includes(msg.mode)) throw new Error('Unknown projection mode');
+        if (msg.mode != null && !['reference', 'calibrated', 'dps', 'dps-reference', 'tank-reference', 'healer-reference'].includes(msg.mode)) throw new Error('Unknown projection mode');
+        const estimateProfile = profileForEstimate(profile, msg.profileId);
+        if (msg.mode !== 'calibrated' && [worn, candidate].some((item) => item.isAugment && /\bfaycite\b/i.test(String(item.name || '')))) throw new Error('Faycite augments are excluded from reference estimates');
+        if (msg.mode === 'tank-reference' || msg.mode === 'healer-reference') {
+          const healer = msg.mode === 'healer-reference';
+          const scenarios = await storageGet(healer ? HEALER_SCENARIOS_KEY : TANK_SCENARIOS_KEY, {});
+          const model = healer ? LootCaptain.healer : LootCaptain.tank;
+          const projection = withEstimateExclusions(model.project(estimateProfile, candidate, worn, scenarios[msg.profileId]));
+          sendResponse({ ok: true, projection });
+          break;
+        }
         const dpsScenarios = msg.mode === 'dps-reference' ? await storageGet(DPS_SCENARIOS_KEY, {}) : null;
         const dpsScenario = msg.mode === 'dps-reference' && dpsScenarios && typeof dpsScenarios === 'object'
           ? dpsScenarios[msg.profileId] : undefined;
@@ -910,10 +943,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const projection = msg.mode === 'calibrated'
           ? await LootCaptain.projection.project({ ...profile, id: msg.profileId }, candidate, worn, msg.confirmed === true)
           : msg.mode === 'dps-reference'
-            ? LootCaptain.dps.referenceProject({ ...profile, id: msg.profileId }, candidate, worn, dpsScenario, msg.confirmation || {})
+            ? LootCaptain.dps.referenceProject(estimateProfile, candidate, worn, dpsScenario, msg.confirmation || {})
           : msg.mode === 'dps'
-            ? LootCaptain.dps.project({ ...profile, id: msg.profileId }, candidate, worn, msg.assumptions)
-          : await LootCaptain.referenceStats.project({ ...profile, id: msg.profileId }, candidate, worn);
+            ? LootCaptain.dps.project(estimateProfile, candidate, worn, msg.assumptions)
+          : await LootCaptain.referenceStats.project(estimateProfile, candidate, worn);
+        if (msg.mode !== 'calibrated') withEstimateExclusions(projection);
         if (msg.mode === 'dps-reference' && projection && projection.scenario && LootCaptain.dps &&
             Number(projection.scenario.version) < Number(LootCaptain.dps.SCENARIO_VERSION) &&
             typeof LootCaptain.dps.upgradeScenario === 'function') {
@@ -1100,6 +1134,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, profiles });
         break;
       }
+      case 'SET_HEALER_SCENARIO':
+      case 'SET_TANK_SCENARIO':
       case 'SET_DPS_SCENARIO': {
         const scenario = await saveDpsScenario(msg);
         sendResponse({ ok: true, scenario });

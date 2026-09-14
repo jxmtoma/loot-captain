@@ -43,6 +43,7 @@
     { name: 'Force of Corruption VI', spellId: 23815, baseDamage: 460, resist: 'Corruption -25', rateMultiplier: 1, source: source(2) },
     { name: 'Strike of Flames VI', spellId: 23735, baseDamage: 510, resist: 'Fire -190', rateMultiplier: 1, source: source(3) },
     { name: 'Strike of Venom V', spellId: 23774, baseDamage: 420, resist: 'Poison -180', rateMultiplier: 1, source: source(6) },
+    { name: 'Strike of Venom VIII', spellId: 23777, baseDamage: 750, resist: 'Poison -200', rateMultiplier: 1, source: spellSource('RaidLoot Strike of Venom VIII', 23777) },
   ];
   const SPELL_SOURCE = source(8);
   const focusRecords = [
@@ -75,7 +76,7 @@
       { spellId: 36403, name: 'Kromrif Lance Rk. III', level: 99, baseDamage: 7450, castSeconds: .5, recastSeconds: 30, mana: 1260, resist: 'Cold', source: SPELL_SOURCE },
     ],
   ]);
-  const LEGACY_PROC_KEYS = Object.freeze({ 23815: 'proc:corruption force', 23735: 'proc:flames strike', 23774: 'proc:strike v venom' });
+  const LEGACY_PROC_KEYS = Object.freeze({ 23815: 'proc:corruption force', 23735: 'proc:flames strike', 23774: 'proc:strike v venom', 23777: 'proc:strike venom' });
   const byName = (records) => new Map(records.map((record) => [normalizeName(record.name), record]));
   const byId = (records) => new Map(records.map((record) => [String(record.spellId), record]));
   const wornByName = byName(wornRecords), wornById = byId(wornRecords);
@@ -132,6 +133,33 @@
     if (/\b(?:increase\s+|decrease\s+(?!current\s+hp))/i.test(raw) && damageValues.length === 0) return true;
     if (damageValues.length === 0 && (raw.split(/\r?\n/).length > 1 || /\d+\s*:\s*|resist\s*:|proc\s+rate/i.test(raw))) return true;
     return false;
+  }
+
+  function resolveProc(effect) {
+    if (!effect || effect.type !== 'proc') return null;
+    // Known identities retain their conflict checks; descriptions cover new ranks.
+    if (ids(effect, 'proc').some((id) => procById.has(id)) ||
+        nameCandidates(effect).some((name) => procByName.has(name))) return resolve(effect, 'proc');
+    const spellIds = ids(effect, 'proc');
+    if (spellIds.length > 1) return null;
+    const lines = rawText(effect).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const cleanName = (value) => rawName(value).replace(/\s+Proc Rate\s*:\s*[+-]?\d+\s*$/i, '').trim();
+    const explicitName = cleanName(effect.name);
+    const header = lines.length && !/^(?:\d+\s*:|Decrease\s+Current\s+HP|Resist\s*:)/i.test(lines[0]) ? cleanName(lines.shift()) : '';
+    if (explicitName && header && normalizeName(explicitName) !== normalizeName(header)) return null;
+    const name = explicitName || header;
+    if (!name) return null;
+    let baseDamage = null;
+    // ponytail: one unconditional HP-damage line; richer proc effects need their own model.
+    for (const line of lines) {
+      const damage = line.match(/^(?:\d+\s*:\s*)?Decrease\s+Current\s+HP\s+by\s+(\d{1,3}(?:,\d{3})+|\d+)\s*$/i);
+      if (damage) {
+        if (baseDamage !== null) return null;
+        baseDamage = Number(damage[1].replace(/,/g, ''));
+      } else if (!/^(?:Resist\s*:\s*[A-Za-z]+(?:\s+[+-]?\d+)?|Proc Rate\s*:\s*[+-]?\d+|Target\s*:\s*Single|Range\s*:\s*\d+'?|Casting\s*:\s*0s|Can Reflect\s*:\s*(?:Yes|No)|Focusable\s*:\s*(?:Yes|No))$/i.test(line)) return null;
+    }
+    if (baseDamage === null || !Number.isSafeInteger(baseDamage)) return null;
+    return { name, spellId: spellIds[0] || null, baseDamage, rateMultiplier: 1, descriptionBased: true };
   }
 
   function wornRawConflicts(effect, record) {
@@ -349,7 +377,7 @@
     version: 1,
     sources: SOURCES,
     resolveWorn: (effect) => resolve(effect, 'worn'),
-    resolveProc: (effect) => resolve(effect, 'proc'),
+    resolveProc,
     resolveFocus,
     spellRotation,
   };

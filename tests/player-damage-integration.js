@@ -98,5 +98,83 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
   storage.profiles.p = clone(profile);
   assert.equal((await send({ expectedEquipment: expectedEquipment.map((entry) => entry.index === 0 ? { ...entry, id: 'changed' } : entry) })).ok, false);
   assert.deepEqual(storage, savedStorage);
+  storage.profiles.p.cls = 'Warrior';
+  const tankRequest = { mode: 'tank-reference', classes: ['WAR'], item: { ...candidate, stats: { HP: 100, AC: 100 } } };
+  const tank = await send(tankRequest);
+  assert.equal(tank.ok, true);
+  assert.equal(tank.projection.scenarioDefault, true);
+  assert.equal(storage.tankScenariosByProfile, undefined, 'reading defaults does not save a tank scenario');
+  assert.ok(tank.projection.outputs.find((row) => row.metric === 'Survival seconds').delta > 0);
+  const tankSave = { type: 'SET_TANK_SCENARIO', profileId: 'p', scenario: { ...tank.projection.scenario, landingChance: .6 }, expectedRevision: 0 };
+  const tankSaved = await sendWorker(tankSave);
+  assert.equal(tankSaved.ok, true);
+  assert.equal(tankSaved.scenario.revision, 1);
+  assert.equal((await sendWorker(tankSave)).ok, false, 'stale scenario saves are rejected');
+  const tankReloaded = await send(tankRequest);
+  assert.equal(tankReloaded.projection.scenario.landingChance, .6);
+  assert.equal(tankReloaded.projection.scenarioDefault, false);
+  assert.deepEqual(storage.dpsScenariosByProfile, savedStorage.dpsScenariosByProfile);
+  assert.equal((await send({ ...tankRequest, expectedEquipment: [] })).ok, false);
+  assert.equal((await sendWorker({ ...tankSave, expectedRevision: 1, scenario: { ...tankSaved.scenario, landingChance: 0 } })).ok, false);
+  const blockedTankSave = await new Promise((resolve) => handler(tankSave, { url: 'https://example.com/' }, resolve));
+  assert.equal(blockedTankSave.ok, false);
+  for (const [cls, model] of [['CLR', 'cleric'], ['DRU', 'druid'], ['SHM', 'shaman']]) for (const n of [1, 2]) {
+    const id = cls + n;
+    storage.profiles[id] = { ...clone(profile), id, cls };
+    const request = { mode: 'healer-reference', profileId: id, classes: [cls], item: { ...candidate, stats: { 'Heal Amount': 100, MANA: 1000 } } };
+    const firstHeal = await send(request);
+    assert.equal(firstHeal.ok, true);
+    assert.equal(firstHeal.projection.scenarioDefault, true);
+    assert.equal(firstHeal.projection.scenario.spellModel, model);
+    assert.ok(firstHeal.projection.outputs.find((row) => row.metric === 'Encounter HPS').delta > 0);
+    const save = { type: 'SET_HEALER_SCENARIO', profileId: id, expectedRevision: 0,
+      scenario: { ...firstHeal.projection.scenario, baseManaPerSecond: n * 10 } };
+    assert.equal((await sendWorker(save)).ok, true);
+    assert.equal((await sendWorker(save)).ok, false, 'stale healer save rejected');
+    const reloaded = await send(request);
+    assert.equal(reloaded.projection.scenario.baseManaPerSecond, n * 10);
+    assert.equal(reloaded.projection.scenarioDefault, false);
+    assert.equal((await send({ ...request, expectedEquipment: [] })).ok, false);
+    assert.equal((await sendWorker({ ...save, expectedRevision: 1, scenario: { ...reloaded.projection.scenario, spellModel: model === 'cleric' ? 'druid' : 'cleric' } })).ok, false);
+  }
+  assert.equal(storage.healerScenariosByProfile.CLR1.baseManaPerSecond, 10);
+  assert.equal(storage.healerScenariosByProfile.CLR2.baseManaPerSecond, 20);
+  assert.equal(storage.tankScenariosByProfile.p.landingChance, .6);
+  assert.deepEqual(storage.dpsScenariosByProfile, savedStorage.dpsScenariosByProfile);
+  await vm.runInContext("saveProfiles({}, ['CLR1'])", worker);
+  assert.equal(storage.healerScenariosByProfile.CLR1, undefined);
+  assert.equal(storage.healerScenariosByProfile.CLR2.baseManaPerSecond, 20);
+  await vm.runInContext("saveProfiles({}, ['p'])", worker);
+  assert.equal(storage.tankScenariosByProfile.p, undefined);
+  assert.equal(storage.dpsScenariosByProfile.p, undefined);
+  for (const [cls, mode] of [['WAR', 'tank-reference'], ['SHD', 'tank-reference'], ['PAL', 'tank-reference'],
+    ['CLR', 'healer-reference'], ['DRU', 'healer-reference'], ['SHM', 'healer-reference'],
+    ...['BST', 'BER', 'MNK', 'ROG', 'WIZ', 'MAG', 'ENC', 'NEC'].map((cls) => [cls, 'dps-reference'])]) {
+    const id = 'faycite-' + cls;
+    const ordinary = { id: 'ordinary', name: 'Ordinary augment', slot: 'head', isAugment: true,
+      stats: { HP: 100, AC: 10, 'Spell Dmg': 50, 'Heal Amount': 50 }, effectsKnown: true, effects: [] };
+    const base = { ...clone(profile), id, cls, items: [...clone(profile.items), ordinary] };
+    storage.profiles[id] = base;
+    const equipment = () => storage.profiles[id].items.map((item, index) => ({ index, id: item.id, name: item.name, slot: item.slot, isAugment: !!item.isAugment }));
+    const request = () => send({ profileId: id, mode, classes: [cls], expectedEquipment: equipment() });
+    const before = await request();
+    assert.equal(before.ok, true);
+    const shards = [
+      { id: 'faycite-empty', name: 'Irae Faycite Shard: Example', slot: 'ear', isAugment: true, stats: {}, effectsKnown: false, effects: [] },
+      { id: 'faycite-effect', name: 'SALUS FAYCITE SHARD: Example', slot: 'head', isAugment: true,
+        stats: { HP: 90000, AC: 9000, 'Heal Amount': 9000, 'Spell Dmg': 9000 }, effectsKnown: true,
+        effects: [{ type: 'focus', name: 'Unknown focus that would block spell estimates' }] },
+    ];
+    storage.profiles[id] = { ...base, items: [...base.items, ...shards] };
+    const original = clone(storage.profiles[id]);
+    const after = await request();
+    assert.equal(after.ok, true);
+    assert.deepEqual(after.projection.outputs, before.projection.outputs, cls + ' ignores both Faycite stats and effects');
+    assert.ok(after.projection.assumptions.some((text) => text.includes('Faycite augments are excluded')));
+    assert.deepEqual(storage.profiles[id], original, 'Estimates never delete imported augments');
+    const filtered = vm.runInContext('profileForEstimate(' + JSON.stringify(original) + ', "test")', worker);
+    assert.ok(filtered.items.some((item) => item.id === 'ordinary'));
+    assert.equal(filtered.items.length, base.items.length);
+  }
   console.log('Player damage integration checks passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

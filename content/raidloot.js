@@ -487,7 +487,7 @@
       return;
     }
     if (!started) return;
-    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula', 'dpsScenariosByProfile'].some((k) => changes[k]);
+    const relevant = ['profiles', 'compareProfileIds', 'compareBadgeLayout', 'scoreFormula', 'dpsScenariosByProfile', 'tankScenariosByProfile', 'healerScenariosByProfile'].some((k) => changes[k]);
     if (!relevant) return;
     await LC.state.loadAndCacheProfile();
     rerunPageAnnotations(true);

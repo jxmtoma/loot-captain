@@ -2,6 +2,40 @@
 
 ## Shipped scope
 
+- Live post-Faycite check: Nananya's Shadowborne Cloak → Chillcloak comparison
+  shows survival 30.25 → 30.33 seconds, HP +152.40 and mitigation AC +5 under
+  defaults. Tomah's casting HPS shows 1968 → 1968.57, with only WIS on Model
+  XLII Spatial Temporal Oculus still blocking mana-dependent rows. Its real
+  -4 WIS penalty was incorrectly rejected. Signed ordinary WIS now passes
+  arithmetic/diagnostic regression checks; live confirmation requires reloading
+  this latest build. No real equipment or assumptions were changed.
+- Faycite augments are now excluded at the shared reference-estimate entry
+  point for tank, healer, caster, hybrid and melee models. Their numeric stats,
+  effects and missing-data flags cannot affect the estimates. Imported records
+  and ordinary augments remain intact. Tests cover every supported role/class.
+  Tomah's rejected WIS value on Model XLII Spatial Temporal Oculus is a separate
+  issue; this exclusion does not resolve it.
+- Tank simplification: tank preset and independent item score use HP + 4 × AC;
+  the shared-enemy survival estimate remains separate. Healer focus stays
+  excluded; effect-only RaidLoot stat packets no longer block healer totals.
+  Both panels expose blocking items, slots and stats. Regression coverage
+  includes legitimate zero omissions, empty imports, and visible diagnostics.
+  Nananya/Tomah must be rechecked after reloading the updated extension; their
+  exact live blockers have not yet been observed with this diagnostic build.
+- Healer v1: level-100 Cleric, Druid and Shaman direct-heal references with
+  Heal Amount, WIS/HWIS, mana and capped mana regeneration. Casting throughput,
+  healing/mana, long-run and finite-encounter HPS remain separate. Shared
+  per-character scenarios have revision and class checks; gear focus changes,
+  HoTs and group/triggered heals remain excluded. See [model and tests](../../research/healer/model-v1.md).
+  Two synthetic characters per class pass storage-isolation tests; all three
+  real-browser fixtures pass. Real imported-character validation is pending.
+- Tank survivability v1: level-100 Warrior, Paladin and Shadowknight physical
+  HP/mitigation-AC/incoming-damage/survival estimates with independent partial
+  outputs, shared editable revision-checked scenarios and compact comparison
+  presentation. See [model and verification](../../research/tank/model-v1.md).
+  Threat, spell damage, self-healing, avoidance changes and defensive cooldowns
+  remain unmodeled. Pure, integration, UI and isolated real-browser checks pass;
+  no real character was modified.
 - 01: preserve unknown stats and provenance through imports, storage and comparisons;
   incomplete weighted inputs do not produce numeric scores.
 - 02: versioned per-character formulas with a legacy fallback; mixed formulas stay neutral.
@@ -73,6 +107,32 @@ top of the existing local wishlist. Its worked tradeoffs define subjective weigh
 class mechanics. Existing selections/fallbacks remain intact; suggestions do not auto-apply.
 
 ## Next bounded increment
+
+Optional [class attacks](../../research/player-damage/class-attacks.md) now add
+Frenzy, Flying Kick or Backstab to level-100 melee scenarios. Enable explicitly
+in DPS assumptions and save; existing scenarios retain their previous results.
+These use pinned base-damage formulas and editable effective hit/cadence/landed
+damage assumptions. Discs, poisons, other attacks and automatic AA/ATK scaling
+remain excluded. Backstab needs imported Backstab Dmg and primary-piercing
+confirmation; Flying Kick needs known boot AC. Live validation remains pending.
+
+Generic direct weapon-proc descriptions now feed the shared estimator without
+per-rank catalog additions. One unconditional HP-damage line supplies damage;
+effective hand PPM and landing remain scenario assumptions. Catalog fallback
+covers name-only imports. Complex effects and conflicting known records remain
+unresolved. Regression coverage includes both import normalizers, comma-formatted
+damage, uncataloged IDs, missing IDs/resists, same-hand duplicates and independent
+dual-wield contributions. No real profile or scenario was changed.
+
+The Strike of Venom VIII gap identified in Pikity's check is now covered by
+exact spell 23777 (750 direct damage, Poison -200), including the legacy
+saved-import rank artifact. It flows through the existing weapon-proc and
+player subtotal paths. Complete or comparison-confirmed weapon effect lists
+are still required; unknown imported lists are not silently treated as complete.
+Proc frequency remains an editable effective per-hand scenario assumption,
+not a newly validated live rate. No real profile or scenario was changed.
+Catalog and two-hand Berserker regression fixtures cover identity conflicts,
+25 DPS at 2 PPM, replacement delta, landing assumptions and completeness gates.
 
 Next in [06D](06d-player-damage-contributions.md): preserve class-specific caster
 and melee boundaries. Add broader rotations or class abilities only when spell or

@@ -162,5 +162,18 @@
     result.assumptions = [...new Set(notes)];
     return result;
   }
-  LC.referenceStats = { MODEL, project, stamina, wisdom, endurance };
+  function statIssues(profile, names, read, signedStats = []) {
+    const issues = [];
+    for (const item of profile.items || []) for (const name of names) {
+      const n = read(item, name);
+      if (n !== null && Number.isFinite(n) && (n >= 0 || signedStats.includes(name))) continue;
+      const found = Object.entries(item.stats || {}).find(([statName]) => key(statName) === key(name));
+      const reason = found ? 'unreadable or unsupported value' : knownItem(item) ? 'missing from incomplete import' : 'no numeric item stats imported';
+      issues.push({ item: item.name || item.id || 'Unnamed item', slot: item.slot || 'unknown slot', stat: name, reason });
+    }
+    return issues;
+  }
+  LC.referenceStats = { MODEL, project, stamina, wisdom, endurance, statIssues,
+    itemStat: (item, name) => knownItem(item) || Object.values(item && item.stats || {}).some((entry) => entry && entry.source === 'raidloot')
+      ? stat(item, key(name)) : null };
 })();

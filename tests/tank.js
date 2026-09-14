@@ -1,0 +1,65 @@
+'use strict';
+const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const context = { console };
+context.window = context;
+for (const file of ['slots', 'reference-stats', 'dps', 'player-damage', 'tank']) vm.runInNewContext(fs.readFileSync('content/shared/' + file + '.js', 'utf8'), context);
+const tank = context.LootCaptain.tank;
+const item = (id, stats, slot = 'head') => ({ id, name: id, slot, stats });
+const old = item('old', { HP: 100, AC: 100, HSta: 10 });
+const candidate = item('new', { HP: 200, AC: 200, HSta: 10 });
+const profile = { id: 'tank', cls: 'Warrior', level: 100, items: [old] };
+const output = (result, name) => result.outputs.find((row) => row.metric === name);
+const scenario = { ...tank.defaults(profile), baseHp: 1000, baseStamina: 0, baseAgility: 0,
+  defenseSkill: 0, enemyMinHit: 100, enemyMaxHit: 100, swingsPerSecond: 2, landingChance: .5, damageReduction: .2 };
+const original = clone({ profile, candidate, scenario });
+const result = tank.project(profile, candidate, old, scenario);
+assert.equal(output(result, 'Tank item score').current, 500);
+assert.equal(output(result, 'Tank item score').delta, 500);
+assert.equal(output(result, 'HP').current, 1300);
+assert.equal(output(result, 'HP').candidate, 1400);
+assert.equal(output(result, 'Mitigation AC').current, 133);
+assert.equal(output(result, 'Mitigation AC').candidate, 266);
+assert.equal(output(result, 'Incoming physical DPS').current, 80);
+assert.equal(output(result, 'Survival seconds').current, 16.25);
+assert.equal(output(result, 'Survival seconds').delta, 1.25);
+assert.equal(output(result, 'Threat').available, false);
+assert.deepEqual(clone({ profile, candidate, scenario }), original);
+assert.ok(tank.project(profile, old, old, scenario).outputs.filter((row) => row.available).every((row) => row.delta === 0));
+for (const cls of ['Warrior', 'WAR', 'Paladin', 'PAL', 'ShadowKnight', 'SHD', 'SK']) {
+  const tankProfile = { ...profile, cls };
+  const highAc = item('high', { AC: 1000, HP: 100 }); tankProfile.items = [highAc];
+  const reference = tank.project(tankProfile, highAc, highAc, scenario);
+  assert.equal(output(reference, 'Mitigation AC').current, ['Warrior', 'WAR'].includes(cls) ? 798 : 766);
+}
+const shield = item('shield', { AC: 100 }, 'secondary');
+const shieldProfile = { ...profile, items: [item('armor', { AC: 1000, HP: 100 }), shield] };
+const shieldScenario = { ...scenario, shieldEquipped: true, enemyMaxHit: 1000 };
+const improvedShield = item('better shield', { AC: 200 }, 'secondary');
+const shieldResult = tank.project(shieldProfile, improvedShield, shield, shieldScenario);
+assert.equal(output(shieldResult, 'Mitigation AC').current, 909);
+assert.equal(output(shieldResult, 'Mitigation AC').candidate, 1021);
+assert.ok(output(shieldResult, 'Incoming physical DPS').delta < 0);
+assert.ok(output(shieldResult, 'Survival seconds').delta > 0);
+assert.equal(output(shieldResult, 'Incoming physical DPS').lowerIsBetter, true);
+assert.equal(output(tank.project(shieldProfile, item('weapon', { Damage: 20, Delay: 20, AC: 100 }, 'secondary'), shield, shieldScenario), 'Mitigation AC').available, false);
+const unknown = item('unknown', { HP: { num: null }, AC: 200 });
+assert.equal(output(tank.project(profile, unknown, old, scenario), 'HP').available, false);
+assert.ok(tank.project(profile, unknown, old, scenario).unresolved.some((issue) => issue.item === 'unknown' && issue.stat === 'HP'));
+const failedImport = { id: 'missing', name: 'Unloaded augment', slot: 'head', isAugment: true, stats: {} };
+assert.ok(tank.project({ ...profile, items: [old, failedImport] }, candidate, old, scenario).unresolved.some((issue) => issue.item === 'Unloaded augment' && issue.stat === 'AC'));
+assert.equal(output(tank.project({ ...profile, items: [old, failedImport] }, candidate, old, scenario), 'Tank item score').delta, 500);
+assert.equal(output(tank.project(profile, unknown, old, scenario), 'Mitigation AC').available, true);
+const partial = item('partial', { HP: { num: 100, source: 'opendkp' } });
+assert.equal(output(tank.project(profile, partial, old, scenario), 'HP').available, false);
+assert.equal(tank.project({ ...profile, cls: 'Wizard' }, candidate, old).outputs.length, 0);
+assert.equal(tank.project({ ...profile, level: 99 }, candidate, old).outputs.length, 0);
+assert.match(tank.project(profile, { ...candidate, slot: 'feet' }, old).reason, /compatible/);
+assert.match(tank.project(profile, { ...candidate, isAugment: true }, old).reason, /augment/);
+for (const [key, value] of [['enemyMinHit', 0], ['landingChance', 0], ['landingChance', 1.1], ['damageReduction', 1], ['baseHp', null], ['enemyOffense', 1.5], ['shieldEquipped', 'yes'], ['revision', -1], ['extra', 1]]) {
+  assert.throws(() => tank.validateScenario({ ...scenario, [key]: value }));
+}
+assert.throws(() => tank.validateScenario({ ...scenario, enemyMinHit: 101, enemyMaxHit: 100 }));
+const capped = { ...profile, items: [item('cap', { STA: 1000, HP: 100 })] };
+assert.equal(output(tank.project(capped, item('more STA', { STA: 1100, HP: 100 }), capped.items[0], scenario), 'HP').delta, 0);
+console.log('Tank reference checks passed');

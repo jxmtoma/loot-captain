@@ -138,6 +138,13 @@
   // item objects are replaced when storage changes, so WeakMap identity also
   // gives us the invalidation we need after a saved scenario/equipment edit.
   const dpsReferenceCache = new WeakMap();
+  const isTankProfile = (profile) => profile && Number(profile.level) === 100 &&
+    ['warrior', 'war', 'paladin', 'pal', 'shadowknight', 'shd', 'sk'].includes(String(profile.cls || '').toLowerCase());
+  const isHealerProfile = (profile) => profile && Number(profile.level) === 100 &&
+    ['cleric', 'clr', 'druid', 'dru', 'shaman', 'shm'].includes(String(profile.cls || '').trim().toLowerCase());
+  // Content scripts receive projections from the worker; they do not load dps.js.
+  const CLASS_ATTACK_DEFAULTS = { skill: 400, cycleSeconds: 8, attacksPerUse: 1,
+    hitChance: .8, damageMultiplier: 1, uptime: 1, primaryPiercingConfirmed: false };
 
   function resolvedProfileFormula(profile, formula) {
     return LC.diff && LC.diff.resolveFormula
@@ -167,7 +174,7 @@
     if (!byWorn) { byWorn = new WeakMap(); byCandidate.set(cand, byWorn); }
     let request = byWorn.get(worn);
     if (!request) {
-      request = Promise.resolve(LC.state.getCharacterProjection(cand, profile, worn, false, 'dps-reference'))
+      request = Promise.resolve(LC.state.getCharacterProjection(cand, profile, worn, false, isHealerProfile(profile) ? 'healer-reference' : isTankProfile(profile) ? 'tank-reference' : 'dps-reference'))
         .catch(() => null);
       byWorn.set(worn, request);
     }
@@ -191,7 +198,7 @@
     }
     if (output.metric === 'Spell stats DPS') return { label: 'Spell stats est.', partial: true, scope: 'Unfocused spell reference; focus modifiers excluded.' };
     if (output.metric === 'Spell DPS') return { label: 'Spell DPS est.', partial, scope: 'Includes the shared spell rotation and known spell stats/focus; melee and pets remain excluded.' };
-    if (output.metric === 'Melee + procs DPS') return { label: 'Melee + procs DPS est.', partial, scope: 'Includes known melee stats, worn effects and cataloged weapon procs; spell focus and pets remain unmodeled.' };
+    if (output.metric === 'Melee + procs DPS') return { label: 'Melee + procs DPS est.', partial, scope: 'Includes known melee stats, worn effects and resolved weapon procs; spell focus and pets remain unmodeled.' };
     if (output.metric === 'Melee stats DPS') return { label: 'Melee stats est.', partial: true, scope: 'Includes known melee stats only; worn effects and weapon procs remain unresolved; spell focus and pets remain unmodeled.' };
     return { label: 'Melee DPS est.', partial, scope: 'Includes known melee stats and worn effects; weapon procs may remain unresolved; spell focus and pets remain unmodeled.' };
   }
@@ -216,11 +223,10 @@
   }
 
   function prependBadgeText(badge, text) {
-    const metric = badge.__lcDpsMetric;
-    if (metric && typeof badge.insertBefore === 'function') {
+    if (typeof badge.insertBefore === 'function') {
       // The test DOM stores the original text separately; real DOM nodes do not.
       if (Object.prototype.hasOwnProperty.call(badge, '_text')) badge._text = text + badge._text;
-      else badge.insertBefore(document.createTextNode(text), badge.firstChild || metric);
+      else badge.insertBefore(document.createTextNode(text), badge.firstChild || null);
     } else {
       badge.textContent = text + badge.textContent;
     }
@@ -234,6 +240,7 @@
   }
 
   function appendDpsMetric(badge, cand, worn, profile, formula) {
+    if (isTankProfile(profile) || isHealerProfile(profile)) { appendRoleMetric(badge, cand, worn, profile); return; }
     const eligibility = dpsEligibility(cand, worn, profile, formula);
     if (!profile || !eligibility.role) return;
     const metric = document.createElement('span');
@@ -266,6 +273,115 @@
 
   function invalidateDpsReference(profile) {
     if (profile) dpsReferenceCache.delete(profile);
+  }
+
+  function roleMetricState(output) {
+    if (!output || !output.available) return 'nomatch';
+    const gain = output.delta * (output.lowerIsBetter ? -1 : 1);
+    return gain > 0 ? 'upgrade' : gain < 0 ? 'downgrade' : 'sidegrade';
+  }
+  function setRoleMetric(metric, response) {
+    if (!metric.isConnected) return;
+    const projection = response && response.ok && response.projection;
+    const healer = metric.dataset.healer === 'true';
+    const priorities = healer ? ['Encounter HPS', 'Casting HPS', 'Mana pool'] : ['Survival seconds', 'Tank item score', 'HP', 'Mitigation AC'];
+    const output = projection && priorities.map((name) => projection.outputs.find((entry) => entry.metric === name && entry.available)).find(Boolean);
+    metric.dataset.state = roleMetricState(output);
+    const label = healer ? (output && output.metric === 'Encounter HPS' ? 'Healing' : 'Healer ' + (output?.metric || '')) :
+      output?.metric === 'Tank item score' ? 'Tank score' : output?.metric === 'Survival seconds' ? 'Survival' : 'Tank ' + (output?.metric || '');
+    metric.textContent = output ? ' · ' + label + ' est. ' + fmtDelta(Math.round(output.delta * 100) / 100) +
+      (output.metric === 'Survival seconds' ? 's' : output.metric === 'Encounter HPS' ? ' HPS' : '') + ' (partial)' : ' · ' + (healer ? 'Healer' : 'Tank') + ' unavailable';
+    metric.title = output ? (healer ? 'Direct-heal and mana-budget reference; gear focus changes, HoTs and group heals excluded. ' : 'Physical tank reference; no healing, spell damage or threat. ') +
+      (projection.scenarioDefault ? 'Illustrative defaults.' : 'Saved scenario.') : projection && projection.reason || response && response.error || 'Required inputs are unavailable.';
+    if (output?.metric === 'Tank item score') metric.title = 'Compared item HP + 4 × AC. Whole-loadout survival is unavailable; open the panel for blocking items.';
+  }
+  function appendRoleMetric(parent, cand, worn, profile) {
+    const metric = document.createElement('span'); metric.className = 'lc-dps-metric lc-role-metric';
+    metric.dataset.healer = String(!!isHealerProfile(profile));
+    metric.dataset.state = 'nomatch'; metric.textContent = isHealerProfile(profile) ? ' · Healing est. loading…' : ' · Tank est. loading…'; parent.appendChild(metric);
+    cachedDpsReference(cand, profile, worn).then((response) => setRoleMetric(metric, response));
+  }
+
+  function buildRolePanel(cand, profile, worn) {
+    const healer = isHealerProfile(profile), label = healer ? 'Healer' : 'Tank';
+    const panel = document.createElement('details'); panel.className = 'lc-projection';
+    const summary = document.createElement('summary'); summary.textContent = healer ? 'Healing and mana assumptions' : 'Tank survivability and assumptions'; panel.appendChild(summary);
+    const body = document.createElement('div'); panel.appendChild(body);
+    let loaded = false;
+    const render = (response) => {
+      body.replaceChildren();
+      const projection = response && response.ok && response.projection;
+      const status = document.createElement('p'); body.appendChild(status);
+      if (!projection || !projection.scenario) { status.textContent = projection && projection.reason || response && response.error || label + ' estimate unavailable.'; return; }
+      status.textContent = healer ? (projection.scenarioDefault ? 'Illustrative direct-heal estimate: ' : 'Saved healer scenario: ') + projection.spellName + '. All results are partial.' :
+        projection.scenarioDefault ? 'Illustrative physical tank estimate — review encounter assumptions below.' : 'Saved physical tank scenario. All results remain partial estimates.';
+      const table = document.createElement('table');
+      const head = document.createElement('tr');
+      for (const text of ['Contribution', 'Current', 'Candidate', 'Change']) { const cell = document.createElement('th'); cell.textContent = text; head.appendChild(cell); }
+      table.appendChild(head);
+      for (const output of projection.outputs) {
+        const row = document.createElement('tr'); const label = document.createElement('td'); label.textContent = output.metric; row.appendChild(label);
+        for (const key of ['current', 'candidate', 'delta']) {
+          const cell = document.createElement('td');
+          cell.textContent = output.available ? (key === 'delta' ? fmtDelta : fmtStat)(Math.round(output[key] * 100) / 100) : 'Unavailable';
+          cell.title = output.reason || '';
+          if (key === 'delta') { const value = document.createElement('span'); value.className = 'lc-dps-metric'; value.dataset.state = roleMetricState(output); value.textContent = cell.textContent; cell.replaceChildren(value); }
+          row.appendChild(cell);
+        }
+        table.appendChild(row);
+      }
+      body.appendChild(table);
+      if (projection.unresolved && projection.unresolved.length) {
+        const missing = document.createElement('details'); missing.open = true;
+        const heading = document.createElement('summary'); heading.textContent = 'Items blocking this estimate'; missing.appendChild(heading);
+        const grouped = new Map();
+        for (const issue of projection.unresolved) {
+          const key = issue.item + ' (' + issue.slot + '): ' + issue.reason;
+          if (!grouped.has(key)) grouped.set(key, []);
+          grouped.get(key).push(issue.stat);
+        }
+        for (const [item, stats] of grouped) { const row = document.createElement('p'); row.textContent = item + ' — ' + [...new Set(stats)].join(', '); missing.appendChild(row); }
+        const help = document.createElement('p'); help.textContent = 'These are imported-data gaps, not missing focus effects. Check the listed items; readable items without these stats count as zero under the reference assumptions.'; missing.appendChild(help);
+        body.appendChild(missing);
+      }
+      const scope = document.createElement('p'); scope.textContent = healer ? 'One direct heal, with overhealing and a finite mana budget. Gear focus changes, HoTs and group heals are excluded.' : 'Physical hits only, without healing. Threat and spell damage are not included.'; body.appendChild(scope);
+      const editor = document.createElement('details');
+      const title = document.createElement('summary'); title.textContent = label + ' assumptions (shared for this character)'; editor.appendChild(title);
+      const inputs = {};
+      for (const [key, text, , min, max] of projection.fields) {
+        const label = document.createElement('label'); label.textContent = text + ' ';
+        const input = document.createElement('input'); input.type = 'number'; input.step = 'any'; input.min = String(min); input.max = String(max); input.value = String(projection.scenario[key]);
+        label.appendChild(input); editor.appendChild(label); inputs[key] = input;
+      }
+      const shieldLabel = document.createElement('label'); shieldLabel.textContent = 'Assume a shield equipped in both secondary slots ';
+      const shield = document.createElement('input'); shield.type = 'checkbox'; shield.checked = projection.scenario.shieldEquipped; shieldLabel.appendChild(shield); if (!healer) editor.appendChild(shieldLabel);
+      const save = document.createElement('button'); save.type = 'button'; save.textContent = healer ? 'Save healer assumptions' : 'Save tank assumptions'; editor.appendChild(save);
+      save.addEventListener('click', async (event) => {
+        event.preventDefault(); event.stopPropagation(); save.disabled = true;
+        const scenario = { ...projection.scenario, ...(!healer ? { shieldEquipped: shield.checked } : {}) };
+        for (const [key, input] of Object.entries(inputs)) scenario[key] = input.value.trim() ? Number(input.value) : null;
+        const result = await (healer ? LC.state.saveHealerScenario : LC.state.saveTankScenario)(profile.id, scenario, projection.scenarioRevision);
+        if (!result || !result.ok) { save.disabled = false; status.textContent = result && result.error || label + ' assumptions could not be saved.'; return; }
+        invalidateDpsReference(profile);
+        const updated = await cachedDpsReference(cand, profile, worn);
+        if (panel.isConnected) {
+          render(updated);
+          for (const metric of panel.closest?.('.lc-compare-panel')?.querySelectorAll('.lc-role-metric') || []) setRoleMetric(metric, updated);
+        }
+      });
+      body.appendChild(editor);
+      const scopeDetails = document.createElement('details');
+      const scopeSummary = document.createElement('summary'); scopeSummary.textContent = 'Model scope and sources'; scopeDetails.appendChild(scopeSummary);
+      const notes = document.createElement('p'); notes.textContent = projection.assumptions.join(' ') + ' Excludes: ' + projection.excluded.join(', ') + '.'; scopeDetails.appendChild(notes);
+      for (const source of projection.sources) { const link = document.createElement('a'); link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = source.label + ' '; scopeDetails.appendChild(link); }
+      body.appendChild(scopeDetails);
+    };
+    summary.addEventListener('click', () => {
+      if (loaded) return; loaded = true;
+      body.textContent = 'Loading ' + label.toLowerCase() + ' estimate…';
+      cachedDpsReference(cand, profile, worn).then((response) => { if (panel.isConnected) render(response); });
+    });
+    return panel;
   }
 
   // ---------- Badge ----------
@@ -460,7 +576,8 @@
       overview.appendChild(caveat);
     }
     const eligibility = dpsEligibility(cand, worn, profile, formula);
-    if (profile && eligibility.role) {
+    if (isTankProfile(profile) || isHealerProfile(profile)) appendRoleMetric(overview, cand, worn, profile);
+    if (profile && eligibility.role && !isTankProfile(profile) && !isHealerProfile(profile)) {
       const dps = document.createElement('p');
       dps.className = 'lc-dps-overview';
       dps.dataset.state = 'nomatch';
@@ -707,6 +824,29 @@
       }
       }
       const upgradeDraft = projection && projection.upgradeScenario;
+      if (values.version >= 3 && meleeOnly) {
+        const attacks = document.createElement('details');
+        const summary = document.createElement('summary');
+        const name = meleeOnlyModel === 'berserker-base-melee' ? 'Frenzy' : meleeOnlyModel === 'monk-base-melee' ? 'Flying Kick' : 'Backstab';
+        summary.textContent = name + ' estimate'; attacks.appendChild(summary);
+        const toggle = document.createElement('label'); toggle.textContent = 'Include ' + name + ' ';
+        const enabled = document.createElement('input'); enabled.type = 'checkbox'; enabled.checked = !!values.classAttack;
+        toggle.appendChild(enabled); attacks.appendChild(toggle); inputByKey.classAttackEnabled = enabled;
+        const defaults = { ...CLASS_ATTACK_DEFAULTS, ...(name === 'Frenzy' ? { attacksPerUse: 3 } : {}) };
+        const attackValue = values.classAttack || defaults;
+        for (const [key, label] of [['skill', 'Attack skill'], ['cycleSeconds', 'Seconds per use (effective cooldown)'],
+          ['attacksPerUse', 'Expected strikes per use'], ['hitChance', 'Attack hit chance (0–1)'],
+          ['damageMultiplier', 'Landed damage multiplier (mitigation and crit included)'], ['uptime', 'Use/position uptime (0–1)']]) {
+          number(attacks, 'classAttack.' + key, label, attackValue[key]);
+        }
+        const piercing = document.createElement('label'); piercing.textContent = 'Both compared primary weapons are 1H piercing (Backstab only) ';
+        const confirmed = document.createElement('input'); confirmed.type = 'checkbox'; confirmed.checked = attackValue.primaryPiercingConfirmed;
+        piercing.appendChild(confirmed); if (name === 'Backstab') attacks.appendChild(piercing);
+        inputByKey['classAttack.primaryPiercingConfirmed'] = confirmed;
+        const note = document.createElement('p');
+        note.textContent = 'Illustrative base attack: effective cooldown, strike count and landed multiplier are editable; haste is not applied again. No AA/disc or ATK scaling. Backstab needs Backstab Dmg on both weapons; Flying Kick uses boot AC. Save to enable.';
+        attacks.appendChild(note); body.appendChild(attacks);
+      }
       if (upgradeDraft && typeof upgradeDraft === 'object' && Number(upgradeDraft.version) > Number(values.version)) {
         const upgrade = document.createElement('button'); upgrade.type = 'button'; upgrade.textContent = 'Enable gear stats and procs';
         if (values.version >= 2) upgrade.textContent = 'Enable spell rotation';
@@ -770,6 +910,14 @@
           }
         }
         if (currentScenario.version >= 3) {
+          if (meleeOnly && inputByKey.classAttackEnabled.checked) {
+            scenario.classAttack = {};
+            for (const key of Object.keys(CLASS_ATTACK_DEFAULTS)) {
+              const input = inputByKey['classAttack.' + key];
+              scenario.classAttack[key] = key === 'primaryPiercingConfirmed' ? input.checked :
+                String(input.value || '').trim() ? Number(input.value) : null;
+            }
+          }
           scenario.spells = { model: 'beastlord', rank: 1, cycleSeconds: 32, landingMultiplier: 1,
             criticalChance: 0, criticalMultiplier: 2, manaPerSecond: 100, meleeDuringCast: 0,
             ...(currentScenario.spells || {}) };
@@ -1320,7 +1468,7 @@
         div.appendChild(effects);
       }
       if (baselineLabel === 'worn' && profile && LC.state && LC.state.getCharacterProjection) {
-        div.appendChild(buildProjectionPanel(cand, profile, worn));
+        div.appendChild(isTankProfile(profile) || isHealerProfile(profile) ? buildRolePanel(cand, profile, worn) : buildProjectionPanel(cand, profile, worn));
       }
     }
     return div;

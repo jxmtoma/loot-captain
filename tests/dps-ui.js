@@ -28,6 +28,8 @@ const makeElement = (tag = 'div') => {
 
 const calls = [];
 let savedScenario = null;
+let savedTankScenario = null;
+let savedHealerScenario = null;
 let referenceDps = 10;
 const context = {
   console,
@@ -45,6 +47,8 @@ const context = {
     state: {
       async getCharacterProjection(cand, profile, worn, confirmed, mode, assumptions, confirmation) {
         calls.push({ cand, profile, worn, confirmed, mode, assumptions, confirmation });
+        if (mode === 'tank-reference') return { ok: true, projection: tankModel.project(profile, cand, worn, savedTankScenario) };
+        if (mode === 'healer-reference') return { ok: true, projection: healerModel.project(profile, cand, worn, savedHealerScenario) };
         if (mode === 'dps-reference' && ['Wizard', 'WIZ'].includes(profile.cls)) return { ok: true,
           projection: context.LootCaptain.dps.referenceProject(profile, cand, worn, null, confirmation) };
         if (mode === 'dps-reference' && ['Berserker', 'BER'].includes(profile.cls)) return { ok: true,
@@ -92,11 +96,23 @@ const context = {
         calls.push({ saveDpsScenario: true, profileId, scenario, expectedRevision });
         return { ok: true, scenario: { ...scenario, revision: expectedRevision + 1 } };
       },
+      async saveTankScenario(profileId, scenario, expectedRevision) {
+        calls.push({ saveTankScenario: true, profileId, scenario, expectedRevision });
+        try { savedTankScenario = { ...tankModel.validateScenario(scenario), revision: expectedRevision + 1 }; return { ok: true, scenario: savedTankScenario }; }
+        catch (error) { return { ok: false, error: error.message }; }
+      },
+      async saveHealerScenario(profileId, scenario, expectedRevision) {
+        calls.push({ saveHealerScenario: true, profileId, scenario, expectedRevision });
+        try { savedHealerScenario = { ...healerModel.validateScenario(scenario), revision: expectedRevision + 1 }; return { ok: true, scenario: savedHealerScenario }; }
+        catch (error) { return { ok: false, error: error.message }; }
+      },
     },
   },
 };
 context.window = context;
-for (const file of ['dps', 'damage-catalog', 'player-damage']) vm.runInNewContext(read('content/shared/' + file + '.js'), context);
+for (const file of ['dps', 'damage-catalog', 'reference-stats', 'player-damage', 'tank', 'healer']) vm.runInNewContext(read('content/shared/' + file + '.js'), context);
+const tankModel = context.LootCaptain.tank;
+const healerModel = context.LootCaptain.healer;
 vm.runInNewContext(read('content/shared/ui.js'), context, { filename: 'content/shared/ui.js' });
 
 (async () => {
@@ -162,7 +178,7 @@ vm.runInNewContext(read('content/shared/ui.js'), context, { filename: 'content/s
   const nonBstBadge = context.LootCaptain.ui.buildComparisonBadge({ target: worn,
     diff: { numericScoreAvailable: true, score: 1, formula: { key: 'role-caster', version: 1 } }, slotKey: { key: 'primary' } },
     { key: 'role-caster', version: 1 }, false,
-    { ...candidate, id: 'cleric-candidate', stats: { Damage: 120, Delay: 20 } }, { ...profile, id: 'cleric', cls: 'Cleric' });
+    { ...candidate, id: 'bard-candidate', stats: { Damage: 120, Delay: 20 } }, { ...profile, id: 'bard', cls: 'Bard' });
   assert.match(nonBstBadge.textContent, /DPS not modeled/);
 
   referenceDps = -5;
@@ -377,10 +393,87 @@ vm.runInNewContext(read('content/shared/ui.js'), context, { filename: 'content/s
   const berserkerLayout = berserkerEditor.find((node) => node.tagName === 'SELECT' && node.children.some((option) => option.value === 'two-hand'));
   assert.ok(berserkerLayout);
   berserkerLayout.value = 'two-hand';
+  const frenzyToggle = berserkerEditor.find((node) => node.tagName === 'LABEL' && node.textContent === 'Include Frenzy ');
+  assert.ok(frenzyToggle);
+  frenzyToggle.children[0].checked = true;
   await berserkerEditor.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save for this character').click();
   assert.equal(calls.at(-1).profileId, 'berserker');
   assert.equal(calls.at(-1).scenario.layout, 'two-hand');
   assert.equal(calls.at(-1).scenario.spells.model, 'beastlord');
+  assert.equal(calls.at(-1).scenario.classAttack.attacksPerUse, 3);
+  assert.equal(calls.at(-1).scenario.classAttack.cycleSeconds, 8);
   assert.doesNotThrow(() => context.LootCaptain.dps.validateScenario(calls.at(-1).scenario));
+  berserkerEditor.find((node) => node.tagName === 'LABEL' && node.textContent === 'Include Frenzy ').children[0].checked = false;
+  await berserkerEditor.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save for this character').click();
+  assert.equal(Object.hasOwn(calls.at(-1).scenario, 'classAttack'), false);
+  // The real content script has no worker-side tank or DPS module.
+  delete context.LootCaptain.tank;
+  delete context.LootCaptain.dps;
+  const tankWorn = { id: 'tank-old', name: 'Old Plate', slot: 'Head', stats: { HP: 100, AC: 100 } };
+  const tankCandidate = { ...tankWorn, id: 'tank-new', name: 'New Plate', stats: { HP: 300, AC: 200 } };
+  const warrior = { id: 'war', cls: 'Warrior', level: 100, items: [tankWorn] };
+  const tankPanel = context.LootCaptain.ui.buildComparePanel(tankCandidate, tankWorn, { diffs: {}, hasData: false }, 'Head', [], 0, 'stats', 'worn', warrior);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(tankPanel.textContent, /Survival est\./);
+  const expandedTank = context.LootCaptain.ui.buildPerCharacterBadges({ results: [{ profile: { ...warrior, name: 'Nananya fixture' }, empty: false,
+    summary: { comparable: true }, comparison: { rows: [{ target: tankWorn, slotKey: { key: 'head' }, diff: { comparable: true, hasData: true, numericScoreAvailable: true, score: 10 } }] } }] }, tankCandidate, { key: 'role-tank', version: 1 }, false)[0];
+  assert.equal(expandedTank.children.length, 1, 'Character prefix must preserve the live tank metric');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(expandedTank.textContent, /^Nananya fixture .*Survival est\./);
+  assert.doesNotMatch(expandedTank.textContent, /loading/);
+  assert.doesNotMatch(tankPanel.textContent, /DPS not modeled/);
+  const tankDetails = tankPanel.find((node) => node.tagName === 'DETAILS' && node.children.some((child) => child.textContent === 'Tank survivability and assumptions'));
+  await tankDetails.children[0].click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(tankDetails.textContent, /Incoming physical DPS/);
+  assert.match(tankDetails.textContent, /Threat/);
+  const incoming = tankDetails.find((node) => node.tagName === 'TR' && node.children[0].textContent === 'Incoming physical DPS');
+  assert.equal(incoming.children[3].children[0].dataset.state, 'upgrade', 'lower incoming damage is green');
+  const landingInput = tankDetails.find((node) => node.tagName === 'LABEL' && node.textContent.startsWith('Enemy landing chance')).children[0];
+  landingInput.value = '';
+  await tankDetails.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save tank assumptions').click();
+  assert.equal(savedTankScenario, null, 'blank inputs do not save');
+  landingInput.value = '.5';
+  await tankDetails.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save tank assumptions').click();
+  assert.equal(savedTankScenario.landingChance, .5);
+  assert.equal(savedTankScenario.revision, 1);
+  assert.match(tankDetails.textContent, /Saved physical tank scenario/);
+  delete context.LootCaptain.healer;
+  for (const cls of ['Cleric', 'Druid', 'Shaman']) {
+    savedHealerScenario = null;
+    const oldHeal = { ...tankWorn, stats: { 'Heal Amount': 100, MANA: 1000 } };
+    const newHeal = { ...tankCandidate, stats: { 'Heal Amount': 200, MANA: 2000 } };
+    const healerProfile = { id: cls, cls, level: 100, items: [oldHeal] };
+    const healPanel = context.LootCaptain.ui.buildComparePanel(newHeal, oldHeal, { diffs: {}, hasData: false }, 'Head', [], 0, 'stats', 'worn', healerProfile);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(healPanel.textContent, /Healing est\./);
+    const expandedHeal = context.LootCaptain.ui.buildPerCharacterBadges({ results: [{ profile: { ...healerProfile, name: cls + ' fixture' }, empty: false,
+      summary: { comparable: true }, comparison: { rows: [{ target: oldHeal, slotKey: { key: 'head' }, diff: { comparable: true, hasData: true, numericScoreAvailable: true, score: 10 } }] } }] }, newHeal, { key: 'role-healer', version: 1 }, false)[0];
+    assert.equal(expandedHeal.children.length, 1, 'Character prefix must preserve the live healer metric');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(expandedHeal.textContent, /Healing est\./);
+    assert.doesNotMatch(expandedHeal.textContent, /loading/);
+    const healDetails = healPanel.find((node) => node.tagName === 'DETAILS' && node.children.some((child) => child.textContent === 'Healing and mana assumptions'));
+    await healDetails.children[0].click(); await new Promise((resolve) => setImmediate(resolve));
+    assert.match(healDetails.textContent, /Encounter HPS/);
+    assert.match(healDetails.textContent, /Long-run HPS/);
+    const duration = healDetails.find((node) => node.tagName === 'LABEL' && node.textContent.startsWith('Encounter duration')).children[0];
+    duration.value = '';
+    await healDetails.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save healer assumptions').click();
+    assert.equal(savedHealerScenario, null);
+    duration.value = '300';
+    await healDetails.find((node) => node.tagName === 'BUTTON' && node.textContent === 'Save healer assumptions').click();
+    assert.equal(savedHealerScenario.durationSeconds, 300);
+    assert.equal(savedHealerScenario.revision, 1);
+    assert.equal(Object.hasOwn(savedHealerScenario, 'shieldEquipped'), false);
+    assert.match(healDetails.textContent, /Saved healer scenario/);
+    const incompleteProfile = { ...healerProfile, items: [oldHeal, { id: 'unloaded', name: 'Unloaded augment', slot: 'head', isAugment: true, stats: {} }] };
+    const missingPanel = context.LootCaptain.ui.buildComparePanel(newHeal, oldHeal, { diffs: {}, hasData: false }, 'Head', [], 0, 'stats', 'worn', incompleteProfile);
+    const missingDetails = missingPanel.find((node) => node.tagName === 'DETAILS' && node.children.some((child) => child.textContent === 'Healing and mana assumptions'));
+    await missingDetails.children[0].click(); await new Promise((resolve) => setImmediate(resolve));
+    assert.match(missingDetails.textContent, /Items blocking this estimate/);
+    assert.match(missingDetails.textContent, /Unloaded augment \(head\): no numeric item stats imported/);
+    assert.match(missingDetails.textContent, /Heal Amount/);
+  }
   console.log('DPS UI integration check passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

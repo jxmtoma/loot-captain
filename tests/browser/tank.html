@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tank browser regression</title>
+<style>body{background:#172025;color:#eee;font:14px sans-serif;margin:16px}#fixture{width:720px;max-width:100%}button,input{font:inherit}</style>
+<h1>Tank browser regression</h1>
+<p id="status">Running…</p>
+<div id="fixture"></div>
+<script src="../../content/shared/slots.js"></script>
+<script src="../../content/shared/parser.js"></script>
+<script src="../../content/shared/diff.js"></script>
+<script src="../../content/shared/dps.js"></script>
+<script src="../../content/shared/reference-stats.js"></script>
+<script src="../../content/shared/player-damage.js"></script>
+<script src="../../content/shared/tank.js"></script>
+<script src="../../content/shared/healer.js"></script>
+<script src="../../content/shared/ui.js"></script>
+<script>
+(async () => {
+  const LC = window.LootCaptain;
+  const cls = new URLSearchParams(location.search).get('healer');
+  const healing = ['Cleric', 'Druid', 'Shaman'].includes(cls), model = healing ? LC.healer : LC.tank;
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const tick = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const worn = { id: 'old', name: 'Old Plate', slot: 'head', slotKey: { key: 'head' }, stats: { HP: 100, AC: 100 }, effectsKnown: true, effects: [] };
+  const candidate = { ...worn, id: 'new', name: 'New Plate', stats: { HP: 400, AC: 220 } };
+  if (healing) { worn.stats = { 'Heal Amount': 100, MANA: 1000 }; candidate.stats = { 'Heal Amount': 200, MANA: 2000 }; }
+  const profile = { id: 'synthetic-browser-only', name: 'Tank fixture', cls: healing ? cls : 'Warrior', level: 100, items: [worn] };
+  let saved = null;
+  LC.state = {
+    getCharacterProjection: async () => ({ ok: true, projection: model.project(profile, candidate, worn, saved) }),
+    [healing ? 'saveHealerScenario' : 'saveTankScenario']: async (id, scenario, revision) => {
+      try { saved = { ...model.validateScenario(scenario), revision: revision + 1 }; return { ok: true, scenario: saved }; }
+      catch (error) { return { ok: false, error: error.message }; }
+    },
+  };
+  // Mirror the content-script environment: calculation modules live in the worker.
+  delete LC.dps; delete LC.tank; delete LC.healer;
+  const row = LC.diff.compareCandidate(profile, candidate, { key: healing ? 'role-healer' : 'role-tank', version: 1 }).rows[0];
+  const fixture = document.getElementById('fixture');
+  LC.ui.injectCSS();
+  fixture.appendChild(LC.ui.buildComparePanel(candidate, worn, row.diff, 'head', [], 0, 'stats', 'worn', profile));
+  await tick();
+  check(fixture.textContent.includes(healing ? 'Healing est.' : 'Survival est.'), 'Missing inline tank estimate');
+  const summary = [...fixture.querySelectorAll('summary')].find((node) => node.textContent === (healing ? 'Healing and mana assumptions' : 'Tank survivability and assumptions'));
+  summary.click(); await tick();
+  check(fixture.textContent.includes(healing ? 'Encounter HPS' : 'Incoming physical DPS'), 'Missing damage contributions');
+  const incoming = [...fixture.querySelectorAll('tr')].find((node) => node.firstChild.textContent === (healing ? 'Encounter HPS' : 'Incoming physical DPS'));
+  check(incoming.querySelector('[data-state="upgrade"]'), 'Reduced incoming damage must be green');
+  const editorSummary = [...fixture.querySelectorAll('summary')].find((node) => node.textContent.startsWith(healing ? 'Healer assumptions' : 'Tank assumptions'));
+  editorSummary.click(); await tick();
+  for (const width of [360, 720]) {
+    fixture.style.width = width + 'px'; await tick();
+    check(fixture.scrollWidth <= fixture.clientWidth + 1, 'Horizontal overflow at ' + width + 'px');
+  }
+  const landing = [...fixture.querySelectorAll('label')].find((node) => node.textContent.startsWith(healing ? 'Encounter duration' : 'Enemy landing chance')).querySelector('input');
+  landing.value = healing ? '300' : '.5';
+  [...fixture.querySelectorAll('button')].find((node) => node.textContent === (healing ? 'Save healer assumptions' : 'Save tank assumptions')).click(); await tick();
+  check(saved && (healing ? saved.durationSeconds === 300 : saved.landingChance === .5) && saved.revision === 1, 'Scenario save failed');
+  check(fixture.textContent.includes(healing ? 'Saved healer scenario' : 'Saved physical tank scenario'), 'Saved results not refreshed');
+  const finalOutput = model.project(profile, candidate, worn, saved).outputs.find((row) => row.metric === (healing ? 'Encounter HPS' : 'Survival seconds'));
+  check(fixture.querySelector('.lc-role-metric').textContent.includes(LC.ui.fmtDelta(Math.round(finalOutput.delta * 100) / 100)), 'Compact estimate did not refresh after save');
+  const expanded = LC.ui.buildPerCharacterBadges({ results: [{ profile, empty: false, summary: { comparable: true }, comparison: { rows: [row] } }] }, candidate,
+    { key: healing ? 'role-healer' : 'role-tank', version: 1 }, false)[0];
+  document.body.appendChild(expanded);
+  check(expanded.querySelector('.lc-role-metric'), 'Expanded character label removed the result element');
+  await tick();
+  check(!expanded.textContent.includes('loading'), 'Expanded estimate is stuck loading');
+  check(expanded.textContent.includes(healing ? 'Healing est.' : 'Survival est.'), 'Expanded estimate missing');
+  document.getElementById('status').textContent = 'PASS ' + (healing ? cls : 'Tank') + ' — rendering, damage colors, 360/720px layout, and in-memory scenario save. No character storage used.';
+})().catch((error) => { document.getElementById('status').textContent = 'FAIL — ' + error.message; throw error; });
+</script>

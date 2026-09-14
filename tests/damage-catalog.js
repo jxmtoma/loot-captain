@@ -185,6 +185,20 @@ assert.equal(catalog.resolveProc({ type: 'proc', name: 'Strike of Flames VI', ra
 assert.equal(catalog.resolveProc({ type: 'proc', name: 'Strike of Flames VI', rank: 'II', raw: 'Strike of Flames VI', key: 'proc:flames strike' }), null);
 assert.equal(catalog.resolveProc({ type: 'proc', name: 'Strike of Flames VI', rank: 'I', raw: 'Strike of Flames VI', key: 'proc:flames strike', provenance: 'legacy' }).spellId, 23735);
 assert.equal(catalog.resolveProc(proc('Strike of Venom V')).baseDamage, 420);
+for (const effect of [proc('Strike of Venom VIII'), { type: 'proc', spellId: 23777 },
+  proc('Strike of Venom VIII', { rank: 'III', key: 'proc:strike venom' }),
+  proc('Strike of Venom VIII', { raw: 'Strike of Venom VIII\n1: Decrease Current HP by 750' })]) {
+  const resolved = catalog.resolveProc(effect);
+  assert.equal(resolved.spellId, 23777);
+  assert.equal(resolved.baseDamage, 750);
+  assert.equal(resolved.resist, 'Poison -200');
+}
+for (const conflict of [{ spellId: 23774 }, { rank: 'VII' }, { rank: 'III', key: 'proc:wrong' },
+  { raw: 'Strike of Venom VIII\n1: Decrease Current HP by 420' },
+  { raw: 'Strike of Venom VIII\n1: Decrease Current HP by 750 per tick' }]) {
+  assert.equal(catalog.resolveProc(proc('Strike of Venom VIII', conflict)), null);
+}
+assert.equal(catalog.resolveProc(proc('Sympathetic Strike of Venom VIII')), null);
 assert.equal(catalog.resolveProc({ type: 'proc', name: 'Strike of Venom V', spellId: 23774 }).resist, 'Poison -180');
 
 assert.equal(catalog.resolveProc(proc('Force of Corruption V')), null);
@@ -203,3 +217,24 @@ assert.equal(catalog.resolveProc(proc('Unknown Proc')), null);
 assert.equal(catalog.resolveProc({ type: 'worn', name: 'Force of Corruption VI' }), null);
 
 console.log('damage catalog: ok');
+
+for (const parserFn of [(effect) => parser.normalizeEffects([effect])[0], raidlootParser.normalizeEffectForTest]) {
+  const effect = parserFn({ type: 'proc', name: 'Uncataloged Strike XII', raw: 'Uncataloged Strike XII\n1: Decrease Current HP by 1,250' });
+  assert.equal(catalog.resolveProc(effect).baseDamage, 1250);
+}
+for (const extra of [{}, { spellId: 99999 }, { key: 'proc:id:99999' }]) {
+  const effect = proc('Uncataloged Strike XII', { raw: 'Uncataloged Strike XII\n1: Decrease Current HP by 1250', ...extra });
+  assert.equal(catalog.resolveProc(effect).baseDamage, 1250);
+  assert.equal(catalog.resolveProc(effect).descriptionBased, true);
+}
+assert.equal(catalog.resolveProc({ type: 'proc', name: 'New Strike', description: '1: Decrease Current HP by 0' }).baseDamage, 0);
+assert.equal(catalog.resolveProc(proc('New Strike', { raw: 'Proc Effect: New Strike Proc Rate: +100\nResist: Fire -200\n1: Decrease Current HP by 750' })).baseDamage, 750);
+for (const details of ['1: Decrease Current HP by 750 per tick', '1: Decrease Current HP by 750 if undead',
+  '1: Decrease Current HP by 750 to 1500', '1: Decrease Current HP by 750.5', '1: Decrease Current HP by 1,25',
+  '1: Decrease Current HP by -750', '1: Decrease Current HP by 750\n2: Cast: Child Spell',
+  '1: Decrease Current HP by 750\n2: Decrease Current HP by 100', '1: Decrease Current HP by 750\nDuration: 6s',
+  '1: Decrease Current HP by 750\nTarget: Target AE', '1: Increase Current HP by 750']) {
+  assert.equal(catalog.resolveProc(proc('New Strike', { raw: 'New Strike\n' + details })), null);
+}
+assert.equal(catalog.resolveProc(proc('New Strike', { raw: 'Different Strike\n1: Decrease Current HP by 750' })), null);
+assert.equal(catalog.resolveProc(proc('New Strike', { spellId: 99999, effectId: 99998, raw: 'New Strike\n1: Decrease Current HP by 750' })), null);

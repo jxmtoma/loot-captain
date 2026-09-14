@@ -434,7 +434,7 @@
             ? { index, id: item.id || '', name: item.name || '', slot: item.slot || '' } : null;
         }).filter(Boolean)
         : undefined;
-      const expectedEquipment = mode === 'dps-reference'
+      const expectedEquipment = ['dps-reference', 'tank-reference', 'healer-reference'].includes(mode)
         ? profile.items.map((item, index) => ({ index, id: item && item.id || '', name: item && item.name || '',
           slot: item && item.slot || '', isAugment: !!(item && item.isAugment) })) : undefined;
       return await chrome.runtime.sendMessage({ type: 'GET_CHARACTER_PROJECTION', profileId: profile.id, targetIndex,
@@ -444,11 +444,12 @@
     } catch (error) { return { ok: false, error: 'Projection unavailable: ' + error.message }; }
   }
 
-  async function saveDpsScenario(profileId, scenario, expectedRevision) {
-    if (!profileId || !Number.isInteger(expectedRevision) || expectedRevision < 0) return { ok: false, error: 'DPS scenario revision is required.' };
+  async function saveDpsScenario(profileId, scenario, expectedRevision, type = 'SET_DPS_SCENARIO') {
+    const label = type === 'SET_HEALER_SCENARIO' ? 'Healer' : type === 'SET_TANK_SCENARIO' ? 'Tank' : 'DPS';
+    if (!profileId || !Number.isInteger(expectedRevision) || expectedRevision < 0) return { ok: false, error: label + ' scenario revision is required.' };
     try {
-      return await chrome.runtime.sendMessage({ type: 'SET_DPS_SCENARIO', profileId, scenario, expectedRevision });
-    } catch (error) { return { ok: false, error: 'DPS scenario save failed: ' + error.message }; }
+      return await chrome.runtime.sendMessage({ type, profileId, scenario, expectedRevision });
+    } catch (error) { return { ok: false, error: label + ' scenario save failed: ' + error.message }; }
   }
 
   LC.state = {
@@ -485,5 +486,7 @@
     equipItem,
     getCharacterProjection,
     saveDpsScenario,
+    saveHealerScenario: (profileId, scenario, revision) => saveDpsScenario(profileId, scenario, revision, 'SET_HEALER_SCENARIO'),
+    saveTankScenario: (profileId, scenario, revision) => saveDpsScenario(profileId, scenario, revision, 'SET_TANK_SCENARIO'),
   };
 })();

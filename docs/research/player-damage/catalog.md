@@ -1,8 +1,13 @@
 # Player damage catalog
 
-This catalog resolves only exact, source-backed effect identities. It does not
-infer a spell from a name fragment, a numeric suffix, or a generic “decrease HP”
-line. Unknown effects remain unavailable.
+Worn and focus effects resolve exact, source-backed identities. Weapon procs
+also accept an uncataloged description with one unconditional `Decrease Current
+HP by N` line (including comma-separated damage), without requiring a spell ID
+or resist value. The scenario supplies landing and effective hand PPM; item
+Proc Rate modifiers are not applied a second time. Catalog records remain the
+fallback for name-only imports; conflicting known identities stay unresolved.
+Conditional damage, DoTs, multiple effect lines and child spells require separate
+handling. Incomplete weapon effect lists still require comparison confirmation.
 
 ## Worn effects
 
@@ -26,6 +31,15 @@ effects carrying the former `I`/`III` parser artifacts, but only when the full
 raw packet name exactly matches the catalog record.
 
 ## Direct weapon procs
+
+Strike of Venom VIII is spell 23777, with 750 direct damage and Poison -200
+resist, verified against the [exact RaidLoot record](https://www.raidloot.com/spells?name=23777)
+on 2026-09-12. It uses the existing neutral rate multiplier of 1; the shared
+scenario supplies effective procs/minute and landing multiplier. At 2 PPM and
+landing 1 its contribution is 25 DPS, an illustrative assumption rather than
+a measured rate. Exact legacy name/raw records with rank `III` and old key
+`proc:strike venom` retain the existing narrow parser-artifact compatibility.
+Sympathetic Strike of Venom VIII remains outside weapon-proc coverage.
 
 RaidLoot identifies Force of Corruption VI as spell 23815, corruption resist
 -25, and 460 direct damage. Strike of Flames VI is spell 23735, fire resist

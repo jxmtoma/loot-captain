@@ -45,7 +45,7 @@
     { key: 'manaregen', label: 'Mana Regen', terms: { ManaRegen: 1 } },
     { key: 'endregen', label: 'End Regen', terms: { EndRegen: 1 } },
     { key: 'netpos', label: 'Legacy — no recommendation', terms: '__POSITIVE__', recommendation: false },
-    { key: 'role-tank', label: 'Tank survivability preference', terms: { HP: 1, AC: 10, HSta: 20 }, preset: true },
+    { key: 'role-tank', label: 'Tank preference — 1 AC = 4 HP', terms: { HP: 1, AC: 4 }, preset: true },
     { key: 'role-melee', label: 'Melee stat preference', terms: { HP: 1, ATK: 5, HDex: 20 }, preset: true },
     { key: 'role-caster', label: 'Caster stat preference', terms: { MANA: 1, 'Spell Dmg': 10 }, preset: true },
     { key: 'role-healer', label: 'Healer preference', terms: { MANA: 1, 'Heal Amount': 10 }, preset: true },

@@ -50,7 +50,35 @@ assert.equal(output(projectGear(armor('old', { STR: { num: 10, raw: '10', source
 const procProfile = profileWith(weapon('primary', 'primary', 100, 20, [proc('Force of Corruption VI')]));
 const strike = weapon('candidate', 'primary', 100, 20, [proc('Strike of Flames VI')]);
 const procScenario = baseScenario();
+// Two-hand Berserker reference: 750 damage at 2 PPM = 25 proc DPS.
+const venomWeapon = weapon('venom-eight', 'primary', 282, 32, [proc('Strike of Venom VIII')]);
+const venomProfile = { id: 'venom-test', cls: 'Berserker', level: 100, items: [venomWeapon] };
+const venomScenario = { ...dps.referenceScenario(venomProfile).scenario, layout: 'two-hand' };
+const venomReplacement = weapon('venom-five', 'primary', 282, 32, [proc('Strike of Venom V')]);
+const venomResult = dps.referenceProject(venomProfile, venomReplacement, venomWeapon, venomScenario);
+assert.equal(output(venomResult, 'Weapon proc DPS').current, 25);
+assert.equal(output(venomResult, 'Weapon proc DPS').candidate, 14);
+assert.equal(output(venomResult, 'Player DPS').delta, -11);
+const incompleteVenom = clone(venomProfile); incompleteVenom.items[0].effectsKnown = false;
+assert.equal(output(dps.referenceProject(incompleteVenom, venomReplacement, incompleteVenom.items[0], venomScenario), 'Weapon proc DPS').available, false);
+assert.equal(output(dps.referenceProject(incompleteVenom, venomReplacement, incompleteVenom.items[0], venomScenario,
+  { weaponProcsComplete: true }), 'Weapon proc DPS').current, 25);
+const reducedVenom = clone(venomScenario); reducedVenom.procs.primaryPpm = 4; reducedVenom.procs.landingMultiplier = .5;
+assert.equal(output(dps.referenceProject(venomProfile, venomReplacement, venomWeapon, reducedVenom), 'Weapon proc DPS').current, 25);
 const procResult = model.project(procProfile, strike, procProfile.items[0], procScenario);
+const genericStrike = weapon('generic', 'primary', 282, 32, [
+  { type: 'proc', name: 'New Strike XII', raw: 'New Strike XII\n1: Decrease Current HP by 1,200' },
+]);
+const genericResult = dps.referenceProject(venomProfile, genericStrike, venomWeapon, venomScenario);
+assert.equal(output(genericResult, 'Weapon proc DPS').candidate, 40);
+assert.equal(output(genericResult, 'Player DPS').delta, 15);
+const duplicateGeneric = clone(genericStrike);
+duplicateGeneric.effects.push({ ...duplicateGeneric.effects[0], spellId: 99999 });
+assert.equal(output(dps.referenceProject(venomProfile, duplicateGeneric, venomWeapon, venomScenario), 'Weapon proc DPS').available, false);
+const dualGeneric = { ...profileWith(genericStrike), cls: 'Rogue' };
+dualGeneric.items[1].effects = clone(genericStrike.effects);
+const dualResult = dps.referenceProject(dualGeneric, genericStrike, genericStrike);
+assert.equal(output(dualResult, 'Weapon proc DPS').current, 60);
 assert.ok(Math.abs(output(procResult, 'Weapon proc DPS').delta - 50 * 2 / 60) < 1e-12);
 const slower = clone(procScenario); slower.hastePercent = 0; slower.primary.hitChance = .1;
 assert.ok(Math.abs(output(model.project(procProfile, strike, procProfile.items[0], slower), 'Weapon proc DPS').delta - output(procResult, 'Weapon proc DPS').delta) < 1e-12);
@@ -258,3 +286,43 @@ for (const [castSeconds, recastSeconds, recoverySeconds, expected] of [
 ]) assert.equal(model.spellExtra(1000, { castSeconds, recastSeconds, recoverySeconds, baseDamage: 100000 }), expected);
 assert.equal(model.spellExtra(100000, { castSeconds: 3.75, recastSeconds: 5.25, baseDamage: 23156 }), 11578);
 console.log('Wizard spell-only checks passed');
+
+for (const [cls, metric, skill, oldItem, newItem, expected, next] of [
+  ['Berserker', 'Frenzy DPS', 400, weapon('class-old', 'primary'), weapon('class-new', 'primary', 200), 27, 27],
+  ['Monk', 'Flying Kick DPS', 225, { ...armor('class-old', { AC: 100 }), slot: 'feet' }, { ...armor('class-new', { AC: 250 }), slot: 'feet' }, 54, 60],
+  ['Rogue', 'Backstab DPS', 400, { ...weapon('class-old', 'primary'), stats: { Damage: 100, Delay: 20, 'Backstab Dmg': 30 } },
+    { ...weapon('class-new', 'primary'), stats: { Damage: 100, Delay: 20, 'Backstab Dmg': 40 } }, 300, 400],
+]) {
+  const profile = { id: 'class-test', cls, level: 100, items: [weapon('primary', 'primary'), weapon('secondary', 'secondary')] };
+  if (oldItem.slot === 'primary') profile.items[0] = oldItem; else profile.items.push(oldItem);
+  const scenario = dps.referenceScenario(profile).scenario;
+  const unchanged = clone(scenario);
+  scenario.classAttack = { ...dps.CLASS_ATTACK_DEFAULTS, skill, cycleSeconds: 10, hitChance: 1, primaryPiercingConfirmed: true };
+  const result = dps.referenceProject(profile, newItem, oldItem, scenario);
+  const contribution = output(result, metric);
+  assert.equal(contribution.current, expected / 10);
+  assert.equal(contribution.candidate, next / 10);
+  assert.ok(result.includedComponents.includes(metric));
+  const baseline = dps.referenceProject(profile, newItem, oldItem, unchanged);
+  assert.ok(Math.abs(output(result, 'Player DPS').candidate - output(baseline, 'Player DPS').candidate - next / 10) < 1e-9);
+  assert.equal(output(dps.referenceProject(profile, oldItem, oldItem, scenario), metric).delta, 0);
+  const slower = clone(scenario); slower.classAttack.cycleSeconds = 20; slower.hastePercent = 300;
+  assert.equal(output(dps.referenceProject(profile, newItem, oldItem, slower), metric).current, expected / 20);
+  const scaled = clone(scenario); Object.assign(scaled.classAttack, { attacksPerUse: 3, damageMultiplier: 2, hitChance: .5, uptime: .5 });
+  assert.equal(output(dps.referenceProject(profile, newItem, oldItem, scaled), metric).current, expected * .15);
+  assert.deepEqual(clone(dps.validateScenario(scenario).classAttack), clone(scenario.classAttack));
+  for (const [key, value] of [['cycleSeconds', 0], ['hitChance', 2], ['uptime', 2], ['skill', 1.5], ['damageMultiplier', null], ['primaryPiercingConfirmed', 1]]) {
+    const invalid = clone(scenario); invalid.classAttack[key] = value;
+    assert.throws(() => dps.validateScenario(invalid), /classAttack/);
+  }
+  if (cls === 'Rogue') {
+    const missing = clone(newItem); delete missing.stats['Backstab Dmg'];
+    assert.equal(output(dps.referenceProject(profile, missing, oldItem, scenario), metric).available, false);
+    const unconfirmed = clone(scenario); unconfirmed.classAttack.primaryPiercingConfirmed = false;
+    assert.equal(output(dps.referenceProject(profile, newItem, oldItem, unconfirmed), metric).available, false);
+  }
+  if (cls === 'Monk') {
+    const missing = clone(newItem); missing.stats.AC = null;
+    assert.equal(output(dps.referenceProject(profile, missing, oldItem, scenario), metric).available, false);
+  }
+}

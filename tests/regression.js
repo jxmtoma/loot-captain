@@ -467,6 +467,8 @@ const parsedOpenDkpDom = LC.parser.parseOpenDkpDom({
 });
 assert.equal(parsedOpenDkpDom.slotKey.keys.join(','), 'primary,secondary');
 assert.equal(parsedOpenDkpDom.classes.join(','), 'BST');
+assert.equal(LC.parser.parseOpenDkpJson({ name: 'Backstab fixture', slot: 'Primary', backstabdamage: 40 }).stats['Backstab Dmg'].num, 40);
+assert.equal(LC.parser.parseOpenDkpDom({ textContent: 'Backstab fixture\nSlot: Primary\nBackstab Dmg: 40', querySelector: () => null }).stats['Backstab Dmg'].num, 40);
 const parsedOpenDkpEffects = LC.parser.parseOpenDkpDom({
   textContent: 'Effect Item\nSlot: Head\nFocus Effect: Casting Haste 20%\nProc Effect: Strike of Ice\n1: Decrease Current HP by 2500',
   querySelector: () => null,
@@ -1988,6 +1990,8 @@ assert.equal(state.compatibleWishlistItem(
   execFileSync(process.execPath, ['tests/dps.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/damage-catalog.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/player-damage.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tests/tank.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['tests/healer.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/player-damage-integration.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/dps-ui.js'], { stdio: 'inherit' });
   console.log('regression checks passed');

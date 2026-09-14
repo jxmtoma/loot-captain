@@ -29,6 +29,16 @@ backgrounds remain neutral. Stats color follows the selected preference, while t
 melee estimate has its own direction. Tooltips explain each metric's scope.
 
 Full item stats, effects and preference arithmetic stay collapsed until requested.
+
+Level-100 Warriors, Paladins and Shadowknights also have a partial physical
+survivability estimate. Open **Tank survivability and assumptions** to review
+HP, armor, incoming damage and shared encounter inputs. Threat and healing are
+not included; [model details](docs/research/tank/model-v1.md) describe the scope.
+
+Level-100 Clerics, Druids and Shamans have partial direct-heal estimates under
+**Healing and mana assumptions**, separating casting throughput from mana
+sustainability. [Healer model details](docs/research/healer/model-v1.md) describe
+the reference spells, resource budget and excluded gear focus/HoT/group effects.
 **Stat estimates and experimental DPS** contains the optional reference models and
 assumption-driven weapon calculator. Focus and pet damage are not included in that
 calculator, so the main comparison does not claim a complete DPS improvement.
