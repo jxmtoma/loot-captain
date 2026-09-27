@@ -389,6 +389,7 @@ function allowedSender(type, sender) {
   if (type === 'ENRICH_PROFILE_ITEMS') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'LOOKUP_ITEM_STATS') return isOpenDkpPage(sender);
   if (type === 'MUTATE_WISHLIST') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
+  if (type === 'SYNC_RAIDLOOT_WISHLIST') return isExtensionPage(sender);
   if (type === 'EQUIP_ITEM') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'UNDO_EQUIP') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
   if (type === 'GET_CHARACTER_PROJECTION') return isExtensionPage(sender) || isRaidLootPage(sender) || isOpenDkpPage(sender);
@@ -574,6 +575,61 @@ function mergeWishlistItem(item, current) {
     effectsKnown: item.effectsKnown === true || (!itemEffects.length && current.effectsKnown === true),
     addedAt: Math.min(Number(item.addedAt) || Date.now(), Number(current.addedAt) || Date.now()),
   };
+}
+
+// One-way merge of a RaidLoot wishlist into a local profile. Rows are validated
+// individually: a single malformed or oversized item must not fail the whole
+// sync, and an existing local entry that no longer passes validation is kept
+// as stored rather than dropped, so unrelated user data is never destroyed.
+function syncRaidlootWishlist(profileId, values) {
+  if (!Array.isArray(values) || values.length > 1000) throw new Error('Invalid RaidLoot wishlist');
+  if (JSON.stringify({ profileId, wishlist: values }).length > MAX_PROFILE_MUTATION_BYTES) {
+    throw new Error('RaidLoot wishlist is too large to sync');
+  }
+  return queueProfileMutation(async () => {
+    const sourceItems = [];
+    let skipped = 0;
+    for (const value of values) {
+      try {
+        sourceItems.push(sanitizeWishlistItem(value));
+      } catch (e) {
+        skipped++;
+      }
+    }
+    const profiles = await storageGet('profiles', {});
+    const profile = profiles[profileId];
+    if (!profile) throw new Error('Character profile not found');
+    let wishlist = [];
+    for (const entry of Array.isArray(profile.wishlist) ? profile.wishlist : []) {
+      try {
+        wishlist.push(sanitizeWishlistItem(entry));
+      } catch (e) {
+        wishlist.push(entry);
+      }
+    }
+    let added = 0;
+    let updated = 0;
+    for (const item of sourceItems) {
+      const matches = wishlist.map((entry, index) => wishlistMatches(entry, item) ? index : -1).filter((index) => index >= 0);
+      if (!matches.length) {
+        wishlist.push(item);
+        added++;
+        continue;
+      }
+      const before = JSON.stringify(matches.map((index) => wishlist[index]));
+      let merged = item;
+      for (const index of matches) merged = mergeWishlistItem(merged, wishlist[index]);
+      const insertAt = Math.min(matches[0], wishlist.length);
+      wishlist = wishlist.filter((entry, index) => !matches.includes(index));
+      wishlist.splice(insertAt, 0, merged);
+      if (JSON.stringify(matches.map(() => merged)) !== before) updated++;
+    }
+    if (added || updated) {
+      profiles[profileId] = { ...profile, wishlist };
+      await writeProfiles(profiles);
+    }
+    return { added, updated, skipped, wishlistCount: wishlist.length, profiles };
+  });
 }
 
 function queueProfileMutation(callback) {
@@ -1112,6 +1168,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const profileId = cleanWishlistId(msg.profileId, 100);
         if (!profileId) throw new Error('Character profile is required');
         const result = await mutateWishlist(profileId, msg.action, msg.item);
+        sendResponse({ ok: true, ...result });
+        break;
+      }
+      case 'SYNC_RAIDLOOT_WISHLIST': {
+        const profileId = cleanWishlistId(msg.profileId, 100);
+        if (!profileId) throw new Error('Character profile is required');
+        const result = await syncRaidlootWishlist(profileId, msg.wishlist);
         sendResponse({ ok: true, ...result });
         break;
       }

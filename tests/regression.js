@@ -27,7 +27,8 @@ assert.match(optionsHtml, /<select id="profile-class"><\/select>/);
 assert.match(optionsHtml, /id="btn-edit-items"/);
 assert.match(optionsHtml, /id="btn-refresh-raidloot"/);
 assert.match(optionsHtml, /id="btn-refresh-raidloot"[^>]*hidden/);
-assert.match(optionsHtml, /aria-label="Refresh worn equipment and augment data from RaidLoot"/);
+assert.match(optionsHtml, /aria-label="Refresh worn equipment, augment data, and wishlist from RaidLoot"/);
+assert.match(optionsHtml, /public RaidLoot wishlist into this character/);
 assert.match(optionsHtml, /data-inventory-tab="augments"/);
 assert.match(optionsHtml, /data-inventory-tab="focus"/);
 // The wishlist is a tab in the inventory strip, tinted so it does not read as
@@ -57,6 +58,104 @@ for (const className of ['Bard', 'Beastlord', 'Berserker', 'Cleric', 'Druid', 'E
   assert.match(optionsSource, new RegExp("'" + className + "'"));
 }
 assert.match(optionsSource, /INVENTORY_SLOT_LAYOUT/);
+// The game-style wishlist grid must never hide a wanted item: an entry whose
+// slot is unknown has no box of its own, so it has to be collected and shown.
+{
+  const makeNode = () => ({
+    nodeType: 1, className: '', textContent: '', children: [], style: {}, title: '',
+    appendChild(child) { this.children.push(child); return child; },
+    setAttribute() {},
+  });
+  const gridContext = {
+    document: { addEventListener() {}, createElement: () => makeNode() },
+  };
+  vm.runInNewContext(read('content/shared/diff.js') + '\n' + read('options/options.js') +
+    '\nglobalThis.wishlistSlotGridForTest = wishlistSlotGrid;' +
+    '\nglobalThis.editorSlotRootsForTest = editorSlotRoots;' +
+    '\nglobalThis.setWishlistForTest = (list) => { editingProfile = { wishlist: list }; };',
+    gridContext, { filename: 'options/options.js' });
+  const flatBox = (box) => {
+    const parts = [];
+    const walk = (node) => {
+      if ((node.children || []).length) { for (const child of node.children) walk(child); return; }
+      if (node.textContent) parts.push(node.textContent);
+    };
+    walk(box);
+    return parts.join(' ');
+  };
+  // A back item, a weapon whose slot was recovered, and an entry with no slot.
+  gridContext.setWishlistForTest([
+    { name: 'Chillcloak', slot: 'Back' },
+    { name: 'Recovered Sword', slot: 'Primary' },
+    { name: 'Mystery Item', slot: '' },
+  ]);
+  const boxes = gridContext.wishlistSlotGridForTest();
+  const rendered = boxes.map(flatBox);
+  for (const name of ['Chillcloak', 'Recovered Sword', 'Mystery Item']) {
+    assert.equal(rendered.some((text) => text.includes(name)), true, 'hidden in the wishlist grid: ' + name);
+  }
+  // The recovered weapon renders in a weapon box, not in the overflow row.
+  const weaponBox = boxes.find((box) => flatBox(box).includes('Recovered Sword'));
+  assert.equal(flatBox(weaponBox).includes('Other'), false);
+  // The unresolvable entry is surfaced in a dedicated full-width row.
+  const unplaced = boxes[boxes.length - 1];
+  assert.equal(flatBox(unplaced).includes('Mystery Item'), true);
+  assert.equal(unplaced.style.gridColumn, '1 / -1');
+  // Nothing is dropped even when every entry is unplaceable.
+  gridContext.setWishlistForTest([{ name: 'Only One', slot: '' }]);
+  const onlyBoxes = gridContext.wishlistSlotGridForTest();
+  assert.equal(flatBox(onlyBoxes[onlyBoxes.length - 1]).includes('Only One'), true);
+  assert.match(read('options/options.css'), /\.gear-slot\.wishlist-gear-slot\.unplaced/);
+
+  // Real RaidLoot reports a one-hand weapon as "Primary, Secondary" and a two-hand
+  // as "Primary", so a weapon names both hands at once and cannot be filed under a
+  // single box. The hands are then filled best-first by weapon ratio, so the
+  // stronger weapon lands in the main hand.
+  // Box text begins with the slot glyph, so pick boxes by their label, not a prefix.
+  const boxFor = (boxes, label) => {
+    const found = boxes.find((box) => flatBox(box).split(' ')[1] === label);
+    assert.ok(found, 'no ' + label + ' box in the wishlist grid');
+    return flatBox(found);
+  };
+  const weapon = (name, ratio, extra) => ({ name, slot: 'Primary, Secondary',
+    stats: { DMG: { raw: '40', num: 40 }, Delay: { raw: '20', num: 20 }, Ratio: { raw: String(ratio), num: ratio } }, ...extra });
+  gridContext.setWishlistForTest([weapon('Weak Whip', 1.95), weapon('Slim Rapier', 4.1)]);
+  const dual = gridContext.wishlistSlotGridForTest();
+  assert.equal(boxFor(dual, 'Primary').includes('Slim Rapier'), true, 'the higher-ratio weapon must take the main hand');
+  assert.equal(boxFor(dual, 'Secondary').includes('Weak Whip'), true, 'the lower-ratio weapon must take the off hand');
+  // Ratio may be missing, so DMG/Delay has to stand in for it.
+  gridContext.setWishlistForTest([
+    { name: 'No Ratio A', slot: 'Primary, Secondary', stats: { DMG: { num: 60 }, Delay: { num: 30 } } },
+    { name: 'No Ratio B', slot: 'Primary, Secondary', stats: { DMG: { num: 20 }, Delay: { num: 40 } } },
+  ]);
+  const derived = gridContext.wishlistSlotGridForTest();
+  assert.equal(boxFor(derived, 'Primary').includes('No Ratio A'), true);
+  assert.equal(boxFor(derived, 'Secondary').includes('No Ratio B'), true);
+  // A two-hand weapon holds the main hand alone, so a one-hand wishlisted with it
+  // has no box and has to surface in "Other" rather than vanish.
+  gridContext.setWishlistForTest([
+    { name: 'Big Two-Hander', slot: 'Primary', stats: { DMG: { num: 551 }, Delay: { num: 32 } } },
+    { name: 'Spare One-Hander', slot: 'Primary, Secondary', stats: { DMG: { num: 39 }, Delay: { num: 20 } } },
+  ]);
+  const twoHandBoxes = gridContext.wishlistSlotGridForTest();
+  assert.equal(boxFor(twoHandBoxes, 'Primary').includes('Big Two-Hander'), true);
+  // The overflow row must not claim "slot unknown" for an entry whose slot is known
+  // and simply has no free hand left.
+  const overflow = twoHandBoxes[twoHandBoxes.length - 1];
+  assert.equal(flatBox(overflow).includes('Spare One-Hander'), true);
+  assert.equal(flatBox(overflow).includes('Other / no free slot'), true);
+  assert.equal(flatBox(overflow).includes('slot unknown'), false);
+  // A throwing weapon lists range first, so it belongs in the range box.
+  gridContext.setWishlistForTest([{ name: 'Boar Spear', slot: 'Range, Primary, Secondary' }]);
+  const thrown = gridContext.wishlistSlotGridForTest();
+  assert.equal(boxFor(thrown, 'Range').includes('Boar Spear'), true);
+  assert.equal(boxFor(thrown, 'Primary').includes('Nothing wanted'), true);
+  // An augment slot string is a slot list too, and must not be read as one name.
+  // "Ammo" is not an equippable slot here, so only the named ones are excluded.
+  assert.deepEqual(JSON.parse(JSON.stringify(gridContext.editorSlotRootsForTest('All except Charm, Range, Primary, Secondary, Ammo'))),
+    ['ear', 'head', 'face', 'neck', 'shoulders', 'arms', 'back', 'wrist', 'hands', 'finger', 'chest', 'legs', 'feet', 'waist', 'powersource']);
+  assert.deepEqual(JSON.parse(JSON.stringify(gridContext.editorSlotRootsForTest('Primary, Secondary (in General7-Slot22)'))), ['primary', 'secondary']);
+}
 assert.match(optionsSource, /let itemsEditable = false/);
 assert.match(optionsSource, /let selectedItemIndex = 0/);
 assert.match(optionsSource, /if \(idx !== selectedItemIndex\) return/);
@@ -72,6 +171,9 @@ assert.match(optionsSource, /PROFILE_STATS_VERSION = 4/);
 assert.match(optionsSource, /importedFrom: p\.importedFrom \|\| ''/);
 assert.match(optionsSource, /type: 'SCRAPE_PROFILE', profileId/);
 assert.match(optionsSource, /map\(mapRaidlootItem\)/);
+assert.match(optionsSource, /map\(mapRaidlootWishlistItem\)/);
+assert.match(optionsSource, /type: 'SYNC_RAIDLOOT_WISHLIST'/);
+assert.match(serviceWorkerSource, /type === 'SYNC_RAIDLOOT_WISHLIST'/);
 assert.match(optionsSource, /btn-refresh-raidloot/);
 assert.match(optionsSource, /button\.disabled = !!editingProfile && editingId === refreshingProfileId/);
 assert.match(optionsSource, /items, statsVersion: PROFILE_STATS_VERSION/);
@@ -519,7 +621,7 @@ const effectLabel = (name, value) => ({
   textContent: name,
   nextSibling: { nodeType: 3, textContent: value, nextSibling: null },
 });
-const raidlootNode = ({ id, name, classes, text, labels = [] }) => {
+const raidlootNode = ({ id, name, classes, text, labels = [], wishlist = false, upgradeSlot = '' }) => {
   const classList = [...classes];
   classList.contains = (value) => classList.includes(value);
   return {
@@ -530,6 +632,10 @@ const raidlootNode = ({ id, name, classes, text, labels = [] }) => {
     textContent: text,
     querySelector(selector) {
       if (selector === '.itemname') return { textContent: name };
+      if (selector === '.wish-remove' && wishlist) return {};
+      if (selector === 'a[href*="upgrade="]' && upgradeSlot) {
+        return { getAttribute: () => '/items?upgrade=' + id + '&slot=' + upgradeSlot + '&type=Weapon_2Hand' };
+      }
       return null;
     },
     querySelectorAll(selector) { return selector === 'label' ? labels : []; },
@@ -542,18 +648,62 @@ const profileNodes = [
   raidlootNode({ id: 201, name: 'Ear Augment', classes: ['item', 'augment', 'augment1'], text: 'Ear Augment\nSlot: All except Ammo (in Ear-2)\nAug: 5 7 8', labels: [effectLabel('Slot:', 'All except Ammo (in Ear-2)')] }),
   raidlootNode({ id: 202, name: 'Type 3 Focus Augment', classes: ['item', 'augment', 'augment2'], text: "Type 3 Focus Augment\nSlot: All except Ammo (in Head)\nAug: 3\nFocus Effect: Restless Focus IV", labels: [effectLabel('Slot:', 'All except Ammo (in Head)')] }),
   raidlootNode({ id: 203, name: 'Type 13/14 Augment', classes: ['item', 'augment', 'augment3'], text: 'Type 13/14 Augment\nSlot: All except Ammo (in Ear-1)\nAug: 13 14', labels: [effectLabel('Slot:', 'All except Ammo (in Ear-1)')] }),
+  // Real RaidLoot wishlist rows: a wished item that is not worn has class
+  // "None" and no .wish-remove link; it is only discoverable from the wish
+  // icon strip. The aug row is discoverable from its .wish-remove link even
+  // though its slot string cannot be canonicalized.
+  raidlootNode({ id: 301, name: 'Wished Weapon', classes: ['item', 'None'], text: 'Wished Weapon\nDMG: 120', labels: [effectLabel('DMG:', '120')], upgradeSlot: 'Primary' }),
+  raidlootNode({ id: 302, name: 'Wished Aug', classes: ['item', 'augment', 'augment0', 'None'], text: 'Wished Aug\nSlot: All except Charm, Range, Primary\nAC: 55', labels: [effectLabel('Slot:', 'All except Charm, Range, Primary'), effectLabel('AC:', '55')], wishlist: true }),
+  // A wished item with no usable slot anywhere: it must still be imported, and
+  // the options grid must not be able to hide it.
+  raidlootNode({ id: 303, name: 'Wished Mystery', classes: ['item', 'None'], text: 'Wished Mystery\nAC: 10', labels: [effectLabel('AC:', '10')] }),
+  // Real RaidLoot bank cells: a worn item whose cell class does not canonicalize
+  // (General7-Slot7), so its slot comes from the "Slot:" label alone. Only the
+  // literal "None" class marks an item as not worn, so this must stay equipped.
+  raidlootNode({ id: 401, name: 'Banked Power Source', classes: ['item', 'General7-Slot7'], text: 'Banked Power Source\nSlot: PowerSource', labels: [effectLabel('Slot:', 'PowerSource')] }),
 ];
 raidlootParser.DOMParser = class {
   parseFromString() {
     return {
       getElementById: (id) => id === 'inv' ? { querySelectorAll: () => profileNodes } : null,
       querySelector: (selector) => selector === 'title' ? { textContent: 'Test (125 Warrior)' } : null,
+      querySelectorAll: (selector) => selector === '.icons' ? [
+        { children: [{ dataset: { target: '.Total' } }, { dataset: { target: '.Head' } }] },
+        { children: [{ dataset: { target: '#item301' } }, { dataset: { target: '#item303' } }] },
+      ] : [],
       body: { textContent: '' },
     };
   }
 };
 const parsedProfile = raidlootParser.parseProfileHtmlForTest('<html></html>', 'profile-1');
-assert.equal(parsedProfile.items.length, 6);
+assert.equal(parsedProfile.items.length, 7);
+// A wishlisted item can have a resolvable slot (here from the "Find upgrades"
+// link) and still not be worn. Worn gear is decided by the slot class RaidLoot
+// puts on a node, never by a slot recovered from a label or link, so a wished
+// item must never be promoted into the worn set or inflate its count.
+assert.deepEqual(JSON.parse(JSON.stringify(parsedProfile.items.map((item) => item.name).sort())), [
+  'Banked Power Source', 'Ear Augment', 'Focused Head', 'Left Ear', 'Right Ear', 'Type 13/14 Augment', 'Type 3 Focus Augment',
+]);
+assert.equal(parsedProfile.items.some((item) => item.name === 'Wished Weapon'), false);
+assert.deepEqual(JSON.parse(JSON.stringify(parsedProfile.wishlist)), [
+  {
+    // Slot recovered from the "Find upgrades" link, so the weapon lands in a box.
+    raidlootId: '301', name: 'Wished Weapon', slot: 'Primary', isAugment: false, augmentTypes: [],
+    stats: { DMG: { raw: '120', num: 120, source: 'raidloot' } }, effects: [], effectsKnown: false,
+  },
+  {
+    raidlootId: '302', name: 'Wished Aug', slot: 'All except Charm, Range, Primary', isAugment: true, augmentTypes: [],
+    stats: {
+      Slot: { raw: 'All except Charm, Range, Primary', num: null, source: 'raidloot' },
+      AC: { raw: '55', num: 55, source: 'raidloot' },
+    }, effects: [], effectsKnown: false,
+  },
+  {
+    // No slot anywhere: still imported rather than dropped.
+    raidlootId: '303', name: 'Wished Mystery', slot: '', isAugment: false, augmentTypes: [],
+    stats: { AC: { raw: '10', num: 10, source: 'raidloot' } }, effects: [], effectsKnown: false,
+  },
+]);
 assert.deepEqual(JSON.parse(JSON.stringify(parsedProfile.items.filter((item) => item.isAugment).map(({ name, slot, augmentTypes, augSlot, parentId }) => ({ name, slot, augmentTypes, augSlot, parentId })))), [
   { name: 'Ear Augment', slot: 'ear-2', augmentTypes: [5, 7, 8], augSlot: 1, parentId: '102' },
   { name: 'Type 3 Focus Augment', slot: 'head', augmentTypes: [3], augSlot: 2, parentId: '103' },
@@ -1095,7 +1245,7 @@ assert.match(read('options/options.html'), /id="consent-gate" class="consent-gat
 assert.match(read('options/options.js'), /gate\.classList\.add\('hidden'\)/);
 
 const options = { document: { addEventListener() {} } };
-vm.runInNewContext(read('content/shared/diff.js') + '\n' + read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText; globalThis.parseInventoryMetadata = parseInventoryMetadata; globalThis.hasSpellFocusForTest = hasSpellFocus; globalThis.mapRaidlootItemForTest = mapRaidlootItem; globalThis.statsToPlainForTest = statsToPlain; globalThis.raidlootImportedProfileIdForTest = raidlootImportedProfileId;', options, { filename: 'options/options.js' });
+vm.runInNewContext(read('content/shared/diff.js') + '\n' + read('options/options.js') + '\nglobalThis.parseInventoryText = parseInventoryText; globalThis.parseInventoryMetadata = parseInventoryMetadata; globalThis.hasSpellFocusForTest = hasSpellFocus; globalThis.mapRaidlootItemForTest = mapRaidlootItem; globalThis.raidlootWishlistItemsForTest = raidlootWishlistItems; globalThis.statsToPlainForTest = statsToPlain; globalThis.raidlootImportedProfileIdForTest = raidlootImportedProfileId;', options, { filename: 'options/options.js' });
 assert.equal(options.raidlootImportedProfileIdForTest('raidloot.com/profile/12345'), '12345');
 assert.equal(options.raidlootImportedProfileIdForTest('character-Inventory.txt'), '');
 assert.deepEqual(JSON.parse(JSON.stringify(options.mapRaidlootItemForTest({
@@ -1108,6 +1258,13 @@ assert.deepEqual(JSON.parse(JSON.stringify(options.mapRaidlootItemForTest({
   effectsKnown: false,
   effects: [{ type: 'focus', name: 'Focus', raw: 'Focus' }],
 });
+assert.deepEqual(JSON.parse(JSON.stringify(options.raidlootWishlistItemsForTest({ wishlist: [{
+  raidlootId: '301', name: 'Wished Helm', slot: 'Head', addedAt: 5,
+  stats: { HP: { raw: '125', num: 125, source: 'raidloot' } },
+}] }))), [{
+  raidlootId: '301', opendkpHost: '', opendkpId: '', name: 'Wished Helm', slot: 'Head', isAugment: false,
+  augmentTypes: [], stats: { HP: { raw: '125', num: 125, source: 'raidloot' } }, effects: [], effectsKnown: false, addedAt: 5,
+}]);
 assert.equal(options.hasSpellFocusForTest({ isAugment: true, slot: 'Head', effects: [{ type: 'focus' }] }), true);
 assert.equal(options.hasSpellFocusForTest({ slot: 'Head', effects: [{ type: 'focus' }] }), true);
 assert.equal(options.hasSpellFocusForTest({ slot: 'powersource', effects: [{ type: 'focus' }] }), false);
@@ -1540,6 +1697,49 @@ assert.equal(state.compatibleWishlistItem(
     HP: { raw: 'manual 250', num: 250, source: 'manual' },
     AC: { raw: 'not available', num: null, source: 'opendkp' },
   });
+  workerStorage.profiles.sync = { id: 'sync', name: 'RaidLoot Sync', items: [], wishlist: [
+    { raidlootId: '701', opendkpHost: '', opendkpId: '', name: 'Synced Helm', slot: 'Head', isAugment: false,
+      augmentTypes: [], stats: { HP: { raw: '100', num: 100, source: 'raidloot' } }, effects: [], effectsKnown: false, addedAt: 10 },
+    { raidlootId: '', opendkpHost: 'guild.opendkp.com', opendkpId: '702', name: 'Local Face', slot: 'Face', isAugment: false,
+      augmentTypes: [], stats: {}, effects: [], effectsKnown: false, addedAt: 11 },
+  ] };
+  const raidlootWishlist = [
+    { raidlootId: '701', name: 'Synced Helm', slot: 'Head', stats: { HP: { raw: '200', num: 200, source: 'raidloot' } }, addedAt: 20 },
+    { raidlootId: '703', name: 'New Wish', slot: 'Neck', stats: { AC: 25 }, addedAt: 21 },
+  ];
+  const synced = await sendWorkerMessage({ type: 'SYNC_RAIDLOOT_WISHLIST', profileId: 'sync', wishlist: raidlootWishlist },
+    'chrome-extension://test/options/options.html');
+  assert.equal(synced.ok, true);
+  assert.equal(synced.added, 1);
+  assert.equal(synced.updated, 1);
+  assert.equal(workerStorage.profiles.sync.wishlist.length, 3);
+  assert.equal(workerStorage.profiles.sync.wishlist.find((item) => item.raidlootId === '701').stats.HP.num, 200);
+  assert.equal(workerStorage.profiles.sync.wishlist.find((item) => item.raidlootId === '701').addedAt, 10);
+  assert.equal(workerStorage.profiles.sync.wishlist.find((item) => item.opendkpId === '702').name, 'Local Face');
+  const syncedAgain = await sendWorkerMessage({ type: 'SYNC_RAIDLOOT_WISHLIST', profileId: 'sync', wishlist: raidlootWishlist },
+    'chrome-extension://test/options/options.html');
+  assert.equal(syncedAgain.added, 0);
+  assert.equal(syncedAgain.updated, 0);
+  assert.equal(workerStorage.profiles.sync.wishlist.length, 3);
+  // One unusable row must not fail the whole sync, and an existing local entry
+  // that no longer validates is kept rather than dropped.
+  workerStorage.profiles.hostile = { id: 'hostile', name: 'Hostile', items: [], wishlist: [
+    { name: 'Legacy Broken Entry', slot: 'Head', stats: {} },
+  ] };
+  const hostile = await sendWorkerMessage({ type: 'SYNC_RAIDLOOT_WISHLIST', profileId: 'hostile', wishlist: [
+    { raidlootId: '801', name: 'Good Wish', slot: 'Head', stats: { HP: 10 } },
+    { raidlootId: 'not-a-number', name: 'Bad Id', slot: 'Head' },
+    { raidlootId: '802', name: 'x'.repeat(200 * 1024), slot: 'Head' },
+  ] }, 'chrome-extension://test/options/options.html');
+  assert.equal(hostile.ok, true);
+  assert.equal(hostile.added, 1);
+  assert.equal(hostile.skipped, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(workerStorage.profiles.hostile.wishlist.map((item) => item.name))), [
+    'Legacy Broken Entry', 'Good Wish',
+  ]);
+  // The equipment refresh already succeeded, so a wishlist sync failure must not
+  // be reported as a failed refresh.
+  assert.match(optionsSource, /Wishlist sync skipped: ' \+ e\.message/);
   await Promise.all([
     sendWorkerMessage({ type: 'MUTATE_WISHLIST', profileId: 'p', action: 'toggle',
       item: { raidlootId: '501', name: 'Queued One', slot: 'Head', stats: { HP: 10 } } }),

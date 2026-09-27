@@ -250,6 +250,13 @@ main {
   background: linear-gradient(145deg, rgba(132, 101, 35, .38), rgba(60, 45, 16, .2) 72%);
 }
 .gear-slot.wishlist-gear-slot.filled .gear-slot-name { color: #f0d18a; }
+/* A wanted item whose slot could not be resolved still has to be visible, so it
+   gets a full-width row instead of being dropped from the grid. */
+.gear-slot.wishlist-gear-slot.unplaced {
+  grid-column: 1 / -1;
+  min-height: 46px;
+}
+.gear-slot.wishlist-gear-slot.unplaced .gear-slot-text { overflow-wrap: anywhere; }
 .last-equip {
   display: flex;
   align-items: center;

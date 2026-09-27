@@ -37,7 +37,7 @@
             <div id="add-character-menu-list" class="add-character-menu-list hidden" role="menu" aria-label="Ways to add a character">
               <button type="button" class="add-character-option" data-add-option="raidloot" role="menuitem">
                 <span class="option-title">Import from RaidLoot <span class="recommended-label">Recommended</span></span>
-                <span class="option-desc">Paste a profile URL or numeric ID to import worn gear and stats</span>
+                <span class="option-desc">Paste a profile URL or numeric ID to import worn gear, stats, and the RaidLoot wishlist</span>
               </button>
               <button type="button" class="add-character-option" data-add-option="everquest" role="menuitem">
                 <span class="option-title">Import from EverQuest</span>
@@ -71,7 +71,7 @@
           <button id="btn-close-add-panel" class="btn btn-small" type="button">Close</button>
         </div>
         <div id="add-panel-raidloot" class="add-panel-option hidden">
-          <p class="hint">Paste a RaidLoot profile URL or its numeric profile ID. This imports the worn items and their stats directly.</p>
+          <p class="hint">Paste a RaidLoot profile URL or its numeric profile ID. This imports the worn items, their stats, and the public RaidLoot wishlist into this character. The wishlist import is one-way and does not remove local entries.</p>
           <div class="import-controls">
             <div class="raidloot-import-row">
               <input type="text" id="raidloot-profile" placeholder="e.g. https://www.raidloot.com/profile/12345">
@@ -117,7 +117,7 @@
         <div class="editor-actions">
           <button id="btn-back" class="btn">← Back</button>
           <button id="btn-delete-profile" class="btn btn-danger">Delete</button>
-          <button id="btn-refresh-raidloot" class="btn" hidden aria-label="Refresh worn equipment and augment data from RaidLoot">Refresh from RaidLoot</button>
+          <button id="btn-refresh-raidloot" class="btn" hidden aria-label="Refresh worn equipment, augment data, and wishlist from RaidLoot">Refresh from RaidLoot</button>
           <button id="btn-save-profile" class="btn btn-primary">Save</button>
         </div>
       </div>

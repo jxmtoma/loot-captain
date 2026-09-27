@@ -168,12 +168,12 @@ function renderProfileList() {
       openEditor(id);
     });
     actions.appendChild(manageBtn);
-    // Fresh from RaidLoot: re-pull worn items for profiles imported from a
-    // RaidLoot profile, without opening the editor.
+    // Fresh from RaidLoot: re-pull worn items and merge the public wishlist for
+    // profiles imported from a RaidLoot profile, without opening the editor.
     const raidlootId = raidlootImportedProfileId(p.importedFrom);
     if (raidlootId) {
       const refreshBtn = el('button', 'btn btn-small profile-refresh-raidloot', 'Fresh from RaidLoot');
-      refreshBtn.setAttribute('aria-label', 'Refresh worn equipment and augment data from RaidLoot for ' + (p.name || 'this character'));
+      refreshBtn.setAttribute('aria-label', 'Refresh worn equipment, augment data, and wishlist from RaidLoot for ' + (p.name || 'this character'));
       refreshBtn.disabled = refreshingProfileId === id;
       refreshBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -369,16 +369,107 @@ function renderLastEquip() {
   host.appendChild(undo);
 }
 
+// RaidLoot slot strings are not single slots: a one-hand weapon reads
+// "Primary, Secondary" and an augment reads "All except Charm, Range, Primary".
+// Treating the whole string as one slot name hides those entries in "Other", so
+// resolve it to the individual slot roots an entry can actually occupy. An
+// install hint such as "Primary, Secondary (in General7-Slot22)" names where the
+// item sits, not what it fits, so the parenthetical is dropped.
+function editorSlotRoots(raw) {
+  const text = String(raw || '').trim().replace(/\s*\([^()]*\)\s*$/, '');
+  const allExcept = text.match(/^all\s+except\s+(.+)$/i);
+  if (allExcept) {
+    const excluded = new Set(allExcept[1].split(/\s*(?:,|\/|\band\b)\s*/i).map(normalizeEditorSlot));
+    return EQUIPMENT_SLOTS.filter((key) => !excluded.has(key));
+  }
+  if (/^all$/i.test(text)) return EQUIPMENT_SLOTS.slice();
+  return [...new Set(text.split(/\s*(?:,|\/|\band\b)\s*/i).map(normalizeEditorSlot)
+    .filter((key) => EQUIPMENT_SLOTS.includes(key)))];
+}
+
+// Wishlist entries store RaidLoot's own stat labels, so the weapon ratio can be
+// read straight off them. RaidLoot publishes "Ratio" (damage per delay) next to
+// DMG and Delay; fall back to DMG/Delay so an entry captured without a Ratio, or
+// added by hand, still orders sensibly.
+function wishlistStatNum(entry, names) {
+  const stats = entry && entry.stats;
+  if (!stats || typeof stats !== 'object') return null;
+  for (const name of names) {
+    const key = Object.keys(stats).find((candidate) => String(candidate).trim().toLowerCase() === name);
+    if (!key) continue;
+    const value = stats[key];
+    if (Number.isFinite(Number(value && value.num))) return Number(value.num);
+    const raw = String((value && value.raw) || '').replace(/[^\d.]/g, '');
+    if (raw && Number.isFinite(Number(raw))) return Number(raw);
+  }
+  return null;
+}
+
+function wishlistWeaponRatio(entry) {
+  const ratio = wishlistStatNum(entry, ['ratio', 'weapon ratio']);
+  if (ratio != null) return ratio;
+  const damage = wishlistStatNum(entry, ['damage', 'dmg']);
+  const delay = wishlistStatNum(entry, ['delay']);
+  return damage != null && delay > 0 ? damage / delay : null;
+}
+
+// Weapon entries cannot be filed under a single box because they name both hands,
+// so they are ranked by weapon ratio and dealt into the hands best-first: the
+// stronger weapon belongs in the main hand. A two-hand weapon holds the main hand
+// on its own, so a one-hand that cannot share with it has no box and falls through
+// to "Other" rather than disappearing.
+function dealWishlistWeapons(entries, grouped, unplaced) {
+  const ranked = entries.slice().sort((left, right) => {
+    const a = wishlistWeaponRatio(left);
+    const b = wishlistWeaponRatio(right);
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    return b - a;
+  });
+  let twoHanded = false;
+  for (const entry of ranked) {
+    const roots = editorSlotRoots(entry.slot);
+    const oneHand = roots.includes('primary') && roots.includes('secondary');
+    let target = '';
+    if (roots.includes('range') && !grouped.range) target = 'range';
+    else if (roots.includes('primary') && !grouped.primary) {
+      target = 'primary';
+      if (!oneHand) twoHanded = true;
+    } else if (roots.includes('secondary') && !grouped.secondary && !twoHanded) target = 'secondary';
+    if (!target) {
+      unplaced.push(entry);
+      continue;
+    }
+    (grouped[target] || (grouped[target] = [])).push(entry);
+  }
+}
+
 // Wishlist entries laid out on the slot grid, so an empty slot reads as "still
 // nothing wanted here". Kept separate from makeSlot, which is tied to item
 // indices, augment parenting and selection that wishlist entries do not have.
+// An entry whose slot is unknown or unresolvable has no box of its own, so it is
+// collected into an "Other" row: the grid must never hide a wanted item.
 function wishlistSlotGrid() {
   const grouped = {};
+  const unplaced = [];
+  const drawable = new Set(INVENTORY_SLOT_LAYOUT.map(({ slot }) => slotRoot(slot)));
+  const weapons = [];
   for (const entry of (editingProfile.wishlist || [])) {
+    const roots = editorSlotRoots(entry.slot || '');
+    if (roots.includes('primary') || roots.includes('secondary')) {
+      weapons.push(entry);
+      continue;
+    }
     const root = slotRoot(normalizeEditorSlot(entry.slot || ''));
+    if (!drawable.has(root)) {
+      unplaced.push(entry);
+      continue;
+    }
     (grouped[root] || (grouped[root] = [])).push(entry);
   }
-  return INVENTORY_SLOT_LAYOUT.map(({ slot, label, column, row }) => {
+  dealWishlistWeapons(weapons, grouped, unplaced);
+  const boxes = INVENTORY_SLOT_LAYOUT.map(({ slot, label, column, row }) => {
     const root = slotRoot(slot);
     const pairedIndex = /-[12]$/.test(slot) ? Number(slot.slice(-1)) - 1 : -1;
     const all = grouped[root] || [];
@@ -397,6 +488,27 @@ function wishlistSlotGrid() {
     box.appendChild(text);
     return box;
   });
+  if (unplaced.length) {
+    const box = el('div', 'gear-slot wishlist-gear-slot filled unplaced');
+    box.style.gridColumn = '1 / -1';
+    box.style.gridRow = String(INVENTORY_SLOT_LAYOUT.length ? 9 : 1);
+    const names = unplaced.map((entry) => entry.name || 'Unnamed item').join(' / ');
+    box.title = 'Wanted, no free box: ' + unplaced
+      .map((entry) => entry.name + (entry.slot ? ' (' + entry.slot + ')' : '')).join(', ');
+    const glyph = el('span', 'gear-glyph', '✦');
+    glyph.setAttribute('aria-hidden', 'true');
+    box.appendChild(glyph);
+    const text = el('div', 'gear-slot-text');
+    // An entry lands here either because its slot could not be resolved or because
+    // the slot it fits is already taken by a stronger entry, so the label has to
+    // cover both reasons rather than claim the slot is unknown.
+    const unresolved = unplaced.every((entry) => !editorSlotRoots(entry.slot).length);
+    text.appendChild(el('span', 'gear-slot-label', unresolved ? 'Other / slot unknown' : 'Other / no free slot'));
+    text.appendChild(el('span', 'gear-slot-name', names));
+    box.appendChild(text);
+    boxes.push(box);
+  }
+  return boxes;
 }
 
 function wishlistRows() {
@@ -1123,6 +1235,36 @@ function mapRaidlootItem(item) {
   };
 }
 
+function mapRaidlootWishlistItem(item) {
+  return {
+    raidlootId: item.raidlootId || item.id || '',
+    opendkpHost: '',
+    opendkpId: '',
+    name: item.name || '',
+    slot: item.slot || '',
+    isAugment: !!item.isAugment,
+    augmentTypes: Array.isArray(item.augmentTypes) ? [...item.augmentTypes] : [],
+    stats: statsToPlain(item.stats),
+    effects: Array.isArray(item.effects) ? item.effects.map((effect) => ({ ...effect })) : [],
+    effectsKnown: item.effectsKnown === true,
+    addedAt: Number(item.addedAt) > 0 ? Number(item.addedAt) : Date.now(),
+  };
+}
+
+function raidlootWishlistItems(profile) {
+  // A RaidLoot item ID is the wishlist identity, so an item whose slot could
+  // not be read is still worth importing rather than being dropped.
+  return (profile && Array.isArray(profile.wishlist) ? profile.wishlist : [])
+    .map(mapRaidlootWishlistItem)
+    .filter((item) => item.raidlootId && item.name);
+}
+
+async function syncRaidlootWishlist(profileId, wishlist) {
+  const response = await chrome.runtime.sendMessage({ type: 'SYNC_RAIDLOOT_WISHLIST', profileId, wishlist });
+  if (!response || !response.ok) throw new Error(response && response.error || 'Could not sync the RaidLoot wishlist');
+  return response;
+}
+
 function raidlootProfileId(value) {
   const input = String(value || '').trim();
   const urlMatch = input.match(/\/profile\/(\d+)(?:[/?#]|$)/i);
@@ -1142,7 +1284,8 @@ function updateRaidlootRefreshButton() {
 }
 
 // List-row variant of the editor's "Refresh from RaidLoot" action: pull the
-// latest worn items for an imported profile without opening the editor.
+// latest worn items and merge the public wishlist for an imported profile
+// without opening the editor.
 async function refreshProfileFromList(id, button, profileId) {
   const savedProfile = profiles[id];
   if (!savedProfile || !profileId || refreshingProfileId) return;
@@ -1155,6 +1298,7 @@ async function refreshProfileFromList(id, button, profileId) {
     if (!response || !response.ok || !response.profile) throw new Error(response && response.error || 'No profile returned');
     const items = (response.profile.items || []).map(mapRaidlootItem).filter((item) => item.name && item.slot);
     if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
+    const wishlist = raidlootWishlistItems(response.profile);
     profiles[id] = { ...savedProfile, items, statsVersion: PROFILE_STATS_VERSION };
     try {
       await saveAll([id]);
@@ -1162,6 +1306,12 @@ async function refreshProfileFromList(id, button, profileId) {
     } catch (e) {
       profiles[id] = savedProfile;
       throw e;
+    }
+    try {
+      const wishlistResult = await syncRaidlootWishlist(id, wishlist);
+      profiles = wishlistResult.profiles || profiles;
+    } catch (e) {
+      appendDebugLog([{ name: savedProfile.name || 'RaidLoot profile ' + profileId, result: 'error', message: 'wishlist sync skipped: ' + e.message }]);
     }
   } catch (e) {
     appendDebugLog([{ name: savedProfile.name || 'RaidLoot profile ' + profileId, result: 'error', message: e.message }]);
@@ -1188,6 +1338,7 @@ async function refreshRaidlootProfile() {
     if (!response || !response.ok || !response.profile) throw new Error(response && response.error || 'No profile returned');
     const items = (response.profile.items || []).map(mapRaidlootItem).filter((item) => item.name && item.slot);
     if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
+    const wishlist = raidlootWishlistItems(response.profile);
     if (editingProfile !== profile || editingId !== requestProfileId) return;
     profiles[requestProfileId] = { ...savedProfile, items, statsVersion: PROFILE_STATS_VERSION };
     try {
@@ -1196,10 +1347,22 @@ async function refreshRaidlootProfile() {
       profiles[requestProfileId] = savedProfile;
       throw e;
     }
+    // The equipment refresh already succeeded; a wishlist problem must not
+    // report the whole refresh as failed.
+    let wishlistNote = '';
+    try {
+      const wishlistResult = await syncRaidlootWishlist(requestProfileId, wishlist);
+      profiles = wishlistResult.profiles || profiles;
+      if (wishlistResult.skipped) wishlistNote = ' ' + wishlistResult.skipped + ' wishlist item(s) could not be read.';
+    } catch (e) {
+      wishlistNote = ' Wishlist sync skipped: ' + e.message;
+    }
+    if (editingProfile !== profile || editingId !== requestProfileId) return;
     profile.items = items;
+    profile.wishlist = (profiles[requestProfileId].wishlist || []).map((entry) => ({ ...entry }));
     profile.statsVersion = PROFILE_STATS_VERSION;
     renderEditor();
-    $('#editor-status').textContent = 'Refreshed ' + items.length + ' items from RaidLoot.';
+    $('#editor-status').textContent = 'Refreshed ' + items.length + ' items and synced ' + wishlist.length + ' wishlist items from RaidLoot.' + wishlistNote;
   } catch (e) {
     $('#editor-status').textContent = 'RaidLoot refresh failed: ' + e.message;
   } finally {
@@ -1238,7 +1401,7 @@ async function fetchStatsForItems(items, onProgress) {
   }
 }
 
-function addImportedProfile({ name, cls, level, server, items, statsVersion, importedFrom }) {
+function addImportedProfile({ name, cls, level, server, items, wishlist, statsVersion, importedFrom }) {
   const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   profiles[id] = {
     id,
@@ -1249,7 +1412,11 @@ function addImportedProfile({ name, cls, level, server, items, statsVersion, imp
     statsVersion: statsVersion || 0,
     items,
     importedFrom: importedFrom || '',
-    wishlist: [],
+    wishlist: (Array.isArray(wishlist) ? wishlist : []).map((item) => ({
+      ...item,
+      stats: Object.assign({}, item.stats || {}),
+      effects: Array.isArray(item.effects) ? item.effects.map((effect) => ({ ...effect })) : [],
+    })),
   };
   return id;
 }
@@ -1270,17 +1437,19 @@ async function importRaidlootProfile() {
     const profile = response.profile;
     const items = (profile.items || []).map(mapRaidlootItem).filter((item) => item.name && item.slot);
     if (!items.length) throw new Error('RaidLoot returned no worn items; check the profile ID');
+    const wishlist = raidlootWishlistItems(profile);
     const id = addImportedProfile({
       name: profile.name || 'RaidLoot ' + profileId,
       cls: profile.cls,
       level: profile.level,
       items,
+      wishlist,
       statsVersion: PROFILE_STATS_VERSION,
       importedFrom: 'raidloot.com/profile/' + profileId,
     });
     await saveAll([id]);
     const loadedCount = items.filter((item) => Object.keys(item.stats).length).length;
-    status.textContent = 'Imported ' + items.length + ' items (' + loadedCount + ' with stats) from RaidLoot.';
+    status.textContent = 'Imported ' + items.length + ' items (' + loadedCount + ' with stats) and ' + wishlist.length + ' wishlist items from RaidLoot.';
     status.className = 'import-status success';
     renderProfileList();
   } catch (e) {

@@ -170,6 +170,21 @@ function raidlootIconUrl(value) {
   return /^https:\/\/(?:cdn\.raidloot\.com|dlil5rqe0ybd2\.cloudfront\.net)\//i.test(url) ? url : '';
 }
 
+// A wishlisted item that is not worn is rendered with class "None", and some
+// rows carry no "Slot:" label either. Its "Find upgrades" link still names the
+// real slot, so use it to recover weapons and other gear the grid needs.
+function parserUpgradeLinkSlot(node) {
+  const link = node.querySelector('a[href*="upgrade="]');
+  const href = link && link.getAttribute ? (link.getAttribute('href') || '') : '';
+  const match = String(href).match(/[?&]slot=([^&#]+)/i);
+  if (!match) return '';
+  try {
+    return decodeURIComponent(match[1]);
+  } catch (e) {
+    return match[1];
+  }
+}
+
 function parserCanonicalSingleSlot(raw) {
   if (!raw) return null;
   let s = String(raw).trim().toLowerCase().replace(/[\s_]+/g, '-');
@@ -266,12 +281,63 @@ function parseProfileMetadata(title, heading, bodyText) {
   return metadata;
 }
 
+// A RaidLoot profile page lists wishlisted items as a header strip of icons,
+// each pointing at the item detail node with data-target="#itemNNN". Those nodes
+// are the authoritative wishlist even when they carry no slot class (a wished
+// item that is not worn has class "None") or no .wish-remove link. Worn copies
+// share the same data-id, so prefer the copy that is not part of the worn grid.
+function parserWishlistIds(doc) {
+  const ids = new Set();
+  for (const container of doc.querySelectorAll('.icons')) {
+    const targets = Array.from(container.children)
+      .map((child) => (child.dataset && child.dataset.target) || '');
+    // A wishlist strip points only at item detail nodes; inventory strips point
+    // at slot classes such as ".Head" and are ignored.
+    if (targets.length && targets.every((target) => /^#item\d+$/.test(target))) {
+      for (const target of targets) ids.add(target.slice('#item'.length));
+    }
+  }
+  return ids;
+}
+
 function parseProfileHtml(html, profileId) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const inv = doc.getElementById('inv') || doc;
-  const parsedItems = Array.from(inv.querySelectorAll('div.item[id^="item"][data-id]')).map(parseItemNode);
-  const wornEquipment = parsedItems.filter((it) => it && !it.isAugment && !it.isWishlist && !it.isTotalsRow && it.slotKey);
-  const items = parsedItems.filter((it) => it && !it.isWishlist && !it.isTotalsRow && it.slotKey).map((item) => {
+  const wishIds = parserWishlistIds(doc);
+  const nodes = Array.from(inv.querySelectorAll('div.item[id^="item"][data-id]'));
+  const parsedItems = nodes.map(parseItemNode);
+  // Whether a node is worn is decided by RaidLoot's own "None" marker, not by
+  // whether a slot could be resolved. A wishlisted item the character does not own
+  // is a loose class-"None" node that can still resolve a slot from its "Slot:"
+  // label or its "Find upgrades" link; counting it as equipped would invent gear
+  // the character does not have and throw off every slot comparison downstream.
+  const isWornNode = (item) => !!item && !item.isTotalsRow && !item.isNoneSlot && !!item.slotKey;
+  const isWornEquipment = (item) => isWornNode(item) && !item.isAugment && !item.isWishlist;
+  const wornEquipment = parsedItems.filter(isWornEquipment);
+  // Collect wishlist entries by RaidLoot ID. A worn and a wishlisted copy of the
+  // same item share a data-id, so prefer the copy that is not in the worn grid.
+  const wishlistById = new Map();
+  nodes.forEach((_, index) => {
+    const item = parsedItems[index];
+    if (!item || item.isTotalsRow || !item.id) return;
+    if (!item.isWishlist && !wishIds.has(String(item.id))) return;
+    const wornCopy = isWornNode(item);
+    const previous = wishlistById.get(String(item.id));
+    if (!previous || (previous.wornCopy && !wornCopy)) wishlistById.set(String(item.id), { item, wornCopy });
+  });
+  // Wishlist entries are stored by RaidLoot ID, so a slot is optional here: a
+  // wished item whose slot cannot be canonicalized must not be dropped.
+  const wishlist = [...wishlistById.values()].filter(({ item }) => item.name).map(({ item }) => ({
+    raidlootId: item.id,
+    name: item.name,
+    slot: item.slot || '',
+    isAugment: item.isAugment,
+    augmentTypes: item.augmentTypes,
+    stats: item.stats,
+    effects: item.effects,
+    effectsKnown: item.effectsKnown,
+  }));
+  const items = parsedItems.filter((item) => isWornNode(item) && !item.isWishlist).map((item) => {
     if (!item.isAugment) return item;
     const slot = parserInstalledSlot(item.slot) || parserAugmentLocation(item.stats && item.stats.Slot && item.stats.Slot.raw);
     if (!slot) return { ...item, parentId: item.parentId || '' };
@@ -291,7 +357,7 @@ function parseProfileHtml(html, profileId) {
   const title = titleEl ? titleEl.textContent.trim() : '';
   const headingEl = doc.querySelector('h1') || doc.querySelector('h2');
   const metadata = parseProfileMetadata(title, headingEl && headingEl.textContent, doc.body && doc.body.textContent);
-  return { id: profileId, ...metadata, items, fetchedAt: Date.now() };
+  return { id: profileId, ...metadata, items, wishlist, fetchedAt: Date.now() };
 }
 
 function parseItemPage(html, expectedId) {
@@ -377,6 +443,13 @@ function parseItemNode(node) {
     if (slotClasses.length) slot = slotClasses.join(', ');
   }
   if (!slot && stats.Slot) slot = stats.Slot.raw;
+  // Wishlisted rows often have neither a slot class nor a readable "Slot:"
+  // label. The "Find upgrades" link still names the slot, which is what puts a
+  // wished weapon in its weapon box instead of leaving it unplaced.
+  if (!parserCanonicalSlot(slot)) {
+    const linkedSlot = parserUpgradeLinkSlot(node);
+    if (parserCanonicalSlot(linkedSlot)) slot = linkedSlot;
+  }
   const classLine = (node.textContent || '').split(/\r?\n/).find((line) => /^\s*class(?:es)?\s*:/i.test(line));
   const classes = parserParseClasses((stats.Class && stats.Class.raw) || (classLine && classLine.replace(/^\s*class(?:es)?\s*:\s*/i, '')));
   const isAugment = (node.classList && node.classList.contains('augment')) || /^aug_/i.test((stats.Type && stats.Type.raw) || '');
@@ -387,7 +460,13 @@ function parseItemNode(node) {
   const setQuery = setMatch ? setMatch[1].trim() : '';
   const isWishlist = !!node.querySelector('.wish-remove');
   const isTotalsRow = (node.classList && node.classList.contains('Total')) || node.id === 'item0';
-  return { id, name, icon, slot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects).map((effect) => ({ ...effect, provenance: 'raidloot' })), effectsKnown: false, setQuery, isAugment, augmentTypes, augSlot: isAugment ? parserAugmentSlot(node, node.textContent) : '', isWishlist, isTotalsRow };
+  // RaidLoot marks a node that belongs to no inventory cell with the literal class
+  // "None". That is the authoritative signal that the item is wishlisted but not
+  // worn, and it is the only such marker: a worn item is always inside a cell and
+  // never carries this class, even bank cells (General7-Slot7) whose slot class
+  // does not canonicalize and whose slot therefore comes from its "Slot:" label.
+  const isNoneSlot = !!(node.classList && node.classList.contains('None'));
+  return { id, name, icon, slot, isNoneSlot, slotKey: parserCanonicalSlot(slot), classes, stats, effects: parserNormalizeEffects(effects).map((effect) => ({ ...effect, provenance: 'raidloot' })), effectsKnown: false, setQuery, isAugment, augmentTypes, augSlot: isAugment ? parserAugmentSlot(node, node.textContent) : '', isWishlist, isTotalsRow };
 }
 
 // AA definitions are catalog data, not the character's purchased ranks.

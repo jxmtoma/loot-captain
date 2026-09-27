@@ -12,7 +12,7 @@ Compare EverQuest gear before you spend raid time or currency.
 
 Loot Captain helps you:
 
-- Import worn gear from a public RaidLoot profile or an EverQuest `/output inventory` file.
+- Import worn gear, augments, and the public RaidLoot wishlist from a public RaidLoot profile, or worn gear from an EverQuest `/output inventory` file.
 - Manage multiple character profiles and choose your scoring formula.
 - See upgrade, downgrade, and per-stat differences on RaidLoot and OpenDKP.
 - Compare numeric stats, augments, spell focus effects, weapon procs, and Damage/Delay ratio.

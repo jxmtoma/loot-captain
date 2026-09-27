@@ -22,7 +22,7 @@ The first release should improve decisions without claiming to simulate the Ever
 - Class eligibility, paired slots, one-hand/two-hand layouts, and per-slot comparison targets.
 - Versioned per-character score formulas, with the legacy global setting as a fallback.
 - Weapon `Damage / Delay` ratio and ratio delta. This is a useful proxy, not a DPS forecast.
-- A local per-character Loot Captain wishlist with RaidLoot and live OpenDKP highlighting. This is separate from RaidLoot's own wishlist.
+- A local per-character Loot Captain wishlist with RaidLoot and live OpenDKP highlighting. Importing or refreshing a RaidLoot profile merges its public wishlist one-way into the local list; it does not update or remove entries in RaidLoot.
 - Cached canonical numeric stats and structured effects for wishlist comparisons; scores are never cached.
 
 Important gaps:
