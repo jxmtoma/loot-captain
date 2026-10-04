@@ -22,7 +22,7 @@
   <main class="shell prose">
     <p class="eyebrow">Data use and retention</p>
     <h1>Privacy Policy</h1>
-    <p class="effective">Effective date: September 2, 2026</p>
+    <p class="effective">Effective date: October 4, 2026</p>
     <p class="lede">Loot Captain is a local-first browser extension for comparing EverQuest gear. This policy explains what the extension stores and what network requests it makes.</p>
 
     <h2>Data handled</h2>
@@ -32,7 +32,9 @@
       <li>Per-character wishlist item identities, slots, cached stats, and effects used for highlighting and comparison.</li>
       <li>The selected character and score formula.</li>
       <li>Imported profile data and fetched public RaidLoot item stats used in comparisons.</li>
+      <li>The inventory export filename for file-imported profiles.</li>
     </ul>
+    <p>Where the browser supports it and the user permits it, "Fresh from file" stores a read-only file handle per profile in extension-local IndexedDB. The browser may ask for permission again. The inventory export and handle are not uploaded; imported item names may still be sent to RaidLoot for missing-stat lookups.</p>
     <p>Loot Captain does not collect email addresses, passwords, payment information, precise location, browsing history, analytics identifiers, or advertising identifiers. Character and item names are retained locally and may be sent to RaidLoot only when an item lookup is needed. For a statless class-specific armor token, each selected character's class and a public armor-set query may also be sent to RaidLoot on the first resolution; the resulting set is cached locally. Allakhazam and EQResource are developer-time catalog sources only and are never contacted by the extension.</p>
     <p>When a comparison is displayed, the extension renders relevant worn-item and candidate-item names, badges, and stat differences into the DOM of the visited RaidLoot or OpenDKP page. This is local page rendering, not collection of browsing history.</p>
 
@@ -48,6 +50,7 @@
 
     <h2>Retention and deletion</h2>
     <p>Local data remains in extension storage until the user deletes a profile, clears extension storage, or uninstalls the extension. Fetched public item stats may be refreshed or replaced automatically.</p>
+    <p>Deleting a profile attempts to remove its remembered inventory file handle. Missing, moved, or denied handles are forgotten so the next refresh can ask for a file again. Clearing all extension data or uninstalling removes the handles. Clearing only <code>chrome.storage.local</code> may leave the IndexedDB handle data behind.</p>
 
     <h2>Security and changes</h2>
     <p>The extension uses minimum declared permissions for local storage, public RaidLoot fetching, and local HTML parsing. It does not execute remotely hosted code. Policy changes will be published with a new extension release and reflected in the effective date.</p>

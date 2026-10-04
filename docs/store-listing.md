@@ -13,6 +13,7 @@ Compare EverQuest gear before you spend raid time or currency.
 Loot Captain helps you:
 
 - Import worn gear, augments, and the public RaidLoot wishlist from a public RaidLoot profile, or worn gear from an EverQuest `/output inventory` file.
+- Refresh file-imported worn gear with "Fresh from file", remembering a read-only file handle when the browser supports it and the user permits it.
 - Manage multiple character profiles and choose your scoring formula.
 - See upgrade, downgrade, and per-stat differences on RaidLoot and OpenDKP.
 - Compare numeric stats, augments, spell focus effects, weapon procs, and Damage/Delay ratio.
@@ -26,13 +27,13 @@ Profiles and settings stay in browser-local storage. Loot Captain has no account
 
 Support ongoing development: https://github.com/sponsors/jxmtoma
 
-### What's new in 0.5.0
+### What's new in 0.5.1
 
-- One "+ Add Character" menu on the options page now offers all three ways to add a character: import from RaidLoot (recommended), import from an EverQuest `/output inventory` file, and a blank new character. The two separate import cards are gone.
-- Added optional, clearly labeled reference estimates next to the preference score: a melee DPS estimate for melee classes, partial physical survivability estimates for level-100 Warriors, Paladins and Shadowknights, and partial direct-heal estimates for level-100 Clerics, Druids and Shamans. Every estimate shows its assumptions, uses one shared editable scenario per character, and stays separate from the preference score. Viewing an estimate saves nothing.
-- Added an AA checklist and character-stat projection panel in the character editor, with optional snapshots and local observation/approval records.
-- Versioned per-character score formulas and role preference presets with weighted contribution breakdowns; incomplete weighted inputs never produce a numeric score.
-- Faycite augments are excluded from all estimate models; their numeric stats and effects cannot affect the estimates.
+- Refresh file-imported characters from their inventory export. A remembered read-only file handle can avoid choosing the export again; moved, missing, or denied files can be selected again.
+- Prevent a file refresh from recreating a character deleted while reading or enriching the export, and keep late refresh errors out of a newly selected editor.
+- Import and sync the public RaidLoot wishlist into local character profiles, preserving unrelated local wishlist entries.
+- Place dual-wield weapons by Damage/Delay ratio and support secondary weapon comparisons.
+- Link class-specific armor tokens to the armor each selected character receives, including alternate variants, wishlist matches, and wanted-character labels.
 
 The armor catalog and estimates use offline, source-reviewed definitions; they do not use a live crawler or request new permissions. Incomplete or unavailable RaidLoot sets remain unresolved. This release adds no permissions and no new hosts.
 
@@ -69,6 +70,8 @@ Use these values in the Developer Dashboard and keep them consistent with [the p
 - Certification: certify that the extension complies with the Chrome Web Store User Data Policy and Limited Use requirements.
 - Privacy policy URL: `https://jxmtoma.github.io/loot-captain/privacy-policy.html` (enable the repository's GitHub Pages workflow before submission).
 
+File refresh also stores the inventory export filename with the profile and, when the user permits it and the browser supports it, a read-only file handle in extension-local IndexedDB. The export and handle are not uploaded. Imported item names may still be sent to RaidLoot for missing-stat lookup. Keep these disclosures in the hosted privacy policy before submission.
+
 ## Graphic assets
 
 The repository includes current, correctly sized PNGs in `store-assets/`:
@@ -84,11 +87,12 @@ The repository includes current, correctly sized PNGs in `store-assets/`:
 
 The store icon is `icons/icon128.png`. A YouTube promotional video link remains a manual listing step because no video is included in this repository.
 
-## Release submission checklist for 0.5.0
+## Release submission checklist for 0.5.1
 
 - Run `node tests/regression.js`.
 - Run `python3 tools/generate_armor_token_catalog.py --check`.
 - Run `swift tools/generate_store_visuals.swift` from the repository root when the UI changed, and re-upload the refreshed screenshots.
-- Run `./tools/package-extension.sh` and confirm `dist/loot-captain-v0.5.0.zip`. The script keeps only the newest two archives, so the previous release stays available to roll back to.
+- Confirm current and pending versions on the existing Chrome and Edge listings before finalizing version 0.5.1.
+- Package only runtime files to a new archive filename and verify CRC, entry inventory, source-byte equality and SHA-256. Preserve all previous archives; the repository's packaging script prunes older ZIPs.
 - Load unpacked for a smoke test, profile switch, and variant check before manually uploading to the Chrome Web Store / Edge.
 - Verify the hosted privacy policy before submission.

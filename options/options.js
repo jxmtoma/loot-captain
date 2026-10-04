@@ -37,6 +37,7 @@ let activeInventoryTab = 'equipment';
 let wishlistStyle = 'slots';
 let refreshingProfileId = '';
 let refreshedProfileId = ''; // list row that briefly reports a finished file refresh
+let fileRefresh = null; // deletion cancels an in-flight file refresh
 
 // ---------- Storage ----------
 async function loadAll() {
@@ -275,6 +276,7 @@ function renderEditorProfileSelector() {
 
 async function deleteProfileById(id) {
   if (!profiles[id] || !confirm('Delete ' + (profiles[id].name || 'this character') + '?')) return false;
+  if (fileRefresh && fileRefresh.id === id) fileRefresh.cancelled = true;
   delete profiles[id];
   compareIds = compareIds.filter((cid) => cid !== id);
   await saveAll([], [id]);
@@ -1423,24 +1425,37 @@ async function refreshProfileFromFile(id) {
   if (file.name !== savedProfile.importedFrom && !confirm((savedProfile.name || 'This character') + ' was imported from ' +
     savedProfile.importedFrom + '. Replace its worn items with ' + file.name + '?')) return null;
   refreshingProfileId = id;
+  const refresh = fileRefresh = { id, cancelled: false };
   renderProfileList();
   updateRaidlootRefreshButton();
   try {
     const parsed = parseInventoryText(await file.text());
+    if (refresh.cancelled || !profiles[id]) return null;
     if (!parsed.length) throw new Error('No worn equipment found in ' + file.name + '. Make sure you exported with /output inventory.');
     const update = { items: await fetchStatsForItems(parsed), statsVersion: PROFILE_STATS_VERSION, importedFrom: file.name };
-    profiles[id] = { ...savedProfile, ...update };
+    if (refresh.cancelled || !profiles[id]) return null;
+    const previous = profiles[id];
+    profiles[id] = { ...previous, ...update };
     try {
       await saveAll([id]);
     } catch (e) {
-      profiles[id] = savedProfile;
+      if (!refresh.cancelled && profiles[id]) profiles[id] = previous;
       throw e;
     }
+    if (refresh.cancelled || !profiles[id]) {
+      delete profiles[id];
+      return null;
+    }
     if (handle) await inventoryHandleStore('readwrite', (store) => store.put(handle, id));
+    if (refresh.cancelled || !profiles[id]) {
+      await inventoryHandleStore('readwrite', (store) => store.delete(id));
+      return null;
+    }
     refreshedProfileId = id;
     setTimeout(() => { refreshedProfileId = ''; renderProfileList(); }, 3000);
     return update;
   } finally {
+    if (fileRefresh === refresh) fileRefresh = null;
     refreshingProfileId = '';
     renderProfileList();
     updateRaidlootRefreshButton();
@@ -1458,7 +1473,7 @@ async function refreshEditorFromFile() {
     renderItemList();
     $('#editor-status').textContent = 'Refreshed ' + update.items.length + ' items from ' + update.importedFrom + '.';
   } catch (e) {
-    $('#editor-status').textContent = 'File refresh failed: ' + e.message;
+    if (editingProfile === profile) $('#editor-status').textContent = 'File refresh failed: ' + e.message;
   }
 }
 

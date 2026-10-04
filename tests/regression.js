@@ -2310,6 +2310,7 @@ assert.equal(state.compatibleWishlistItem(
     assert.equal(gone.names, 'Newer Crown');
     assert.equal(gone.remembered, false);
   }
+  execFileSync(process.execPath, ['tests/inventory-file-refresh.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/missing-data-comparison.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/missing-data-storage.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/profile-scoring-effects.js'], { stdio: 'inherit' });

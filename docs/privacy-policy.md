@@ -1,6 +1,6 @@
 # Loot Captain Privacy Policy
 
-Effective date: September 2, 2026
+Effective date: October 4, 2026
 
 Loot Captain is a local-first browser extension for comparing EverQuest gear. This policy explains what the extension stores and what network requests it makes.
 
@@ -12,6 +12,9 @@ The extension stores the following in the browser's extension-local `chrome.stor
 - Per-character wishlist item identities, slots, cached stats, and effects used for highlighting and comparison.
 - The selected character and score formula.
 - Imported profile data and fetched public RaidLoot item stats used in comparisons.
+- The inventory export filename for file-imported profiles.
+
+Where the browser supports it and the user permits it, "Fresh from file" stores a read-only file handle per profile in extension-local IndexedDB. The browser may ask for permission again. The inventory export and handle are not uploaded; imported item names may still be sent to RaidLoot for missing-stat lookups.
 
 The extension does not transmit or collect email addresses, passwords, payment information, precise location, browsing history, analytics identifiers, or advertising identifiers. Character and item names entered by the user are retained locally as part of the profile and may be sent to RaidLoot only when needed for an item lookup. For a statless class-specific armor token, each selected character's class and a public armor-set query may also be sent to RaidLoot on the first resolution; the resulting set is cached locally. Allakhazam and EQResource are developer-time catalog sources only and are never contacted by the extension.
 
@@ -36,6 +39,8 @@ Loot Captain complies with the Chrome Web Store User Data Policy and its Limited
 ## Retention and deletion
 
 Local data remains in extension storage until the user deletes a profile, clears extension storage, or uninstalls the extension. Fetched public item stats may be refreshed or replaced automatically.
+
+Deleting a profile attempts to remove its remembered inventory file handle. Missing, moved, or denied handles are forgotten so the next refresh can ask for a file again. Clearing all extension data or uninstalling removes the handles. Clearing only `chrome.storage.local` may leave the IndexedDB handle data behind.
 
 ## Security
 
