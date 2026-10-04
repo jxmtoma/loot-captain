@@ -1150,14 +1150,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         }
         if (token) {
-          const characterClass = normalizeArmorClass(msg.characterClass);
-          if (!characterClass) {
-            sendResponse({ ok: false, error: 'Set a class on the selected character to resolve this armor token' });
+          // The reference character's class first, then every other selected
+          // character's: each gets its own class armor. A class the token does
+          // not serve is skipped while another one resolves.
+          const classes = [...new Set([msg.characterClass, ...(Array.isArray(msg.characterClasses) ? msg.characterClasses.slice(0, 16) : [])]
+            .map(normalizeArmorClass).filter(Boolean))];
+          if (!classes.length) {
+            sendResponse({ ok: false, needsClass: true, error: 'Set a class on the selected character to resolve this armor token' });
             break;
           }
           const itemCache = await getRaidlootItemCache();
-          const resolved = await resolveArmorToken(token, characterClass, itemCache);
-          sendResponse({ ok: true, item: resolved.item, alternatives: resolved.alternatives });
+          const settled = await Promise.allSettled(classes.map((cls) => resolveArmorToken(token, cls, itemCache)));
+          const items = [...new Map(settled.filter((result) => result.status === 'fulfilled')
+            .flatMap((result) => [result.value.item, ...result.value.alternatives])
+            .map((item) => [String(item.id), item])).values()];
+          if (!items.length) throw settled[0].reason;
+          sendResponse({ ok: true, item: items[0], alternatives: items.slice(1) });
           break;
         }
         const item = await lookupOrdinaryItem(name, itemId);

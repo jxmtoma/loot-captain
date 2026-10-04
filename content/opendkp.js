@@ -121,6 +121,11 @@
     return LC.parser && LC.parser.normalizeClass(LC.currentProfile && LC.currentProfile.cls) || '';
   }
 
+  // Every selected character's class, the reference character's first.
+  function profileClasses() {
+    return [...new Set((LC.currentProfiles || []).map((profile) => LC.parser.normalizeClass(profile.cls)).filter(Boolean))];
+  }
+
   function normalizeResolvedStats(stats) {
     return LC.parser.normalizeStats(stats || {}, 'raidloot');
   }
@@ -161,16 +166,19 @@
     const key = String(itemId || normalizedName(fallback && fallback.name) || '');
     if (!fallback || !fallback.name) return fallback;
     const cls = profileClass();
-    const cacheKey = key + '|' + (cls || 'none');
+    const classes = profileClasses();
+    const cacheKey = key + '|' + (classes.join(',') || 'none');
     if (!lookupCache.has(cacheKey)) {
       lookupCache.set(cacheKey, chrome.runtime.sendMessage({
         type: 'LOOKUP_ITEM_STATS',
         itemId,
         name: fallback.name,
         characterClass: cls,
+        characterClasses: classes,
       }).then((response) => {
         if (!response || !response.item) {
           if (response && response.error) fallback.lookupError = String(response.error);
+          if (response && response.needsClass) fallback.needsClass = true;
           return fallback;
         }
         const items = [response.item, ...(Array.isArray(response.alternatives) ? response.alternatives : [])]
@@ -181,11 +189,11 @@
           fallback.lookupError = response.error || 'Resolved item data is invalid';
           return fallback;
         }
-        const alternatives = [...new Map(items.map((item) => [item.raidlootId || item.name, item])).values()]
-          .sort((a, b) => normalizedName(a.name).localeCompare(normalizedName(b.name)));
-        const item = alternatives[0];
-        item.alternatives = alternatives;
-        return item;
+        // Worker order is kept: the reference character's class first, by name.
+        const alternatives = [...new Map(items.map((item) => [item.raidlootId || item.name, item])).values()];
+        // Every variant knows its siblings, so any of them can stand for the token.
+        for (const item of alternatives) item.alternatives = alternatives;
+        return alternatives[0];
       }).catch(() => {
         fallback.lookupError = fallback.lookupError || 'Could not resolve item stats';
         return fallback;
@@ -194,23 +202,73 @@
     return lookupCache.get(cacheKey);
   }
 
-  // A class-specific armor result may have a different RaidLoot name. Keep
-  // the source token name in the wishlist record while comparison uses cand.
-  function wishlistCandidate(cand) {
+  // A class-specific armor result may have a different RaidLoot name. The
+  // source token stays a wishlist identity of its own, so a wish still matches
+  // for a character whose class armor did not resolve (no class set, or a
+  // failed lookup).
+  function tokenCandidate(cand) {
     const isResolvedToken = cand.opendkpSourceName &&
       (normalizedName(cand.opendkpSourceName) !== normalizedName(cand.name) ||
         (Array.isArray(cand.alternatives) && cand.alternatives.length > 1));
     return isResolvedToken ? {
       ...cand,
       name: cand.opendkpSourceName,
-      // Variant IDs are comparison data; wishlist identity is the source token.
       raidlootId: '',
     } : cand;
   }
 
-  function highlightWanted(host, wishlistCand, target) {
-    const wanted = (LC.currentProfiles || [])
-      .some((profile) => LC.state.findWishlistEntry(profile, wishlistCand));
+  function isArmorToken(cand) {
+    return !!(cand.armorSetLabel || cand.needsClass);
+  }
+
+  // What cand is for one character. An ordinary item is the same for everyone;
+  // an armor token is the armor that character's class turns it into, and
+  // nothing at all for a character with no class set.
+  function profileVariants(profile, cand) {
+    const variants = Array.isArray(cand.alternatives) && cand.alternatives.length ? cand.alternatives : [cand];
+    if (!isArmorToken(cand)) return variants;
+    if (!LC.parser.normalizeClass(profile.cls)) return [];
+    return variants.filter((item) => item.raidlootId && LC.parser.classMatches(profile.cls, item.classes));
+  }
+
+  // A token and the armor it turns into are one wish. Returns what the
+  // profile's wishlist matches: one of its variants (wishlisted on RaidLoot, or
+  // starred here) before the bare token.
+  function wantedCandidate(profile, cand) {
+    return [...profileVariants(profile, cand), tokenCandidate(cand)]
+      .find((item) => LC.state.findWishlistEntry(profile, item)) || null;
+  }
+
+  function wantedProfiles(cand) {
+    return (LC.currentProfiles || []).filter((profile) => wantedCandidate(profile, cand));
+  }
+
+  // The armor picker lists one character's pieces: the first selected character
+  // that has any. Every other character follows it through variantFor.
+  function pickerVariants(cand) {
+    return (LC.currentProfiles || []).map((profile) => profileVariants(profile, cand)).find((list) => list.length) || [cand];
+  }
+
+  // The variant chosen in the armor picker, read from the picker itself.
+  function pickedVariant(host, cand) {
+    const list = pickerVariants(cand);
+    const select = host.querySelector(':scope > .lc-armor-variant-picker select');
+    return list[select ? Number(select.value) : 0] || list[0];
+  }
+
+  // What one character gets when `picked` is chosen: that piece if its class
+  // can wear it, else its own piece from the same armor set -- matched by
+  // position, since a set can hold two pieces for one slot.
+  function variantFor(profile, picked) {
+    const variants = profileVariants(profile, picked);
+    if (variants.includes(picked)) return picked;
+    const sameSet = (list) => list.filter((item) => item.armorSetLabel === picked.armorSetLabel);
+    const mine = sameSet(variants);
+    return mine[sameSet(pickerVariants(picked)).indexOf(picked)] || mine[0] || variants[0] || null;
+  }
+
+  function highlightWanted(host, cand, target) {
+    const wanted = wantedProfiles(cand).length;
     const highlightHost = target || host.closest('tr, li, .p-listbox-item') || host;
     const liveAuction = !!(highlightHost.matches && highlightHost.matches('tr') && highlightHost.querySelector(LIVE_AUCTION_TIMER)) ||
       !!host.closest('app-auctions');
@@ -219,31 +277,53 @@
 
   function decorateWishlist(host, cand) {
     if (!LC.currentProfiles.length || !host || !cand) return;
-    const wishlistCand = wishlistCandidate(cand);
-    const wanted = LC.currentProfiles
-      .map((profile) => ({ profile, entry: LC.state.findWishlistEntry(profile, wishlistCand) }))
-      .filter((match) => match.entry);
-    highlightWanted(host, wishlistCand);
-    for (const { profile, entry } of wanted) {
-      if (LC.state.wishlistNeedsMerge(entry, wishlistCand, profile)) {
-        LC.state.mergeWishlistCandidate(wishlistCand, profile.id).catch(() => {});
+    highlightWanted(host, cand);
+    const entries = [];
+    for (const profile of LC.currentProfiles) {
+      const match = wantedCandidate(profile, cand);
+      entries.push({
+        profile,
+        wanted: !!match,
+        // Each character toggles its own armor: the entry it already has, else
+        // its piece for the variant chosen in the armor picker (read on click).
+        get cand() { return match || variantFor(profile, pickedVariant(host, cand)) || undefined; },
+        error: !match && isArmorToken(cand) && !LC.parser.normalizeClass(profile.cls)
+          ? 'set a class to wishlist armor tokens' : '',
+      });
+      // Merging bridges the token's OpenDKP id onto the armor's RaidLoot id,
+      // which is what lets RaidLoot recognise a wish starred here. A bare-token
+      // match has no armor of its own to merge.
+      if (!match || (cand.raidlootId && !match.raidlootId)) continue;
+      if (LC.state.wishlistNeedsMerge(LC.state.findWishlistEntry(profile, match), match, profile)) {
+        LC.state.mergeWishlistCandidate(match, profile.id).catch(() => {});
       }
     }
     if (host.querySelector(':scope > .lc-wishlist-toggle')) return;
-    const toggle = LC.ui.buildWishlistToggle(wishlistCand, LC.currentProfiles.map((profile) => ({
-      profile,
-      wanted: wanted.some((match) => match.profile === profile),
-    })));
-    const pairs = LC.state.wishlistTargetPairs(LC.currentProfiles, wishlistCand);
-    const compare = pairs.length ? LC.ui.buildWishlistCompareButton(cand, pairs, LC.currentFormula) : null;
-    if (compare) compare.addEventListener('click', (event) => {
+    host.prepend(LC.ui.buildWishlistToggle(cand, entries));
+    decorateWishlistCompare(host, cand);
+  }
+
+  // "Compare wishlist": each character's own piece of the picked armor against
+  // the rest of its own wishlist. Rebuilt when the armor picker changes.
+  function decorateWishlistCompare(host, cand) {
+    host.querySelectorAll(':scope > .lc-wishlist-compare, :scope > .lc-wishlist-compare-panel').forEach((el) => el.remove());
+    const toggle = host.querySelector(':scope > .lc-wishlist-toggle');
+    if (!toggle) return;
+    const picked = pickedVariant(host, cand);
+    const pairs = LC.currentProfiles.flatMap((profile) => {
+      const item = variantFor(profile, picked);
+      return item ? LC.state.wishlistTargetPairs([profile], item).map((pair) => ({ ...pair, cand: item })) : [];
+    });
+    if (!pairs.length) return;
+    const compare = LC.ui.buildWishlistCompareButton(picked, pairs, LC.currentFormula);
+    compare.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       const existing = host.querySelector(':scope > .lc-wishlist-compare-panel');
       if (existing) { existing.remove(); return; }
-      host.appendChild(LC.ui.buildWishlistComparePanel(cand, pairs, LC.currentFormula));
+      host.appendChild(LC.ui.buildWishlistComparePanel(picked, pairs, LC.currentFormula));
     });
-    host.prepend(...[toggle, compare].filter(Boolean));
+    toggle.after(compare);
   }
 
   function removeComparisonUI(host) {
@@ -286,7 +366,9 @@
     if (!selected.slotKey) return [];
     const f = LC.currentFormula;
     if (LC.currentProfiles.length > 1) {
-      const multi = LC.diff.compareCandidateMulti(LC.currentProfiles, selected, f);
+      // Each character compares its own piece of the selected armor.
+      const multi = LC.diff.compareCandidateMulti(LC.currentProfiles, selected, f,
+        (profile) => variantFor(profile, selected));
       if (!multi.results.length) return [];
       const compact = (!selected.isAugment && (multi.best ? multi.best.comparison.rows.length : 0) > 1) ||
         LC.diff.weaponType(selected) != null;
@@ -355,7 +437,7 @@
     if (!host || !cand) return;
     cand = sourceCandidate(cand, cand.opendkpId || cand.id);
     decorateWishlist(host, cand);
-    const candidates = Array.isArray(cand.alternatives) && cand.alternatives.length > 1 ? cand.alternatives : [cand];
+    const candidates = pickerVariants(cand);
     const render = (selected) => {
       removeComparisonUI(host);
       const f = LC.currentFormula;
@@ -380,7 +462,7 @@
             const result = multi.results.find((entry) => String(entry.profile.id) === rowBadge.dataset.lcProfile);
             const charRow = result && result.comparison.rows[Number(rowBadge.dataset.lcRow)];
             if (!result || !charRow || !charRow.diff) return;
-            const panel = LC.ui.buildComparePanel(selected, charRow.target, charRow.diff, charRow.slotKey && charRow.slotKey.key,
+            const panel = LC.ui.buildComparePanel(result.cand || selected, charRow.target, charRow.diff, charRow.slotKey && charRow.slotKey.key,
               charRow.isAugment ? result.comparison.rows : null, Number(rowBadge.dataset.lcRow), rowBadge.dataset.lcView,
               'worn', result.profile);
             panel.dataset.lcProfile = rowBadge.dataset.lcProfile;
@@ -397,7 +479,10 @@
       });
       if (prepend) host.prepend(...badges); else host.append(...badges);
     };
-    addArmorVariantPicker(host, candidates, render);
+    addArmorVariantPicker(host, candidates, (selected) => {
+      render(selected);
+      decorateWishlistCompare(host, cand);
+    });
     if (host.querySelector(':scope > .lc-badge')) return;
     render(candidates[0]);
   }
@@ -507,10 +592,18 @@
       const cand = await resolveItem('', { id: '', name, slot: '', slotKey: null, stats: {} });
       if (generation !== annotationGeneration) return;
       if (!cand || !document.documentElement.contains(link)) continue;
-      highlightWanted(link, wishlistCandidate(cand), link);
+      highlightWanted(link, cand, link);
       // Badges only: the compare panel needs the room the tab body has.
       if (nameEl.querySelector(':scope > .lc-badge')) continue;
       nameEl.append(...comparisonBadges(cand));
+      // The tab has no star to carry the names, so it gets a chip of its own.
+      const who = wantedProfiles(cand);
+      if (who.length && LC.currentProfiles.length > 1) {
+        const chip = LC.ui.buildWantedBy(who);
+        chip.classList.add('lc-badge');
+        chip.prepend('★ ');
+        nameEl.append(chip);
+      }
     }
   }
 

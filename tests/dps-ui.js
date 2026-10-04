@@ -475,5 +475,84 @@ vm.runInNewContext(read('content/shared/ui.js'), context, { filename: 'content/s
     assert.match(missingDetails.textContent, /Unloaded augment \(head\): no numeric item stats imported/);
     assert.match(missingDetails.textContent, /Heal Amount/);
   }
+  {
+    // Wishlist star: with several characters selected it names who wants the
+    // item, each character toggles its own candidate, and a character that
+    // cannot be mapped to one shows why instead of toggling.
+    const ui = context.LootCaptain.ui;
+    const toggled = [];
+    const starred = new Set();
+    context.LootCaptain.state.toggleWishlist = async (cand, profileId) => {
+      const key = cand.name + '>' + profileId;
+      toggled.push(key);
+      return { ok: true, wanted: !starred.delete(key) && !!starred.add(key) };
+    };
+    let reads = 0;
+    const tom = { id: 't', name: 'Tom' }; const alt = { id: 'a', name: 'Alt' }; const bare = { id: 'b', name: 'Bare' };
+    const item = { name: 'Token' };
+    const solo = ui.buildWishlistToggle(item, [{ profile: tom, wanted: true }]);
+    assert.equal(solo.textContent, '★');
+    const star = ui.buildWishlistToggle(item, [
+      { profile: tom, wanted: true, cand: { name: 'Tom Helm' } },
+      { profile: alt, wanted: false, get cand() { return { name: 'Alt Helm ' + (++reads) }; } },
+      { profile: bare, wanted: false, error: 'set a class to wishlist armor tokens' },
+    ]);
+    assert.equal(star.textContent, '★Tom');
+    assert.equal(star.title, 'Wanted by Tom');
+    const host = makeElement();
+    host.querySelector = () => null;
+    host.appendChild(star);
+    star.parentNode = host;
+    await star.click();
+    const rows = host.children[1].children;
+    assert.equal(rows.length, 3);
+    await rows[1].click();
+    assert.equal(star.textContent, '★Tom +1');
+    assert.equal(star.title, 'Wanted by Tom, Alt');
+    // A second click removes what the first added, not whatever cand is by then.
+    await rows[1].click();
+    assert.equal(toggled[0], toggled[1]);
+    assert.equal(star.textContent, '★Tom');
+    assert.match(rows[2].textContent, /Bare: set a class to wishlist armor tokens/);
+    await rows[2].click();
+    assert.equal(toggled.length, 2);
+    const blocked = ui.buildWishlistToggle(item, [{ profile: bare, wanted: false, error: 'set a class to wishlist armor tokens' }]);
+    assert.equal(blocked.disabled, true);
+    assert.equal(blocked.title, 'Bare: set a class to wishlist armor tokens');
+  }
+  {
+    // An armor token is different armor per class, so every estimate has to be
+    // requested for the character's own piece, never the shared fallback.
+    const ui = context.LootCaptain.ui;
+    const formula = { key: 'hp', label: 'HP' };
+    const result = (id, cls, piece) => {
+      const helm = { id: id + '-old', name: id + ' old helm', slot: 'Head', stats: { HP: 1 } };
+      const row = { target: helm, slotKey: { key: 'head' }, diff: { diffs: {}, hasData: true, comparable: true, numericScoreAvailable: true, score: 10 } };
+      return { profile: { id, name: id, cls, level: 100, items: [helm] }, cand: { id: piece, name: piece, slot: 'Head', stats: { HP: 2 } },
+        comparison: { rows: [row] }, summary: { comparable: true, numericScoreAvailable: true, recommendationAvailable: true, score: 10, rows: [row] }, empty: false };
+    };
+    const results = [result('bst', 'Beastlord', 'Beastlord Helm'), result('mnk', 'Monk', 'Monk Helm'),
+      result('war', 'Warrior', 'Warrior Helm'), result('clr', 'Cleric', 'Cleric Helm')];
+    const multi = { results, best: results[0], mixedFormulas: false };
+    const shared = { id: 'shared', name: 'Shared Fallback', slot: 'Head', stats: { HP: 2 } };
+    const before = calls.length;
+    const requested = () => calls.slice(before).filter((call) => call.profile && call.cand)
+      .map((call) => call.profile.id + '>' + call.cand.name + '>' + call.mode).sort().join(' | ');
+    // Collapsed badge: the estimate belongs to the character the badge names.
+    ui.buildMultiComparisonBadges(multi, shared, formula, false);
+    assert.equal(requested(), 'bst>Beastlord Helm>dps-reference');
+    // Expanded badges: DPS, tank and healer estimates each use their own piece.
+    ui.buildPerCharacterBadges(multi, shared, formula, false);
+    assert.equal(requested(), 'bst>Beastlord Helm>dps-reference | clr>Cleric Helm>healer-reference | ' +
+      'mnk>Monk Helm>dps-reference | war>Warrior Helm>tank-reference');
+    // The panel behind each character chip is built for that character's piece.
+    const panel = ui.buildMultiComparePanel(multi, shared, formula);
+    assert.match(panel.textContent, /Beastlord Helm/);
+    await panel.children[0].children[3].click();
+    assert.match(panel.textContent, /Cleric Helm/);
+    assert.doesNotMatch(panel.textContent, /Shared Fallback|Beastlord Helm/);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.doesNotMatch(requested(), /Shared Fallback/);
+  }
   console.log('DPS UI integration check passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

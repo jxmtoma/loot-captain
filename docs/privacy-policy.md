@@ -13,13 +13,13 @@ The extension stores the following in the browser's extension-local `chrome.stor
 - The selected character and score formula.
 - Imported profile data and fetched public RaidLoot item stats used in comparisons.
 
-The extension does not transmit or collect email addresses, passwords, payment information, precise location, browsing history, analytics identifiers, or advertising identifiers. Character and item names entered by the user are retained locally as part of the profile and may be sent to RaidLoot only when needed for an item lookup. For a statless class-specific armor token, the selected character class and a public armor-set query may also be sent to RaidLoot on the first resolution; the resulting set is cached locally. Allakhazam and EQResource are developer-time catalog sources only and are never contacted by the extension.
+The extension does not transmit or collect email addresses, passwords, payment information, precise location, browsing history, analytics identifiers, or advertising identifiers. Character and item names entered by the user are retained locally as part of the profile and may be sent to RaidLoot only when needed for an item lookup. For a statless class-specific armor token, each selected character's class and a public armor-set query may also be sent to RaidLoot on the first resolution; the resulting set is cached locally. Allakhazam and EQResource are developer-time catalog sources only and are never contacted by the extension.
 
 When a comparison is displayed, the extension renders the relevant worn-item and candidate-item names, badges, and stat differences into the DOM of the visited RaidLoot or OpenDKP page. This is local page rendering, not a separate collection of browsing history.
 
 ## Network use
 
-When the user imports a profile or opens a profile/comparison that needs missing stats, the extension fetches public pages from `raidloot.com` to read profile and item information. An OpenDKP item name may be sent automatically to RaidLoot for an exact-name lookup. For class-specific armor-token resolution, the selected class and public armor-set query are sent only on the first cache miss. Requests do not include authenticated browser credentials or cookies.
+When the user imports a profile or opens a profile/comparison that needs missing stats, the extension fetches public pages from `raidloot.com` to read profile and item information. An OpenDKP item name may be sent automatically to RaidLoot for an exact-name lookup. For class-specific armor-token resolution, each selected character's class and the public armor-set query are sent only on the first cache miss. Requests do not include authenticated browser credentials or cookies.
 
 On OpenDKP pages, the extension reads the visible item UI and the page's item-data responses to add a local comparison badge. That data is not sent to an OpenDKP server by the extension.
 

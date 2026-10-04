@@ -261,7 +261,7 @@ assert.match(opendkpSource, /document\.querySelectorAll\(ITEM_LINK_SELECTOR\)/);
 // carries a static class, so it is both the handle and the highlight target.
 assert.match(opendkpSource, /document\.querySelectorAll\('a\.p-tabview-nav-link'\)/);
 assert.doesNotMatch(opendkpSource, /p-tabview-header/);
-assert.match(opendkpSource, /highlightWanted\(link, wishlistCandidate\(cand\), link\)/);
+assert.match(opendkpSource, /highlightWanted\(link, cand, link\)/);
 // The verdict badges render on the tab itself, not only in the opened body.
 assert.match(opendkpSource, /nameEl\.append\(\.\.\.comparisonBadges\(cand\)\)/);
 const partialComparisonBadgesSource = opendkpSource.match(/if \(!multi\.best\) \{[\s\S]*?return partial;\n\s*\}/)?.[0] || '';
@@ -287,7 +287,8 @@ assert.match(read('content/shared/ui.js'), /let renderGeneration = 0/);
 assert.match(read('content/shared/ui.js'), /enrichWishlistEntry\(pair\.target, owner && owner\.id\)/);
 assert.match(opendkpSource, /new MutationObserver\(\(records\) =>/);
 assert.match(opendkpSource, /characterClass: cls/);
-assert.match(opendkpSource, /const cacheKey = key \+ '\\|' \+ \(cls \|\| 'none'\)/);
+assert.match(opendkpSource, /characterClasses: classes/);
+assert.match(opendkpSource, /const cacheKey = key \+ '\\|' \+ \(classes\.join\(','\) \|\| 'none'\)/);
 assert.match(opendkpSource, /lc-armor-variant-select/);
 assert.match(opendkpSource, /const LC_UI_SELECTOR = .*lc-armor-variant-picker/);
 assert.match(opendkpSource, /const onlyExtensionChanges = records\.every/);
@@ -478,6 +479,14 @@ const multiUnresolved = LC.diff.compareCandidateMulti(multiProfiles, { slotKey: 
 assert.equal(multiUnresolved.results.length, 3);
 assert.equal(multiUnresolved.best, null);
 assert.equal(LC.diff.compareCandidateMulti(multiProfiles, multiCand, multiFormula).results[0].profile.id, 'a');
+// An armor token is different armor per class: each character compares, and
+// carries, its own candidate, and a character with none is skipped.
+const multiOwn = LC.diff.compareCandidateMulti(multiProfiles, multiCand, multiFormula, (profile) => ({
+  a: multiCand,
+  d: { name: 'Cleric Upgrade', slotKey: LC.slots.canonicalSlot('Head'), classes: ['CLR'], stats: { HP: { num: 40 } } },
+})[profile.id]);
+assert.equal(multiOwn.results.map((result) => result.profile.id + ':' + result.cand.name + ':' + result.summary.score).join(','),
+  'a:Upgrade Helm:50,d:Cleric Upgrade:30');
 const dualSlotKey = LC.slots.canonicalSlot('Primary, Secondary');
 assert.equal(dualSlotKey.key, 'primary');
 assert.equal(dualSlotKey.paired, false);
@@ -1560,6 +1569,13 @@ assert.equal(state.compatibleWishlistItem(
       name: 'Dread Infused Helm' });
     assert.equal(missingClass.ok, false);
     assert.equal(missingClass.error, 'Set a class on the selected character to resolve this armor token');
+    assert.equal(missingClass.needsClass, true);
+    assert.equal(armorFetches.length, 3);
+    // Several characters selected: one lookup resolves each class's own armor,
+    // the reference character's first, and a character with no class adds none.
+    const bothHeads = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201',
+      name: 'Dread Infused Helm', characterClass: 'Warrior', characterClasses: ['Warrior', 'Beastlord', ''] });
+    assert.equal([bothHeads.item, ...bothHeads.alternatives].map((item) => item.id).join(','), '117463,117561');
     assert.equal(armorFetches.length, 3);
 
     const exactIdWins = await sendWorkerMessage({ type: 'LOOKUP_ITEM_STATS', itemId: '81201',
@@ -2169,6 +2185,66 @@ assert.equal(state.compatibleWishlistItem(
   assert.equal(profiles.p.wishlist[0].opendkpId, '402');
   await state.toggleWishlist(bridgeWish);
   assert.equal(profiles.p.wishlist.length, 0);
+
+  // An armor token and the class armor it turns into are one wish, whichever
+  // site the wish was made on, and each character maps to its own class's armor.
+  {
+    const source = opendkpSource.match(/ {2}function tokenCandidate\(cand\) \{[\s\S]*? {2}function variantFor\(profile, picked\) \{[\s\S]*?\n {2}\}/)[0];
+    const war = { cls: 'Warrior' };
+    const clr = { cls: 'Cleric' };
+    const { wantedCandidate, profileVariants, pickerVariants, variantFor } = vm.runInNewContext(
+      source + '\n({ wantedCandidate, profileVariants, pickerVariants, variantFor })', {
+        LC: { state, parser: stateContext.LootCaptain.parser, currentProfiles: [{ cls: '' }, war, clr] },
+        normalizedName: (value) => String(value || '').trim().toLowerCase(),
+      });
+    const token = { opendkpHost: 'guild.opendkp.com', opendkpId: '501', opendkpSourceName: 'Faded Helm Token', slot: 'Head' };
+    const warHelm = { ...token, raidlootId: '601', name: 'Warrior Helm', classes: ['WAR'], armorSetLabel: 'Group Tier 1' };
+    const warRaidHelm = { ...token, raidlootId: '602', name: 'Warrior Raid Helm', classes: ['WAR'], armorSetLabel: 'Raid Tier 1' };
+    const clrHelm = { ...token, raidlootId: '603', name: 'Cleric Helm', classes: ['CLR'], armorSetLabel: 'Group Tier 1' };
+    const clrRaidHelm = { ...token, raidlootId: '604', name: 'Cleric Raid Helm', classes: ['CLR'], armorSetLabel: 'Raid Tier 1' };
+    const helms = [warHelm, warRaidHelm, clrHelm, clrRaidHelm];
+    for (const helm of helms) helm.alternatives = helms;
+    // The armor picker lists the first character that has pieces, not every class's.
+    assert.equal(pickerVariants(warHelm).map((item) => item.raidlootId).join(','), '601,602');
+    // Picking a variant gives every other character its own piece of that set.
+    assert.equal(variantFor(war, warRaidHelm), warRaidHelm);
+    assert.equal(variantFor(clr, warRaidHelm), clrRaidHelm);
+    assert.equal(variantFor(clr, warHelm), clrHelm);
+    assert.equal(variantFor({ cls: '' }, warRaidHelm), null);
+    // A set can hold two pieces for one slot; they pair up by position.
+    {
+      const pair = (id, cls) => ({ ...token, raidlootId: id, classes: [cls], armorSetLabel: 'Raid Tier 4' });
+      const wrists = [pair('611', 'WAR'), pair('612', 'WAR'), pair('613', 'CLR'), pair('614', 'CLR')];
+      for (const wrist of wrists) wrist.alternatives = wrists;
+      assert.equal(variantFor(clr, wrists[1]), wrists[3]);
+    }
+    const ring = { raidlootId: '9', name: 'Ring' };
+    assert.equal(variantFor(clr, ring), ring);
+    const ids = (cls) => profileVariants({ cls }, warHelm).map((item) => item.raidlootId).join(',');
+    assert.equal(ids('Warrior'), '601,602');
+    assert.equal(ids('Cleric'), '603,604');
+    assert.equal(ids('Wizard'), '');
+    // No class: nothing to map the token to.
+    assert.equal(ids(''), '');
+    // An ordinary item is the same item for every character.
+    assert.equal(profileVariants({ cls: '' }, { raidlootId: '9', name: 'Ring' }).length, 1);
+    const tokenWish = { opendkpHost: 'guild.opendkp.com', opendkpId: '501', name: 'Faded Helm Token', slot: 'Head' };
+    const wants = (cls, wishlist) => wantedCandidate({ cls, wishlist }, warHelm);
+    // Wishlisted on RaidLoot as the real armor, in either variant.
+    assert.equal(wants('Warrior', [{ raidlootId: '602', name: 'Warrior Raid Helm', slot: 'Head' }]), warRaidHelm);
+    assert.equal(wants('Cleric', [{ raidlootId: '603', name: 'Cleric Helm', slot: 'Head' }]), clrHelm);
+    // Another class's armor is not this character's wish.
+    assert.equal(wants('Cleric', [{ raidlootId: '601', name: 'Warrior Helm', slot: 'Head' }]), null);
+    // Starred on OpenDKP: stored under the armor's id, so RaidLoot matches it.
+    const stored = state.normalizeWishlistEntry(clrHelm);
+    assert.equal(stored.raidlootId, '603');
+    assert.ok(state.findWishlistEntry({ wishlist: [stored] }, { raidlootId: '603', name: 'Cleric Helm', slot: 'Head' }));
+    // A token-only entry from before the bridge upgrades through the armor.
+    assert.equal(wants('Cleric', [tokenWish]), clrHelm);
+    // With no class it still shows as wanted, as the bare token, so it can be removed.
+    assert.equal(wants('', [tokenWish]).raidlootId, '');
+    assert.equal(wants('Warrior', [{ raidlootId: '700', name: 'Unrelated Helm', slot: 'Head' }]), null);
+  }
 
   mode = 'race';
   profiles = { p: { id: 'p', name: 'Race', items: [{ id: '1', name: 'Sword', slot: 'Head', stats: {} }] } };

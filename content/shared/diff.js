@@ -544,13 +544,18 @@
   // from "unresolved stats"). `best` is the profile with the highest
   // available numeric score, preferring profiles that actually wear something in the
   // slot; ties keep the earlier (active) profile.
-  function compareCandidateMulti(profiles, cand, formula) {
+  // candFor (optional) gives each character its own candidate, since an armor
+  // token is different armor for each class. A character it has nothing for is
+  // skipped. Each result carries the candidate it compared.
+  function compareCandidateMulti(profiles, cand, formula, candFor) {
     const results = [];
     for (const profile of profiles || []) {
-      const comparison = compareCandidate(profile, cand, formula);
+      const item = candFor ? candFor(profile) : cand;
+      if (!item) continue;
+      const comparison = compareCandidate(profile, item, formula);
       if (!comparison.eligible) continue;
       const summary = summarizeComparisons(comparison);
-      results.push({ profile, comparison, summary, empty: !summary.hasWorn && !summary.hasEffects });
+      results.push({ profile, cand: item, comparison, summary, empty: !summary.hasWorn && !summary.hasEffects });
     }
     const formulas = results.map((result) => resolveFormula(result.profile, formula));
     const mixedFormulas = new Set(formulas.map((entry) => entry.key + ':' + entry.version)).size > 1 ||

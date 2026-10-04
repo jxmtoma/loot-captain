@@ -38,6 +38,8 @@
     '.lc-wishlist-compare[data-state="sidegrade"]{background:#16212b;color:#f3d775;border-color:#64717e;}',
     '.lc-wishlist-compare[data-state="nomatch"]{background:#16212b;color:#c7cdd4;border-color:#64717e;}',
     '.lc-wishlist-toggle:disabled{cursor:wait;opacity:.65;}',
+    '.lc-wanted-by{display:inline-block;max-width:9em;margin-left:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;color:#e0b95f;font:bold 10px/1.2 Tahoma,sans-serif;}',
+    '.lc-badge.lc-wanted-by{margin-left:4px;cursor:default;}',
     '.lc-wanted:not(tr){outline:2px solid rgba(224,188,104,.8) !important;outline-offset:1px;background-color:rgba(132,101,35,.12) !important;}',
     'tr.lc-wanted > td{background-image:linear-gradient(rgba(132,101,35,.22),rgba(132,101,35,.22)) !important;}',
     // The auction tab's nav link paints its own theme background over ours.
@@ -59,6 +61,7 @@
     '.lc-character-picker-row{display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;color:#e9e1ca;font:inherit;text-align:left;cursor:pointer;padding:2px 0;}',
     '.lc-character-picker-row:hover{color:#f0d18a;}',
     '.lc-character-picker-row:disabled{cursor:wait;opacity:.65;}',
+    '.lc-character-picker-row[aria-disabled="true"]{cursor:not-allowed;opacity:.65;}',
     '.lc-compare-panel{background:#151d1e;color:#e9e1ca;border:1px solid #8b7547;border-radius:4px;padding:8px 10px;margin:6px 0;font:11px/1.35 monospace;max-width:720px;box-shadow:0 3px 12px rgba(0,0,0,.25);}',
     '.lc-compare-panel table{border-collapse:collapse;table-layout:fixed !important;width:100%;background:#202a2b !important;color:#dbe3dc !important;}',
     '.lc-compare-panel tr{background:#202a2b !important;}',
@@ -1474,11 +1477,30 @@
     return div;
   }
 
-  function setWishlistToggleState(button, wanted) {
+  // Who wants an item, short enough to sit inline: the first name, +N for the
+  // rest, and the full list on hover.
+  function buildWantedBy(profiles) {
+    const names = profiles.map((profile) => (profile && profile.name) || 'Unnamed');
+    const who = document.createElement('span');
+    who.className = 'lc-wanted-by';
+    who.textContent = names[0] + (names.length > 1 ? ' +' + (names.length - 1) : '');
+    who.title = 'Wanted by ' + names.join(', ');
+    return who;
+  }
+
+  // entries: [{ profile, wanted }]. named: several characters are selected, so
+  // a filled star also says whose wish it is.
+  function setWishlistToggleState(button, entries, named) {
+    const wanting = entries.filter((entry) => entry.wanted).map((entry) => entry.profile);
+    const wanted = wanting.length > 0;
     button.setAttribute('aria-pressed', String(wanted));
     button.setAttribute('aria-label', wanted ? 'Remove from wishlist' : 'Add to wishlist');
     button.textContent = wanted ? '★' : '☆';
     button.title = button.dataset.lcMulti ? 'Wishlist (pick a character)' : 'Wishlist';
+    if (!wanted || !named) return;
+    const who = buildWantedBy(wanting);
+    button.title = who.title;
+    button.appendChild(who);
   }
 
   // ---------- Outside-click panel dismissal ----------
@@ -1498,7 +1520,9 @@
     }, true);
   }
 
-  // One wishlist star per item. profiles: [{ profile, wanted }]. Characters
+  // One wishlist star per item. profiles: [{ profile, wanted, cand?, error? }];
+  // a per-character cand overrides which item that character toggles, and an
+  // error (why this character cannot wishlist the item) disables it. Characters
   // that cannot wear the item (class or required level) are excluded, and if
   // none can wear it the star renders disabled. With a single eligible
   // character the star toggles directly; with several, clicking opens a
@@ -1510,17 +1534,21 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lc-wishlist-toggle';
-    const eligible = profiles.filter((entry) => LC.parser.canWear(cand, entry.profile));
-    if (!eligible.length) {
+    const eligible = profiles.filter((entry) => entry.error || LC.parser.canWear(entry.cand || cand, entry.profile));
+    const blocked = !eligible.length ? 'No selected character can wear this item'
+      : eligible.length === 1 && eligible[0].error
+        ? ((eligible[0].profile && eligible[0].profile.name) || 'Unnamed') + ': ' + eligible[0].error : '';
+    if (blocked) {
       button.disabled = true;
       button.setAttribute('aria-disabled', 'true');
       button.textContent = '☆';
-      button.title = 'No selected character can wear this item';
+      button.title = blocked;
       return button;
     }
     const multi = eligible.length > 1;
+    const named = profiles.length > 1;
     if (multi) button.dataset.lcMulti = '1';
-    setWishlistToggleState(button, eligible.some((entry) => entry.wanted));
+    setWishlistToggleState(button, eligible, named);
     button.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1536,10 +1564,10 @@
       button.disabled = true;
       try {
         const entry = eligible[0];
-        const result = await LC.state.toggleWishlist(cand, entry && entry.profile.id);
+        const result = await LC.state.toggleWishlist(entry && entry.cand || cand, entry && entry.profile.id);
         if (result.ok) {
           if (entry) entry.wanted = result.wanted;
-          setWishlistToggleState(button, eligible.some((item) => item.wanted));
+          setWishlistToggleState(button, eligible, named);
         } else {
           button.title = 'Could not update the wishlist';
         }
@@ -1561,20 +1589,26 @@
       star.textContent = entry.wanted ? '★' : '☆';
       star.setAttribute('aria-hidden', 'true');
       row.appendChild(star);
-      row.appendChild(document.createTextNode((entry.profile && entry.profile.name) || 'Unnamed'));
-      row.setAttribute('aria-label', ((entry.profile && entry.profile.name) || 'Unnamed') +
-        (entry.wanted ? ': remove from wishlist' : ': add to wishlist'));
+      const name = (entry.profile && entry.profile.name) || 'Unnamed';
+      row.appendChild(document.createTextNode(entry.error ? name + ': ' + entry.error : name));
+      row.setAttribute('aria-label', name + ': ' +
+        (entry.error || (entry.wanted ? 'remove from wishlist' : 'add to wishlist')));
+      if (entry.error) row.setAttribute('aria-disabled', 'true');
       row.addEventListener('click', async (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (row.disabled) return;
+        if (row.disabled || entry.error) return;
         row.disabled = true;
         try {
-          const result = await LC.state.toggleWishlist(cand, entry.profile.id);
+          // The picker outlives a re-annotation, so a row removes exactly what
+          // it last added even if its candidate has changed since.
+          const item = entry.toggled || entry.cand || cand;
+          const result = await LC.state.toggleWishlist(item, entry.profile.id);
           if (result.ok) {
             entry.wanted = result.wanted;
+            entry.toggled = result.wanted ? item : null;
             star.textContent = result.wanted ? '★' : '☆';
-            setWishlistToggleState(starButton, profiles.some((item) => item.wanted));
+            setWishlistToggleState(starButton, profiles, true);
           }
         } finally {
           row.disabled = false;
@@ -1585,15 +1619,16 @@
     return wrapper;
   }
 
-  // pairs: [{ target, profile }] -- wishlist entries paired with the character
-  // that wants them, so each comparison uses the owner's level.
+  // pairs: [{ target, profile, cand? }] -- wishlist entries paired with the
+  // character that wants them, so each comparison uses the owner's level, and
+  // the owner's own candidate when cand differs per character.
   function buildWishlistCompareButton(cand, pairs, formula) {
     const verdicts = (pairs || []).map((pair) => {
       const ownerFormula = LC.diff && LC.diff.resolveFormula
         ? LC.diff.resolveFormula(pair.profile, formula)
         : formula;
       const diff = LC.diff && LC.diff.compareItemPair
-        ? LC.diff.compareItemPair(cand, pair.target, ownerFormula,
+        ? LC.diff.compareItemPair(pair.cand || cand, pair.target, ownerFormula,
           pair.profile && pair.profile.level, pair.profile)
         : null;
       return { formula: ownerFormula, verdict: comparisonVerdict(diff, ownerFormula) };
@@ -1627,18 +1662,19 @@
       loading.textContent = 'Loading wishlist item…';
       body.appendChild(loading);
       const owner = pair.profile;
+      const item = pair.cand || cand;
       const resolved = await LC.state.enrichWishlistEntry(pair.target, owner && owner.id);
       if (generation !== renderGeneration || !wrapper.isConnected) return;
-      if (!LC.state.compatibleWishlistItem(cand, resolved)) {
+      if (!LC.state.compatibleWishlistItem(item, resolved)) {
         loading.textContent = 'Wishlist item uses an incompatible slot or weapon layout.';
         return;
       }
-      const diff = LC.diff.compareItemPair(cand, resolved, formula, owner && owner.level, owner);
+      const diff = LC.diff.compareItemPair(item, resolved, formula, owner && owner.level, owner);
       if (!diff.comparable && !diff.hasData && !diff.effectsComparable) {
         loading.textContent = 'Wishlist item stats unavailable.';
         return;
       }
-      body.replaceChildren(buildComparePanel(cand, resolved, diff,
+      body.replaceChildren(buildComparePanel(item, resolved, diff,
         (resolved.slotKey && resolved.slotKey.key) || resolved.slot, null, 0, 'stats', 'wishlist'));
     };
     if (pairs.length > 1) {
@@ -1761,7 +1797,7 @@
       badge.title = 'Character ' + basisName + ': ' + badge.title;
       badge.setAttribute('aria-label', badge.title);
     }
-    if (cand && basis.profile && row.target) appendDpsMetric(badge, cand, row.target, basis.profile, formula);
+    if (cand && basis.profile && row.target) appendDpsMetric(badge, basis.cand || cand, row.target, basis.profile, formula);
     return [badge];
   }
 
@@ -1795,7 +1831,7 @@
       for (const [index, row] of result.comparison.rows.entries()) {
         if (cand.isAugment && index) break;
         if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
-        for (const badge of buildComparisonBadges(row, formula, compact, cand, result.profile)) {
+        for (const badge of buildComparisonBadges(row, formula, compact, result.cand || cand, result.profile)) {
           if (badge.dataset.lcView === 'stats') prependBadgeText(badge, name + ' ');
           badge.title = name + ': ' + badge.title;
           badge.setAttribute('aria-label', badge.title);
@@ -1826,7 +1862,7 @@
       for (const [index, row] of result.comparison.rows.entries()) {
         if (cand.isAugment && index) break;
         if (!row.diff || (!row.diff.comparable && !row.diff.hasData && !row.diff.effectsComparable)) continue;
-        panels.push(buildComparePanel(cand, row.target, row.diff, row.slotKey && row.slotKey.key,
+        panels.push(buildComparePanel(result.cand || cand, row.target, row.diff, row.slotKey && row.slotKey.key,
           row.isAugment ? result.comparison.rows : null, index, view, 'worn', result.profile));
       }
       if (!panels.length) {
@@ -1940,6 +1976,7 @@
     buildScoreBreakdown,
     buildComparePanel,
     buildWishlistToggle,
+    buildWantedBy,
     buildWishlistCompareButton,
     buildWishlistComparePanel,
     comparisonBadgeText,
