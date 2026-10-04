@@ -2181,6 +2181,59 @@ assert.equal(state.compatibleWishlistItem(
   firstResolve({ ok: true, items: [{ id: '1', name: 'Sword', slot: 'Head', stats: { HP: 100 } }] });
   await older;
   assert.equal(stateContext.LootCaptain.currentProfile.items[0].stats.HP.num, 200);
+  // Fresh from file swaps in the re-exported worn items and keeps the rest of
+  // the profile. The picked file is remembered, so later refreshes re-read it
+  // without asking; a file that can no longer be read is forgotten, and an
+  // export with no worn gear must not wipe the character.
+  {
+    const exportText = (name) => 'Location\tName\tID\tExtra\nHead\t' + name + '\t21\t\nBank\tStored\t14\t';
+    const fileContext = {
+      document: { addEventListener() {}, querySelector: () => ({}) },
+      chrome: { runtime: { sendMessage: async () => ({ ok: true }) } },
+      confirm: () => true,
+      setTimeout: () => {},
+      text: '',
+      picks: 0,
+    };
+    vm.runInNewContext(read('content/shared/diff.js') + '\n' + read('options/options.js') + `
+      renderProfileList = () => {};
+      const handles = new Map();
+      inventoryHandleStore = async (mode, run) => run({
+        get: (id) => handles.get(id), put: (handle, id) => { handles.set(id, handle); }, delete: (id) => { handles.delete(id); },
+      });
+      const fakeHandle = {
+        name: 'Aurelia_oakwynd-Inventory.txt',
+        requestPermission: async () => 'granted',
+        getFile: async () => {
+          if (text === 'gone') throw new Error('file not found');
+          return { name: fakeHandle.name, text: async () => text };
+        },
+      };
+      pickInventoryFile = async () => { picks++; return { file: await fakeHandle.getFile(), handle: fakeHandle }; };
+      profiles = { p: { id: 'p', name: 'Aurelia', cls: 'Warrior', importedFrom: fakeHandle.name,
+        wishlist: [{ name: 'Wished Helm' }], items: [{ id: '13', name: 'Crown', slot: 'head', stats: {} }] } };
+      globalThis.refreshFromFileForTest = async () => {
+        const error = await refreshProfileFromFile('p').then(() => '', (e) => e.message);
+        return { error, remembered: handles.has('p'), profile: profiles.p, names: profiles.p.items.map((item) => item.name).join() };
+      };`, fileContext, { filename: 'options/options.js' });
+    const refreshWith = (text) => { fileContext.text = text; return fileContext.refreshFromFileForTest(); };
+    const first = await refreshWith(exportText('New Crown'));
+    assert.equal(first.error, '');
+    assert.equal(first.names, 'New Crown');
+    assert.equal(first.profile.cls, 'Warrior');
+    assert.equal(first.profile.wishlist[0].name, 'Wished Helm');
+    assert.equal(first.remembered, true);
+    const second = await refreshWith(exportText('Newer Crown'));
+    assert.equal(second.names, 'Newer Crown');
+    assert.equal(fileContext.picks, 1);
+    const empty = await refreshWith('not an inventory export');
+    assert.match(empty.error, /No worn equipment found/);
+    assert.equal(empty.names, 'Newer Crown');
+    const gone = await refreshWith('gone');
+    assert.match(gone.error, /Could not reopen Aurelia_oakwynd-Inventory\.txt/);
+    assert.equal(gone.names, 'Newer Crown');
+    assert.equal(gone.remembered, false);
+  }
   execFileSync(process.execPath, ['tests/missing-data-comparison.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/missing-data-storage.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['tests/profile-scoring-effects.js'], { stdio: 'inherit' });

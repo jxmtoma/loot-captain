@@ -36,6 +36,7 @@ let selectedFocusIndex = 0;
 let activeInventoryTab = 'equipment';
 let wishlistStyle = 'slots';
 let refreshingProfileId = '';
+let refreshedProfileId = ''; // list row that briefly reports a finished file refresh
 
 // ---------- Storage ----------
 async function loadAll() {
@@ -51,7 +52,29 @@ async function saveAll(changedIds = [], deletedIds = []) {
     const response = await chrome.runtime.sendMessage({ type: 'SAVE_PROFILES', profiles: records, deletedIds });
     if (!response || !response.ok) throw new Error(response && response.error || 'Could not save profiles');
     profiles = response.profiles || profiles;
+    for (const id of deletedIds) await inventoryHandleStore('readwrite', (store) => store.delete(id));
   }
+}
+
+// File handles for "Fresh from file", keyed by profile id. They are not JSON,
+// so they cannot be saved with the profiles; IndexedDB can hold them. A failure
+// only costs the remembered file: the next refresh asks for it again.
+function inventoryHandleStore(mode, run) {
+  return new Promise((resolve) => {
+    const open = indexedDB.open('loot-captain', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('inventoryHandles');
+    open.onerror = () => resolve();
+    open.onsuccess = () => {
+      try {
+        const request = run(open.result.transaction('inventoryHandles', mode).objectStore('inventoryHandles'));
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve();
+      } catch (e) {
+        resolve();
+      }
+      open.result.close();
+    };
+  }).catch(() => {});
 }
 
 
@@ -178,6 +201,23 @@ function renderProfileList() {
       refreshBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         await refreshProfileFromList(id, refreshBtn, raidlootId);
+      });
+      actions.appendChild(refreshBtn);
+    } else if (p.importedFrom) {
+      // Fresh from file: re-read the /output inventory export a profile was
+      // imported from to replace its worn items.
+      const refreshBtn = el('button', 'btn btn-small profile-refresh-file',
+        refreshingProfileId === id ? 'Refreshing…' : refreshedProfileId === id ? 'Refreshed ✓' : 'Fresh from file');
+      refreshBtn.title = 'Reload worn equipment from ' + p.importedFrom;
+      refreshBtn.setAttribute('aria-label', 'Refresh worn equipment from the inventory file for ' + (p.name || 'this character'));
+      refreshBtn.disabled = !!refreshingProfileId;
+      refreshBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await refreshProfileFromFile(id);
+        } catch (err) {
+          alert('File refresh failed: ' + err.message);
+        }
       });
       actions.appendChild(refreshBtn);
     }
@@ -1281,6 +1321,10 @@ function updateRaidlootRefreshButton() {
   if (!button) return;
   button.hidden = !raidlootImportedProfileId(editingProfile && editingProfile.importedFrom);
   button.disabled = !!editingProfile && editingId === refreshingProfileId;
+  const fileButton = $('#btn-refresh-file');
+  if (!fileButton) return;
+  fileButton.hidden = !(editingProfile && editingProfile.importedFrom) || !button.hidden;
+  fileButton.disabled = button.disabled;
 }
 
 // List-row variant of the editor's "Refresh from RaidLoot" action: pull the
@@ -1320,6 +1364,101 @@ async function refreshProfileFromList(id, button, profileId) {
     if (refreshingProfileId === id) refreshingProfileId = '';
     if (refreshed) renderProfileList();
     else button.disabled = false;
+  }
+}
+
+// Pick an /output inventory export. Resolves { file, handle }, or null when the
+// picker is cancelled. Only the File System Access picker yields a handle,
+// which is what lets a later refresh re-read the file without asking.
+async function pickInventoryFile() {
+  if (!globalThis.showOpenFilePicker) {
+    return new Promise((resolve) => {
+      const input = $('#inventory-file');
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        input.value = ''; // allow re-selecting the same file
+        resolve(file ? { file } : null);
+      };
+      input.oncancel = () => resolve(null);
+      input.click();
+    });
+  }
+  try {
+    const [handle] = await globalThis.showOpenFilePicker({
+      id: 'eq-inventory',
+      types: [{ description: 'EverQuest inventory export', accept: { 'text/plain': ['.txt'] } }],
+    });
+    return { file: await handle.getFile(), handle };
+  } catch (e) {
+    if (e.name === 'AbortError') return null;
+    throw e;
+  }
+}
+
+// The export a profile refreshes from: its remembered file when the browser
+// still lets this page read it, otherwise a fresh pick.
+async function inventoryFileFor(id) {
+  const handle = await inventoryHandleStore('readonly', (store) => store.get(id));
+  if (!handle) return pickInventoryFile();
+  try {
+    if (await handle.requestPermission({ mode: 'read' }) !== 'granted') throw new Error('permission was not granted');
+    return { file: await handle.getFile(), handle };
+  } catch (e) {
+    // Moved, deleted, or blocked: forget it so the next click asks for the file.
+    await inventoryHandleStore('readwrite', (store) => store.delete(id));
+    throw new Error('Could not reopen ' + handle.name + '. Click again to choose the file. (' + e.message + ')');
+  }
+}
+
+// "Fresh from file": replace a file-imported profile's worn items from its
+// /output inventory export and keep everything else. Resolves the changed
+// fields, or null when no file was chosen.
+async function refreshProfileFromFile(id) {
+  if (!profiles[id] || refreshingProfileId) return null;
+  const picked = await inventoryFileFor(id);
+  const savedProfile = profiles[id];
+  if (!picked || !savedProfile || refreshingProfileId) return null;
+  const { file, handle } = picked;
+  // Another character's export would silently overwrite this one's gear.
+  if (file.name !== savedProfile.importedFrom && !confirm((savedProfile.name || 'This character') + ' was imported from ' +
+    savedProfile.importedFrom + '. Replace its worn items with ' + file.name + '?')) return null;
+  refreshingProfileId = id;
+  renderProfileList();
+  updateRaidlootRefreshButton();
+  try {
+    const parsed = parseInventoryText(await file.text());
+    if (!parsed.length) throw new Error('No worn equipment found in ' + file.name + '. Make sure you exported with /output inventory.');
+    const update = { items: await fetchStatsForItems(parsed), statsVersion: PROFILE_STATS_VERSION, importedFrom: file.name };
+    profiles[id] = { ...savedProfile, ...update };
+    try {
+      await saveAll([id]);
+    } catch (e) {
+      profiles[id] = savedProfile;
+      throw e;
+    }
+    if (handle) await inventoryHandleStore('readwrite', (store) => store.put(handle, id));
+    refreshedProfileId = id;
+    setTimeout(() => { refreshedProfileId = ''; renderProfileList(); }, 3000);
+    return update;
+  } finally {
+    refreshingProfileId = '';
+    renderProfileList();
+    updateRaidlootRefreshButton();
+  }
+}
+
+// Editor variant of "Fresh from file": the working copy follows the refresh.
+async function refreshEditorFromFile() {
+  const profile = editingProfile;
+  if (!profile || editingId === 'new') return;
+  try {
+    const update = await refreshProfileFromFile(editingId);
+    if (!update || editingProfile !== profile) return;
+    Object.assign(profile, update);
+    renderItemList();
+    $('#editor-status').textContent = 'Refreshed ' + update.items.length + ' items from ' + update.importedFrom + '.';
+  } catch (e) {
+    $('#editor-status').textContent = 'File refresh failed: ' + e.message;
   }
 }
 
@@ -1459,11 +1598,14 @@ async function importRaidlootProfile() {
   }
 }
 
-async function handleInventoryFile(file) {
+async function importInventoryFile() {
   const status = $('#import-status');
-  status.textContent = 'Reading file...';
-  status.className = 'import-status';
   try {
+    const picked = await pickInventoryFile();
+    if (!picked) return;
+    const { file, handle } = picked;
+    status.textContent = 'Reading file...';
+    status.className = 'import-status';
     const text = await file.text();
     let items = parseInventoryText(text);
     if (!items.length) {
@@ -1492,6 +1634,7 @@ async function handleInventoryFile(file) {
       importedFrom: file.name,
     });
     await saveAll([id]);
+    if (handle) await inventoryHandleStore('readwrite', (store) => store.put(handle, id));
     const loadedCount = items.filter((item) => Object.keys(item.stats || {}).length).length;
     const profileMeta = [inventoryMetadata.cls, inventoryMetadata.level && 'level ' + inventoryMetadata.level].filter(Boolean).join(' · ');
     status.textContent = 'Imported ' + items.length + ' items' + (fetchStats ? ' (' + loadedCount + ' with stats)' : ' (stats load when comparing)') + ' for ' + profileName + (profileMeta ? ' (' + profileMeta + ')' : '') + '.';
@@ -1579,11 +1722,12 @@ async function init() {
     if (e.key === 'Escape') closeAddCharacterMenu();
   });
   $('#btn-close-add-panel').addEventListener('click', closeAddCharacterPanel);
-  $('#btn-choose-inventory').addEventListener('click', () => $('#inventory-file').click());
+  $('#btn-choose-inventory').addEventListener('click', importInventoryFile);
   $('#btn-back').addEventListener('click', closeEditor);
   $('#btn-save-profile').addEventListener('click', saveProfile);
   $('#btn-delete-profile').addEventListener('click', deleteProfile);
   $('#btn-refresh-raidloot').addEventListener('click', refreshRaidlootProfile);
+  $('#btn-refresh-file').addEventListener('click', refreshEditorFromFile);
   $('#btn-import-raidloot').addEventListener('click', importRaidlootProfile);
   document.querySelectorAll('[data-inventory-tab]').forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -1608,11 +1752,6 @@ async function init() {
     editingProfile.items.push({ id: '', name: '', slot: '', stats: {} });
     selectedItemIndex = editingProfile.items.length - 1;
     renderItemList();
-  });
-  $('#inventory-file').addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) handleInventoryFile(file);
-    e.target.value = ''; // allow re-selecting the same file
   });
   renderProfileList();
   chrome.storage.onChanged.addListener((changes, area) => {
